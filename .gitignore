@@ -1,0 +1,15 @@
+# Roblox build artifacts
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+
+# Proprietary Quake assets — never commit these
+id1/
+*.pak
+
+# OS noise
+.DS_Store
+
+# Quake distributions (shareware installer, retail data)
+external_assets/
