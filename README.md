@@ -27,6 +27,10 @@ Before anything is published to Roblox, all id Software content is replaced
 with [LibreQuake](https://github.com/lavenderdotpet/LibreQuake), a free,
 BSD-licensed content replacement that works with the same engine and formats.
 
+Local asset distributions live in `external_assets/` (gitignored). Currently
+that's the Quake 1.06 shareware release, extracted from `quake106.zip` — the
+DOS installer whose `resource.dat` contains the shareware `pak0.pak`.
+
 ## Tooling
 
 - [Rojo](https://rojo.space/) syncs the code in `src/` into Roblox Studio.
