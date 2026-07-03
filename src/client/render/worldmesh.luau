@@ -45,16 +45,22 @@ export type BuiltModel = {
 	center: Vector3,
 }
 
--- Sample the lightmap for a surface at texture coordinates (s, t).
--- Returns 0..1 brightness (style 0 only; animated styles are approximated
--- by their base value).
-local function sampleLight(data: bsp.BspData, surf: bsp.Surface, s: number, t: number): number
+-- Lightstyle handling: surfaces carry up to MAXLIGHTMAPS (4) style layers
+-- of lightmap samples, stored consecutively. Style values animate at 10Hz
+-- from the style strings ('a'=0 .. 'z'≈2x, value = (c-'a')*22; style 0 is
+-- the constant "m" = 264).
+worldmesh.BASE_STYLE_VALUE = 264
+
+-- Sample all style layers for a surface at texture coords (s, t).
+-- Returns nil for unlit surfaces (sky/water/fullbright), else an array of
+-- { style, sample } pairs.
+local function sampleLightStyles(data: bsp.BspData, surf: bsp.Surface, s: number, t: number): { { number } }?
 	if bit32.band(surf.flags, bsp.SURF_DRAWTILED) ~= 0 then
-		return 1 -- sky/water: no lightmap, fullbright
+		return nil -- sky/water: no lightmap, fullbright
 	end
 	local lightdata = data.lightdata
 	if not lightdata or surf.lightofs < 0 then
-		return 1 -- no light data: fullbright (matches software renderer)
+		return nil -- no light data: fullbright (matches software renderer)
 	end
 
 	local smax = bit32.rshift(surf.extents[1], 4) + 1
@@ -62,21 +68,54 @@ local function sampleLight(data: bsp.BspData, surf: bsp.Surface, s: number, t: n
 	local ls = math.clamp(math.floor((s - surf.texturemins[1]) / 16 + 0.5), 0, smax - 1)
 	local lt = math.clamp(math.floor((t - surf.texturemins[2]) / 16 + 0.5), 0, tmax - 1)
 
-	local ofs = surf.lightofs + lt * smax + ls
-	if ofs >= buffer.len(lightdata) then
+	local out = {}
+	local blockSize = smax * tmax
+	for layer = 1, 4 do
+		local style = surf.styles[layer]
+		if style == 255 then
+			break
+		end
+		local ofs = surf.lightofs + (layer - 1) * blockSize + lt * smax + ls
+		if ofs >= buffer.len(lightdata) then
+			break
+		end
+		table.insert(out, { style, buffer.readu8(lightdata, ofs) })
+	end
+	return out
+end
+
+-- Combine style layers into 0..1 brightness given a per-style value lookup
+-- (blocklights accumulation: sum(sample * value / 256), then overbright x2).
+function worldmesh.combineLight(layers: { { number } }?, styleValue: (style: number) -> number): number
+	if not layers then
 		return 1
 	end
-	local sample = buffer.readu8(lightdata, ofs)
-	-- roughly GLQuake's overbright handling: 128 is "fully lit"
-	return math.min(sample * 2, 255) / 255
+	local total = 0
+	for _, sv in layers do
+		total += sv[2] * styleValue(sv[1]) / 256
+	end
+	return math.min(total * 2, 255) / 255
 end
+local combineLight = worldmesh.combineLight
+
+local function baseStyleValue(_style: number): number
+	return worldmesh.BASE_STYLE_VALUE
+end
+
+-- One animated vertex color: recomputed when its styles' values change.
+export type AnimEntry = {
+	em: EditableMesh,
+	cid: number,
+	layers: { { number } }, -- { {style, sample}, ... }
+}
 
 -- Build MeshParts for one brush model. Returns a Model containing one
 -- MeshPart per texture batch. Vertex positions are relative to the quake
 -- origin so the caller can position the whole Model by entity origin.
-function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instance, name: string): Model
+function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instance, name: string): (Model, { AnimEntry })
+	local animOut: { AnimEntry } = {}
 	if not worldmesh.canUseMeshApi() then
-		return worldmesh.buildWedges(model, pal, parent, name)
+		return worldmesh.buildWedges(model, pal, parent, name), animOut
 	end
 	local data = model.brush
 
@@ -103,11 +142,11 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			-- memory budget exhausted: fall back to wedges for the rest
 			warn("[robloquake] EditableMesh budget exhausted; falling back to wedges")
 			container:Destroy()
-			return worldmesh.buildWedges(model, pal, parent, name)
+			return worldmesh.buildWedges(model, pal, parent, name), {}
 		end
 
 		-- pass 1: gather face data and the batch bounding box
-		type FaceData = { pos: { Vector3 }, uv: { Vector2 }, light: { number } }
+		type FaceData = { pos: { Vector3 }, uv: { Vector2 }, layers: { { { number } }? } }
 		local faceList: { FaceData } = {}
 		local mins = Vector3.new(math.huge, math.huge, math.huge)
 		local maxs = -mins
@@ -118,7 +157,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			local texW = if tex then tex.width else 64
 			local texH = if tex then tex.height else 64
 
-			local fd: FaceData = { pos = {}, uv = {}, light = {} }
+			local fd: FaceData = { pos = {}, uv = {}, layers = {} }
 			for e = 0, surf.numedges - 1 do
 				local se = data.surfedges[surf.firstedge + e + 1]
 				local v: vector
@@ -136,7 +175,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				maxs = maxs:Max(rp)
 				table.insert(fd.pos, rp)
 				table.insert(fd.uv, Vector2.new(s / texW, t / texH))
-				table.insert(fd.light, sampleLight(data, surf, s, t))
+				fd.layers[#fd.pos] = sampleLightStyles(data, surf, s, t)
 			end
 			table.insert(faceList, fd)
 		end
@@ -144,6 +183,9 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		-- pass 2: build the mesh with vertices centered on the batch origin,
 		-- so the part pivot (mesh bounds center) is exactly (mins+maxs)/2
 		local center = (mins + maxs) / 2
+		-- rank = nth AddColor call; used to remap ids onto the fixed copy
+		local pendingAnim: { { rank: number, layers: { { number } } } } = {}
+		local colorRank = 0
 		for _, fd in faceList do
 			local vids = {}
 			local uvids = {}
@@ -151,8 +193,20 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			for i, rp in fd.pos do
 				table.insert(vids, em:AddVertex(rp - center))
 				table.insert(uvids, em:AddUV(fd.uv[i]))
-				local light = fd.light[i]
-				table.insert(cids, em:AddColor(Color3.new(light, light, light), 1))
+				local layers = fd.layers[i]
+				local light = combineLight(layers, baseStyleValue)
+				local cid = em:AddColor(Color3.new(light, light, light), 1)
+				colorRank += 1
+				table.insert(cids, cid)
+				if layers then
+					-- animated if any layer's style is non-zero (style 0 is constant)
+					for _, sv in layers do
+						if sv[1] ~= 0 then
+							table.insert(pendingAnim, { rank = colorRank, layers = layers })
+							break
+						end
+					end
+				end
 			end
 			-- quake winds clockwise from the front; roblox fronts are CCW
 			for k = 3, #vids do
@@ -183,6 +237,18 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		end
 		local part = partOrErr :: MeshPart
 		retainMesh(container, fixed)
+
+		-- remap animated colors onto the fixed copy: GetColors returns ids in
+		-- creation order, so the nth AddColor call maps to newIds[n]
+		if #pendingAnim > 0 then
+			local newIds = fixed:GetColors()
+			for _, entry in pendingAnim do
+				local newId = newIds[entry.rank]
+				if newId then
+					table.insert(animOut, { em = fixed, cid = newId, layers = entry.layers })
+				end
+			end
+		end
 		part.Name = if tex then tex.name else tostring(miptex)
 		part.Anchored = true
 		part.CanCollide = false
@@ -207,7 +273,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 
 	container.Parent = parent
-	return container
+	return container, animOut
 end
 
 -- Fallback when the Mesh & Image APIs are disabled: draw every face as
@@ -246,7 +312,7 @@ function worldmesh.buildWedges(model: bsp.Model, pal: textures.Palette, parent: 
 			end
 			local s = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
 			local t = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
-			lightSum += sampleLight(data, surf, s, t)
+			lightSum += combineLight(sampleLightStyles(data, surf, s, t), baseStyleValue)
 			lightN += 1
 			table.insert(verts, qcoords.toRoblox(v))
 		end

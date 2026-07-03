@@ -25,6 +25,11 @@ export type ModelDef = {
 	flags: number,
 	skinImages: { EditableImage }?,
 	spriteImages: { EditableImage }?,
+	-- translated player skins by colors byte (shirt/pants)
+	translatedSkins: { [number]: EditableImage }?,
+	skinPixels: buffer?, -- kept for building translations
+	skinW: number?,
+	skinH: number?,
 	palRef: any?, -- palette, kept for fallback tinting
 }
 
@@ -38,6 +43,7 @@ export type RenderEnt = {
 	vids: { number }?, -- vertex ids by mdl vertex index (front + back seam copies)
 	backVids: { number }?,
 	lastFrame: number,
+	lastSkinKey: number?,
 	-- sprite
 	billboardPart: Part?,
 	billboardImage: ImageLabel?,
@@ -229,7 +235,8 @@ function entrender.updateAlias(
 	frame: number,
 	skinnum: number,
 	syncbase: number,
-	time: number
+	time: number,
+	colors: number? -- player shirt/pants byte for colormapped entities
 )
 	if re.kind == "aliasbox" then
 		local part = re.billboardPart :: Part
@@ -262,10 +269,33 @@ function entrender.updateAlias(
 		end
 	end
 
-	-- skins
-	local skinImages = def.skinImages
-	if skinImages and skinImages[skinnum + 1] and re.modelindex ~= skinnum + 1000000 then
-		part.TextureContent = Content.fromObject(skinImages[skinnum + 1])
+	-- skins (player entities get color-translated variants)
+	local wantSkinKey = (skinnum + 1) + (if colors then (colors + 1) * 1000 else 0)
+	if re.lastSkinKey ~= wantSkinKey then
+		re.lastSkinKey = wantSkinKey
+		local img: EditableImage? = nil
+		if colors and def.translatedSkins and def.skinPixels then
+			local cache = def.translatedSkins :: { [number]: EditableImage }
+			img = cache[colors]
+			if not img then
+				local translated = textures.translatePixels(
+					def.skinPixels :: buffer,
+					(def.skinW :: number) * (def.skinH :: number),
+					colors
+				)
+				img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
+				if img then
+					cache[colors] = img
+				end
+			end
+		end
+		if not img then
+			local skinImages = def.skinImages
+			img = if skinImages then skinImages[skinnum + 1] else nil
+		end
+		if img then
+			part.TextureContent = Content.fromObject(img)
+		end
 	end
 
 	-- entity angles: pitch, yaw, roll (quake degrees). Alias models pitch
@@ -397,6 +427,11 @@ function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 			end
 		end
 		def.skinImages = imgs
+		local skin1 = am.skins[1]
+		def.skinPixels = if skin1.group then (skin1.frames :: { buffer })[1] else skin1.pixels :: buffer
+		def.skinW = am.skinwidth
+		def.skinH = am.skinheight
+		def.translatedSkins = {}
 	elseif def.kind == "sprite" then
 		local sm = def.sprite :: spr.SpriteModel
 		local imgs: { EditableImage } = {}

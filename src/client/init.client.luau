@@ -18,12 +18,15 @@ local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
 local sprlib = require(engine.models.spr)
 local cllib = require(engine.client.cl)
+local proto = require(engine.protocol)
 local qcoords = require(engine.client.qcoords)
 
 local entrender = require(script.render.entrender)
+local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
 local worldmesh = require(script.render.worldmesh)
 local hudlib = require(script.hud)
+local soundlib = require(script.sound)
 local input = require(script.input)
 local viewlib = require(script.view)
 
@@ -97,12 +100,18 @@ entFolder.Name = "QuakeEnts"
 entFolder.Parent = Workspace
 
 local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
+local psys = particleslib.new(pal, Workspace)
+local snd = soundlib.new(Workspace)
 
 -- model definitions by precache index
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
 local worldModels: { bsplib.Model } = {}
+
+-- animated lightstyle vertices across all built brush geometry
+local lightAnim: { worldmesh.AnimEntry } = {}
+local styleValues: { [number]: number } = {}
 
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
 local staticEnts: { entrender.RenderEnt } = {}
@@ -123,7 +132,11 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 		local sub = tonumber(name:sub(2)) :: number
 		local template = brushTemplates[name]
 		if not template and worldModels[sub + 1] then
-			template = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
+			local anim
+			template, anim = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
+			for _, e in anim do
+				table.insert(lightAnim, e)
+			end
 			brushTemplates[name] = template
 		end
 		def = { kind = "brush", flags = 0, brushModel = template }
@@ -165,6 +178,7 @@ c.onServerInfo = function()
 	print(`[cl] serverinfo: {c.levelname}`)
 	worldFolder:ClearAllChildren()
 	entFolder:ClearAllChildren()
+	soundlib.clear(snd)
 	table.clear(modelDefs)
 	table.clear(brushTemplates)
 	table.clear(renderEnts)
@@ -176,8 +190,13 @@ c.onServerInfo = function()
 	local buf = vfslib.loadFile(fs, worldName)
 	assert(buf, "world bsp missing: " .. worldName)
 	worldModels = bsplib.load(worldName, buf)
-	worldmesh.build(worldModels[1], pal, worldFolder, "world")
-	print(`[cl] world built: {worldName}`)
+	table.clear(lightAnim)
+	table.clear(styleValues)
+	local _world, anim = worldmesh.build(worldModels[1], pal, worldFolder, "world")
+	for _, e in anim do
+		table.insert(lightAnim, e)
+	end
+	print(`[cl] world built: {worldName} ({#lightAnim} animated light verts)`)
 end
 
 c.print = function(s: string)
@@ -189,6 +208,63 @@ c.centerPrint = function(s: string)
 end
 c.onSetAngle = function(_c, angles)
 	input.setAngles(angles)
+end
+c.onParticle = function(_c, org, dir, color, count)
+	particleslib.runEffect(psys, org, dir, color, count, c.time)
+end
+c.onSound = function(_c, entnum, channel, sample, pos, vol, atten)
+	soundlib.start(snd, entnum, channel, sample, pos, vol, atten)
+end
+c.onStaticSound = function(_c, pos, sample, vol, atten)
+	soundlib.static(snd, pos, sample, vol, atten)
+end
+
+-- CL_ParseTEnt: temp entity events → particle effects; beams as brief
+-- neon rods (sounds come with the audio pass)
+local beamFolder = Instance.new("Folder")
+beamFolder.Name = "QuakeBeams"
+beamFolder.Parent = Workspace
+
+local function spawnBeam(p1: vector, p2: vector)
+	local a = qcoords.toRoblox(p1)
+	local b = qcoords.toRoblox(p2)
+	local len = (b - a).Magnitude
+	if len < 0.1 then
+		return
+	end
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = Color3.fromRGB(160, 170, 255)
+	part.Size = Vector3.new(0.35, 0.35, len)
+	part.CFrame = CFrame.lookAt((a + b) / 2, b)
+	part.Parent = beamFolder
+	task.delay(0.12, function()
+		part:Destroy()
+	end)
+end
+
+c.onTempEntity = function(_c, te)
+	if te.type == proto.TE_SPIKE then
+		particleslib.runEffect(psys, te.pos, vector.zero, 0, 10, c.time)
+	elseif te.type == proto.TE_SUPERSPIKE or te.type == proto.TE_GUNSHOT then
+		particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, c.time)
+	elseif te.type == proto.TE_EXPLOSION or te.type == proto.TE_EXPLOSION2 or te.type == proto.TE_TAREXPLOSION then
+		particleslib.explosion(psys, te.pos, c.time)
+	elseif te.type == proto.TE_WIZSPIKE then
+		particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, c.time)
+	elseif te.type == proto.TE_KNIGHTSPIKE then
+		particleslib.runEffect(psys, te.pos, vector.zero, 226, 20, c.time)
+	elseif te.type == proto.TE_LAVASPLASH then
+		particleslib.lavaSplash(psys, te.pos, c.time)
+	elseif te.type == proto.TE_TELEPORT then
+		particleslib.teleportSplash(psys, te.pos, c.time)
+	elseif te.pos2 then
+		spawnBeam(te.pos, te.pos2 :: vector)
+	end
 end
 c.onDisconnect = function()
 	print("[cl] disconnected")
@@ -215,6 +291,7 @@ end
 -- frame loop
 
 local sendAccumulator = 0
+local lastStyleFrame = -1
 local diagAccumulator = 0
 local statics_spawned = false
 
@@ -265,6 +342,42 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local def = getModelDef(mi)
 		return if def then def.flags else 0
 	end)
+
+	-- R_AnimateLight: lightstyle values tick at 10Hz from the style strings
+	local styleFrame = math.floor(c.time * 10)
+	if styleFrame ~= lastStyleFrame and #lightAnim > 0 then
+		lastStyleFrame = styleFrame
+		workspace:SetAttribute("RQ_LightTick", styleFrame)
+		local changed: { [number]: boolean } = {}
+		for style, map in c.lightstyles do
+			local value
+			if #map == 0 then
+				value = 256
+			else
+				value = (map:byte(styleFrame % #map + 1) - 97) * 22 -- 'a'
+			end
+			if styleValues[style] ~= value then
+				styleValues[style] = value
+				changed[style] = true
+			end
+		end
+		local function styleValue(style: number): number
+			return styleValues[style] or worldmesh.BASE_STYLE_VALUE
+		end
+		for _, entry in lightAnim do
+			local dirty = false
+			for _, sv in entry.layers do
+				if changed[sv[1]] then
+					dirty = true
+					break
+				end
+			end
+			if dirty then
+				local light = worldmesh.combineLight(entry.layers, styleValue)
+				entry.em:SetColor(entry.cid, Color3.new(light, light, light))
+			end
+		end
+	end
 
 	-- statics (once, after signon)
 	if not statics_spawned and #c.statics > 0 then
@@ -324,7 +437,11 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local def = getModelDef(e.modelindex) :: entrender.ModelDef
 		local rr = re :: entrender.RenderEnt
 		if rr.kind == "alias" then
-			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time)
+			local colors: number? = nil
+			if e.colormap > 0 and e.colormap <= c.maxclients and c.scores[e.colormap] then
+				colors = c.scores[e.colormap].colors
+			end
+			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
 		elseif rr.kind == "sprite" then
 			entrender.updateSprite(rr, def, e.origin, e.frame)
 		elseif rr.kind == "brush" then
@@ -358,6 +475,9 @@ RunService.Heartbeat:Connect(function(dt: number)
 	elseif gunEnt then
 		setEntVisible(gunEnt, false)
 	end
+
+	-- particles
+	particleslib.update(psys, c.time, dt)
 
 	-- hud
 	hudlib.update(hud, c)

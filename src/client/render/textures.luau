@@ -73,6 +73,35 @@ function textures.createImage(pixels: buffer, width: number, height: number, pal
 	return img
 end
 
+-- Player color translation (CL_NewTranslation): shirt row 16-31 and pants
+-- row 96-111 are remapped from the top/bottom color ranges. Backwards
+-- ranges (>= 128) are reversed.
+function textures.translatePixels(pixels: buffer, count: number, colors: number): buffer
+	local top = bit32.band(colors, 0xf0)
+	local bottom = bit32.lshift(bit32.band(colors, 15), 4)
+	local translate = table.create(256)
+	for i = 0, 255 do
+		translate[i + 1] = i
+	end
+	for i = 0, 15 do
+		if top < 128 then
+			translate[16 + i + 1] = top + i
+		else
+			translate[16 + i + 1] = top + 15 - i
+		end
+		if bottom < 128 then
+			translate[96 + i + 1] = bottom + i
+		else
+			translate[96 + i + 1] = bottom + 15 - i
+		end
+	end
+	local out = buffer.create(count)
+	for i = 0, count - 1 do
+		buffer.writeu8(out, i, translate[buffer.readu8(pixels, i) + 1])
+	end
+	return out
+end
+
 -- Average color of a palettized image (fallback tint when images are
 -- unavailable).
 function textures.averageColor(pixels: buffer, count: number, pal: Palette): Color3
