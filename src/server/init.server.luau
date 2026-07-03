@@ -91,6 +91,17 @@ svr.print = function(s: string)
 	print("[sv] " .. s)
 end
 
+-- game-rule cvars from asset-folder attributes, applied before the world
+-- spawns so QC sees them (deathmatch spawn points, item rules, skill)
+local cvarlib = require(engine.common.cvar)
+for _, name in { "deathmatch", "coop", "skill", "fraglimit", "timelimit" } do
+	local v = assets:GetAttribute(name)
+	if typeof(v) == "number" then
+		cvarlib.setValue(svr.cvars, name, v)
+		print(`[robloquake] {name} = {v}`)
+	end
+end
+
 host.spawnServer(svr, START_MAP)
 assert(svr.active, "server failed to spawn")
 _G.RQ_SERVER = svr -- studio debugging access
