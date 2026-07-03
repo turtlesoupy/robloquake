@@ -234,7 +234,7 @@ c.onServerInfo = function()
 end
 
 c.print = function(s: string)
-	hudlib.print(hud, s)
+	hudlib.print(hud, s, c.time)
 	consolelib.print(con, s)
 	print("[q] " .. s)
 end
@@ -288,7 +288,7 @@ mnu.onQuit = function()
 end
 mnu.print = function(s: string)
 	consolelib.print(con, s)
-	hudlib.print(hud, s)
+	hudlib.print(hud, s, c.time)
 end
 c.centerPrint = function(s: string)
 	hudlib.centerPrint(hud, s, c.time)

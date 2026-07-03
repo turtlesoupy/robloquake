@@ -11,6 +11,7 @@ local vfslib = require(engine.common.vfs)
 local cllib = require(engine.client.cl)
 
 local textures = require(script.Parent.render.textures)
+local confontlib = require(script.Parent.render.confont)
 
 local hud = {}
 
@@ -46,10 +47,14 @@ export type Hud = {
 	itemIcons: { ImageLabel },
 	sigilIcons: { ImageLabel },
 	countDigits: { { ImageLabel } }, -- 4 ammo types x 3 small digits
-	centerLabel: TextLabel,
-	consoleLabel: TextLabel,
+	font: confontlib.Font?,
+	centerFrame: Frame,
+	centerRows: { confontlib.TextRow },
+	centerLines: { string },
+	centerStart: number,
 	centerTime: number,
-	consoleLines: { string },
+	notifyRows: { confontlib.TextRow },
+	notifyLines: { { text: string, expire: number } },
 	conchars: buffer?,
 	charPics: { [number]: EditableImage? },
 	pal: textures.Palette,
@@ -142,7 +147,11 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.charPics = {}
 	h.pal = pal
 	h.centerTime = 0
-	h.consoleLines = {}
+	h.centerStart = 0
+	h.centerRows = {}
+	h.centerLines = {}
+	h.notifyRows = {}
+	h.notifyLines = {}
 
 	local wadbuf = vfslib.loadFile(fs, "gfx.wad")
 	assert(wadbuf, "gfx.wad missing")
@@ -191,34 +200,31 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		h.sigilIcons[i + 1] = makeLabel(canvas, 288 + i * 8, 8, 8, 16)
 	end
 
-	-- text overlays
-	local centerLabel = Instance.new("TextLabel")
-	centerLabel.Name = "centerprint"
-	centerLabel.BackgroundTransparency = 1
-	centerLabel.Font = Enum.Font.Code
-	centerLabel.TextColor3 = Color3.fromRGB(200, 160, 120)
-	centerLabel.TextSize = 24
-	centerLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-	centerLabel.Position = UDim2.new(0.5, 0, 0.35, 0)
-	centerLabel.Size = UDim2.new(0.8, 0, 0.3, 0)
-	centerLabel.Text = ""
-	centerLabel.TextWrapped = true
-	centerLabel.Parent = gui
-	h.centerLabel = centerLabel
+	-- text overlays in the conchars font
+	h.font = if h.conchars then confontlib.new(h.conchars, pal) else nil
 
-	local consoleLabel = Instance.new("TextLabel")
-	consoleLabel.Name = "console"
-	consoleLabel.BackgroundTransparency = 1
-	consoleLabel.Font = Enum.Font.Code
-	consoleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-	consoleLabel.TextSize = 16
-	consoleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	consoleLabel.TextYAlignment = Enum.TextYAlignment.Top
-	consoleLabel.Position = UDim2.new(0, 8, 0, 8)
-	consoleLabel.Size = UDim2.new(0.7, 0, 0, 120)
-	consoleLabel.Text = ""
-	consoleLabel.Parent = gui
-	h.consoleLabel = consoleLabel
+	-- Con_DrawNotify: the last 4 console lines at the top-left, 8px rows,
+	-- first column indented one character like (x+1)<<3. Shifted below the
+	-- Roblox topbar inset, which would otherwise cover them.
+	local inset = game:GetService("GuiService"):GetGuiInset()
+	local NOTIFY_COLS = 64
+	for i = 1, 4 do
+		local rowFrame = Instance.new("Frame")
+		rowFrame.Name = "notify" .. i
+		rowFrame.BackgroundTransparency = 1
+		rowFrame.Position = UDim2.fromOffset(8 * SCALE, inset.Y + (i - 1) * 8 * SCALE)
+		rowFrame.Size = UDim2.fromOffset(NOTIFY_COLS * 8 * SCALE, 8 * SCALE)
+		rowFrame.Parent = gui
+		h.notifyRows[i] = confontlib.newRow(rowFrame, NOTIFY_COLS, SCALE)
+	end
+
+	-- SCR_DrawCenterString rows are (re)built per message
+	local centerFrame = Instance.new("Frame")
+	centerFrame.Name = "centerprint"
+	centerFrame.BackgroundTransparency = 1
+	centerFrame.Size = UDim2.new(1, 0, 1, 0)
+	centerFrame.Parent = gui
+	h.centerFrame = centerFrame
 
 	-- stash the wad for update-time pic loads
 	;(h :: any)._wad = w
@@ -250,22 +256,63 @@ local function drawNum(h: Hud, labels: { ImageLabel }, baseX: number, num: numbe
 	end
 end
 
+-- SCR_CenterPrint + SCR_DrawCenterString: lines centered per-line, block
+-- starting at 0.35*height (<=4 lines) or y=48
 function hud.centerPrint(h: Hud, s: string, time: number)
-	h.centerLabel.Text = (s:gsub("[\1\2]", ""))
-	h.centerTime = time + 2
+	local font = h.font
+	if not font then
+		return
+	end
+	table.clear(h.centerLines)
+	for line in (s .. "\n"):gmatch("([^\n]*)\n") do
+		table.insert(h.centerLines, line)
+	end
+	while #h.centerLines > 0 and h.centerLines[#h.centerLines] == "" do
+		table.remove(h.centerLines)
+	end
+	h.centerFrame:ClearAllChildren()
+	table.clear(h.centerRows)
+	local n = #h.centerLines
+	for i, line in h.centerLines do
+		local w = math.max(#line, 1) * 8 * SCALE
+		local rowFrame = Instance.new("Frame")
+		rowFrame.BackgroundTransparency = 1
+		if n <= 4 then
+			rowFrame.Position = UDim2.new(0.5, -w / 2, 0.35, (i - 1) * 8 * SCALE)
+		else
+			rowFrame.Position = UDim2.new(0.5, -w / 2, 0, (48 + (i - 1) * 8) * SCALE)
+		end
+		rowFrame.Size = UDim2.fromOffset(w, 8 * SCALE)
+		rowFrame.Parent = h.centerFrame
+		local row = confontlib.newRow(rowFrame, math.max(#line, 1), SCALE)
+		confontlib.setRow(font, row, line)
+		h.centerRows[i] = row
+	end
+	h.centerStart = time
+	h.centerTime = time + 2 -- scr_centertime
+	h.centerFrame.Visible = true
 end
 
-function hud.print(h: Hud, s: string)
-	local clean = s:gsub("[\128-\255]", function(ch)
-		return string.char(bit32.band(ch:byte(), 127))
-	end)
-	for line in clean:gmatch("[^\n]+") do
-		table.insert(h.consoleLines, line)
+local function refreshNotify(h: Hud)
+	local font = h.font
+	if not font then
+		return
 	end
-	while #h.consoleLines > 6 do
-		table.remove(h.consoleLines, 1)
+	for i = 1, 4 do
+		local item = h.notifyLines[i]
+		confontlib.setRow(font, h.notifyRows[i], if item then item.text else "")
 	end
-	h.consoleLabel.Text = table.concat(h.consoleLines, "\n")
+end
+
+-- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs
+function hud.print(h: Hud, s: string, time: number?)
+	for line in s:gmatch("[^\n]+") do
+		table.insert(h.notifyLines, { text = line, expire = (time or 0) + 3 }) -- con_notifytime
+	end
+	while #h.notifyLines > 4 do
+		table.remove(h.notifyLines, 1)
+	end
+	refreshNotify(h)
 end
 
 local WEAPON_NAMES = { "shotgun", "sshotgun", "nailgun", "snailgun", "rlaunch", "srlaunch", "lightng" }
@@ -402,8 +449,32 @@ function hud.update(h: Hud, c: cllib.Client)
 		end
 	end
 
-	if h.centerTime > 0 and c.time > h.centerTime then
-		h.centerLabel.Text = ""
+	-- notify lines age out after con_notifytime
+	local pruned = false
+	for i = #h.notifyLines, 1, -1 do
+		if c.time > h.notifyLines[i].expire then
+			table.remove(h.notifyLines, i)
+			pruned = true
+		end
+	end
+	if pruned then
+		refreshNotify(h)
+	end
+
+	-- the finale prints its centerstring one character at a time
+	-- (scr_printspeed); outside intermission everything shows at once
+	local font = h.font
+	if h.centerFrame.Visible and c.intermission ~= 0 and font then
+		local remaining = math.floor(8 * (c.time - h.centerStart))
+		for i, line in h.centerLines do
+			local shown = math.clamp(remaining, 0, #line)
+			confontlib.setRow(font, h.centerRows[i], line:sub(1, shown))
+			remaining -= shown
+		end
+	end
+
+	if h.centerTime > 0 and c.time > h.centerTime and c.intermission == 0 then
+		h.centerFrame.Visible = false
 		h.centerTime = 0
 	end
 end
