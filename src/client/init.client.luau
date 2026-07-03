@@ -407,13 +407,52 @@ local function keyToChar(key: Enum.KeyCode, shifted: boolean): string?
 	if b < 32 or b >= 127 then
 		return nil
 	end
+	-- GetStringForKeyCode reports letters uppercase; the console types
+	-- lowercase unless shift is held (key_console behaviour)
+	if str:match("%a") then
+		return if shifted then str:upper() else str:lower()
+	end
 	if shifted then
-		if str:match("%l") then
-			return str:upper()
-		end
 		return SHIFT_MAP[str] or str
 	end
 	return str
+end
+
+-- debug hook: drive the console remotely (verification without keypresses)
+local dbgConsole = Instance.new("BindableFunction")
+dbgConsole.Name = "RQDBG_Console"
+dbgConsole.Parent = workspace
+local lastKeyInfo = ""
+
+local function consoleKey(key: Enum.KeyCode)
+	local fake = { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard }
+	if consolelib.handleKey(con, fake :: any) then
+		local shifted = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+		local ch = keyToChar(key, shifted)
+		lastKeyInfo = ("key=%s char=%s"):format(key.Name, tostring(ch))
+		if ch then
+			consolelib.handleText(con, ch)
+		end
+	end
+end
+
+dbgConsole.OnInvoke = function(action: string, arg: string?)
+	if action == "toggle" then
+		consolelib.toggle(con)
+		refreshInputMode()
+		return tostring(con.open)
+	elseif action == "key" then
+		consoleKey((Enum.KeyCode :: any)[arg])
+		return con.inputText
+	elseif action == "text" then
+		return con.inputText
+	elseif action == "lastkey" then
+		return lastKeyInfo
+	elseif action == "lines" then
+		return table.concat(con.lines, "\n")
+	end
+	return ""
 end
 
 UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolean)
@@ -421,6 +460,7 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 	local key = io.KeyCode
+	lastKeyInfo = ("raw key=%s processed=%s conOpen=%s"):format(key.Name, tostring(_processed), tostring(con.open))
 
 	-- tilde/backquote toggles the console from anywhere
 	if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
@@ -430,15 +470,7 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 	end
 
 	if con.open then
-		if consolelib.handleKey(con, io) then
-			-- also feed printable characters
-			local shifted = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-				or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-			local ch = keyToChar(key, shifted)
-			if ch then
-				consolelib.handleText(con, ch)
-			end
-		end
+		consoleKey(key)
 		return
 	end
 
