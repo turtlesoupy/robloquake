@@ -10,9 +10,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
-local base64 = require(engine.common.base64)
 local mathlib = require(engine.common.mathlib)
-local paklib = require(engine.common.pak)
 local vfslib = require(engine.common.vfs)
 local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
@@ -34,41 +32,15 @@ local input = require(script.input)
 local viewlib = require(script.view)
 
 --------------------------------------------------------------------------
--- filesystem from synced assets
+-- filesystem from the server-published client bundle (gfx + precached
+-- models + current map); the full paks stay server-side
 
-local function loadPak(gameFolder: Instance, pakName: string): paklib.Pack?
-	local pakFolder = gameFolder:FindFirstChild(pakName)
-	if not pakFolder then
-		return nil
-	end
-	local chunks = {}
-	for _, child in pakFolder:GetChildren() do
-		table.insert(chunks, child)
-	end
-	table.sort(chunks, function(a, b)
-		return a.Name < b.Name
-	end)
-	local parts = table.create(#chunks)
-	for _, chunk in chunks do
-		table.insert(parts, (chunk :: StringValue).Value)
-	end
-	return paklib.load(`{gameFolder.Name}/{pakName}.pak`, base64.decode(table.concat(parts)))
+local clientAssets = ReplicatedStorage:WaitForChild("QuakeClientFS")
+while clientAssets:GetAttribute("ready") ~= true do
+	clientAssets.AttributeChanged:Wait()
 end
-
-local assets = ReplicatedStorage:WaitForChild("QuakeAssets")
-local id1 = assets:WaitForChild("id1")
-local gameDir = assets:GetAttribute("game")
-if typeof(gameDir) ~= "string" then
-	gameDir = "id1"
-end
-local gameFolder = assets:WaitForChild(gameDir)
 local fs = vfslib.new()
-for _, pakName in { "pak0", "pak1" } do
-	local pack = loadPak(gameFolder, pakName)
-	if pack then
-		vfslib.addPack(fs, pack)
-	end
-end
+vfslib.addFolderSource(fs, clientAssets)
 
 local palbuf = vfslib.loadFile(fs, "gfx/palette.lmp")
 assert(palbuf, "gfx/palette.lmp missing")
@@ -180,7 +152,7 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 		end
 		def = { kind = "brush", flags = 0, brushModel = template }
 	elseif name:sub(-4) == ".mdl" then
-		local buf = vfslib.loadFile(fs, name)
+		local buf = vfslib.loadFile(fs, name, true)
 		if not buf then
 			def = { kind = "none", flags = 0 }
 		else
@@ -189,7 +161,7 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			entrender.prepareImages(def, pal)
 		end
 	elseif name:sub(-4) == ".spr" then
-		local buf = vfslib.loadFile(fs, name)
+		local buf = vfslib.loadFile(fs, name, true)
 		if not buf then
 			def = { kind = "none", flags = 0 }
 		else
@@ -226,7 +198,7 @@ c.onServerInfo = function()
 	gunModelIndex = 0
 
 	local worldName = c.model_precache[2]
-	local buf = vfslib.loadFile(fs, worldName)
+	local buf = vfslib.loadFile(fs, worldName, true)
 	assert(buf, "world bsp missing: " .. worldName)
 	worldModels = bsplib.load(worldName, buf)
 	table.clear(lightAnim)
@@ -686,7 +658,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 		if ge then
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
 			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
-			entrender.setLight(ge, lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor))
+			-- R_DrawViewModel: "allways give some light on gun"
+			entrender.setLight(ge, math.max(lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor), 24))
 		end
 	elseif gunEnt then
 		setEntVisible(gunEnt, false)

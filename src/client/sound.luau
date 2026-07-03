@@ -2,7 +2,7 @@
 -- Sound — S_StartSound / S_StaticSound semantics over Roblox Sound
 -- instances. Roblox cannot synthesize PCM at runtime, so samples must be
 -- uploaded as audio assets (tools/upload_sounds.py) and mapped by name in
--- ReplicatedStorage.QuakeAssets.soundmap (a StringValue of JSON
+-- ReplicatedStorage.QuakeClientFS.soundmap (a StringValue of JSON
 -- { ["weapons/guncock.wav"] = "rbxassetid://..." }). Without the map,
 -- everything no-ops quietly.
 
@@ -30,7 +30,7 @@ function sound.new(parent: Instance): System
 	folder.Parent = parent
 
 	local map: { [string]: string } = {}
-	local assets = ReplicatedStorage:FindFirstChild("QuakeAssets")
+	local assets = ReplicatedStorage:FindFirstChild("QuakeClientFS")
 	local mapValue = assets and assets:FindFirstChild("soundmap")
 	if mapValue and mapValue:IsA("StringValue") and #mapValue.Value > 2 then
 		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, mapValue.Value)

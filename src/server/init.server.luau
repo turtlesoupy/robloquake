@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -18,7 +19,8 @@ local svlib = require(engine.server.sv)
 
 -- start map: attribute override, else per-game default
 
--- reassemble pak files from base64 chunk StringValues
+-- reassemble pak files from base64 chunk StringValues; decode chunk-wise
+-- with yields so the live-server script watchdog never triggers
 local function loadPak(gameFolder: Instance, pakName: string): pak.Pack?
 	local pakFolder = gameFolder:FindFirstChild(pakName)
 	if not pakFolder then
@@ -31,15 +33,29 @@ local function loadPak(gameFolder: Instance, pakName: string): pak.Pack?
 	table.sort(chunks, function(a, b)
 		return a.Name < b.Name
 	end)
-	local parts = table.create(#chunks)
-	for _, chunk in chunks do
-		table.insert(parts, (chunk :: StringValue).Value)
+	local total = 0
+	local lens = table.create(#chunks)
+	for i, chunk in chunks do
+		local n = base64.decodedLen((chunk :: StringValue).Value)
+		lens[i] = n
+		total += n
 	end
-	local data = base64.decode(table.concat(parts))
+	local data = buffer.create(total)
+	local pos = 0
+	for i, chunk in chunks do
+		base64.decodeInto((chunk :: StringValue).Value, data, pos)
+		pos += lens[i]
+		if i % 16 == 0 then
+			task.wait()
+		end
+	end
 	return pak.load(`{gameFolder.Name}/{pakName}.pak`, data)
 end
 
-local assets = ReplicatedStorage:WaitForChild("QuakeAssets")
+-- the full pak chunks live in ServerStorage so 200MB of pak data is never
+-- replicated to joining clients (that stalled published-game joins);
+-- a per-map client bundle is published to ReplicatedStorage instead
+local assets = ServerStorage:FindFirstChild("QuakeAssets") or ReplicatedStorage:WaitForChild("QuakeAssets")
 local gameDir = assets:GetAttribute("game")
 if typeof(gameDir) ~= "string" then
 	gameDir = "id1"
@@ -78,6 +94,74 @@ end
 host.spawnServer(svr, START_MAP)
 assert(svr.active, "server failed to spawn")
 _G.RQ_SERVER = svr -- studio debugging access
+
+-- client asset bundle: publish only what the renderer needs (gfx, the
+-- precached models/sprites, and the current map) instead of whole paks
+local clientFS = Instance.new("Folder")
+clientFS.Name = "QuakeClientFS"
+clientFS:SetAttribute("game", gameDir)
+clientFS.Parent = ReplicatedStorage
+
+local publishedFiles: { [string]: boolean } = {}
+local publishCount = 0
+
+local function publishFile(path: string)
+	if publishedFiles[path] then
+		return
+	end
+	publishedFiles[path] = true
+	local fbuf = vfs.loadFile(fsys, path)
+	if not fbuf then
+		return
+	end
+	local b64 = base64.encode(fbuf)
+	local fileFolder = Instance.new("Folder")
+	fileFolder.Name = path
+	local n = 0
+	for i = 1, #b64, 147000 do
+		n += 1
+		local sv = Instance.new("StringValue")
+		sv.Name = string.format("%04d", n)
+		sv.Value = b64:sub(i, i + 146999)
+		sv.Parent = fileFolder
+	end
+	fileFolder:SetAttribute("chunks", n)
+	fileFolder:SetAttribute("len", buffer.len(fbuf))
+	fileFolder.Parent = clientFS
+	publishCount += 1
+	if publishCount % 24 == 0 then
+		task.wait()
+	end
+end
+
+local function publishClientAssets()
+	publishFile("gfx.wad")
+	for _, sp in fsys.searchpaths do
+		local pack = sp.pack
+		if pack then
+			for _, entry in pack.entries do
+				if entry.name:sub(1, 4) == "gfx/" then
+					publishFile(entry.name)
+				end
+			end
+		end
+	end
+	for i = 2, #svr.model_precache do
+		local name = svr.model_precache[i]
+		if name:sub(1, 1) ~= "*" then
+			publishFile(name)
+		end
+	end
+	-- soundmap (uploaded asset ids) is a plain StringValue, mirrored as-is
+	local soundmap = assets:FindFirstChild("soundmap")
+	if soundmap and not clientFS:FindFirstChild("soundmap") then
+		soundmap:Clone().Parent = clientFS
+	end
+	clientFS:SetAttribute("ready", true)
+end
+
+publishClientAssets()
+print(`[robloquake] client bundle: {publishCount} files published`)
 
 -- player <-> client slot bridging
 local slotByPlayer: { [Player]: number } = {}
@@ -300,6 +384,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		svr.changelevelTo = nil
 		print(`[robloquake] changelevel to {nextLevel}`)
 		host.spawnServer(svr, nextLevel)
+		publishClientAssets() -- new map + newly precached models
 		for _, slot in slotByPlayer do
 			host.connectClient(svr, slot)
 		end
