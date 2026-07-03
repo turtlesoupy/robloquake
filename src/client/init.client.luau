@@ -104,6 +104,25 @@ cshiftFrame.Parent = overlayGui
 local con = consolelib.create(fs, pal, overlayGui)
 local mnu = menulib.create(fs, pal, overlayGui)
 
+-- SCR_DrawCrosshair: the conchars '+' glyph drawn with its top-left at the
+-- centre of the 3d view (the screen minus the 48-line status bar), gated by
+-- the crosshair cvar. WinQuake defaults it off; we default on.
+local confontlib = require(script.render.confont)
+local crosshairLabel = Instance.new("ImageLabel")
+crosshairLabel.Name = "crosshair"
+crosshairLabel.BackgroundTransparency = 1
+crosshairLabel.ResampleMode = Enum.ResamplerMode.Pixelated
+crosshairLabel.Size = UDim2.fromOffset(8 * 2, 8 * 2)
+crosshairLabel.Position = UDim2.new(0.5, 0, 0.5, -48)
+crosshairLabel.ZIndex = 0 -- under the console/menu
+do
+	local img = confontlib.glyph(con.font, string.byte("+"))
+	if img then
+		crosshairLabel.ImageContent = Content.fromObject(img)
+	end
+end
+crosshairLabel.Parent = overlayGui
+
 -- (Roblox CoreGui overlays stay enabled by request)
 
 -- model definitions by precache index
@@ -246,6 +265,12 @@ con.onCommand = function(line: string)
 		end
 	elseif cmd == "impulse" then
 		input.setImpulse(tonumber(args) or 0)
+	elseif cmd == "crosshair" then
+		local v = tonumber(args)
+		if v then
+			crosshairLabel.Visible = v ~= 0
+			consolelib.print(con, `"crosshair" is "{v}"`)
+		end
 	elseif cmd == "toggleconsole" then
 		consolelib.toggle(con)
 	elseif cmd == "version" then
