@@ -307,6 +307,25 @@ RunService.Heartbeat:Connect(function(dt: number)
 			ServerStorage:SetAttribute("SV_NearestDoor", bestDoor)
 			ServerStorage:SetAttribute("SV_NearestDoorDist", bestDist)
 
+			-- debug loadout: ServerStorage attribute SVDBG_SpawnGive (comma-
+			-- separated Host_Give specs, e.g. "7,r 100") re-applies whenever a
+			-- player lacks the first listed weapon — i.e. once per spawn, so
+			-- respawns and changelevels keep the loadout. Clear it to disable.
+			local giveSpec = ServerStorage:GetAttribute("SVDBG_SpawnGive")
+			if typeof(giveSpec) == "string" and giveSpec ~= "" then
+				local firstWeapon = tonumber(giveSpec:match("%d"))
+				local wbit = if firstWeapon and firstWeapon >= 2 and firstWeapon <= 8
+					then bit32.lshift(1, firstWeapon - 2)
+					else 0
+				for _, cl in svr.clients do
+					if cl.active and wbit ~= 0 and bit32.band(vmlib.edFloat(cl.edict, defs.ent.items), wbit) == 0 then
+						for spec in giveSpec:gmatch("[^,]+") do
+							host.clientCommand(svr, cl, "give " .. (spec:match("^%s*(.-)%s*$") :: string))
+						end
+					end
+				end
+			end
+
 			-- debug: fire the use function of a door by edict number (-1 = nearest)
 			local useReq = ServerStorage:GetAttribute("SVDBG_UseDoor")
 			if typeof(useReq) == "number" then
