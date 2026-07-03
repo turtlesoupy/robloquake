@@ -122,7 +122,13 @@ function console.handleKey(c: Console, input: InputObject): boolean
 		if line ~= "" then
 			table.insert(c.history, line)
 			c.historyPos = #c.history + 1
-			c.onCommand(line)
+			-- Cbuf_Execute: semicolons separate commands on one line
+			for cmd in line:gmatch("[^;]+") do
+				cmd = cmd:match("^%s*(.-)%s*$")
+				if cmd ~= "" then
+					c.onCommand(cmd)
+				end
+			end
 		end
 	elseif key == Enum.KeyCode.Backspace then
 		c.inputText = c.inputText:sub(1, -2)
