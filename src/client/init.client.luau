@@ -132,14 +132,7 @@ cshiftFrame.Parent = overlayGui
 local con = consolelib.create(fs, pal, overlayGui)
 local mnu = menulib.create(fs, pal, overlayGui)
 
--- hidden textbox for native text capture while the console is open
-local conInput = Instance.new("TextBox")
-conInput.Name = "conInput"
-conInput.BackgroundTransparency = 1
-conInput.TextTransparency = 1
-conInput.Size = UDim2.fromOffset(1, 1)
-conInput.ClearTextOnFocus = false
-conInput.Parent = overlayGui
+-- (Roblox CoreGui overlays stay enabled by request)
 
 -- model definitions by precache index
 local modelDefs: { [number]: entrender.ModelDef } = {}
@@ -390,12 +383,37 @@ local UserInputService = game:GetService("UserInputService")
 local function refreshInputMode()
 	local uiOpen = con.open or menulib.isOpen(mnu)
 	input.setEnabled(not uiOpen)
-	if con.open then
-		conInput.Text = ""
-		conInput:CaptureFocus()
-	else
-		conInput:ReleaseFocus()
+end
+
+-- console text entry straight from key codes (no TextBox: Roblox chat and
+-- CoreGui focus never get involved). GetStringForKeyCode gives the layout
+-- character; shifted punctuation mapped for US layouts.
+local SHIFT_MAP: { [string]: string } = {
+	["1"] = "!", ["2"] = "@", ["3"] = "#", ["4"] = "$", ["5"] = "%",
+	["6"] = "^", ["7"] = "&", ["8"] = "*", ["9"] = "(", ["0"] = ")",
+	["-"] = "_", ["="] = "+", ["["] = "{", ["]"] = "}", ["\\"] = "|",
+	[";"] = ":", ["'"] = "\"", [","] = "<", ["."] = ">", ["/"] = "?",
+}
+
+local function keyToChar(key: Enum.KeyCode, shifted: boolean): string?
+	local ok, str = pcall(UserInputService.GetStringForKeyCode, UserInputService, key)
+	if not ok or #str ~= 1 then
+		if key == Enum.KeyCode.Space then
+			return " "
+		end
+		return nil
 	end
+	local b = str:byte()
+	if b < 32 or b >= 127 then
+		return nil
+	end
+	if shifted then
+		if str:match("%l") then
+			return str:upper()
+		end
+		return SHIFT_MAP[str] or str
+	end
+	return str
 end
 
 UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolean)
@@ -403,22 +421,29 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 	local key = io.KeyCode
+
 	-- tilde/backquote toggles the console from anywhere
 	if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
 		consolelib.toggle(con)
 		refreshInputMode()
 		return
 	end
+
 	if con.open then
-		if key == Enum.KeyCode.Escape then
-			consolelib.toggle(con)
-			refreshInputMode()
-		else
-			consolelib.handleKey(con, io)
+		if consolelib.handleKey(con, io) then
+			-- also feed printable characters
+			local shifted = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+				or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+			local ch = keyToChar(key, shifted)
+			if ch then
+				consolelib.handleText(con, ch)
+			end
 		end
 		return
 	end
-	if key == Enum.KeyCode.Escape then
+
+	-- the Quake menu lives on M (Escape is reserved by Roblox for its own menu)
+	if key == Enum.KeyCode.M and not menulib.isOpen(mnu) then
 		menulib.toggle(mnu)
 		refreshInputMode()
 		return
@@ -427,22 +452,6 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		menulib.handleKey(mnu, io)
 		refreshInputMode()
 		return
-	end
-end)
-
--- textbox feeds the console input line (native shift/symbol handling)
-conInput:GetPropertyChangedSignal("Text"):Connect(function()
-	if con.open and conInput.Text ~= "" then
-		local txt = conInput.Text:gsub("[`~]", "")
-		consolelib.handleText(con, txt)
-		conInput.Text = ""
-	end
-end)
-conInput.FocusLost:Connect(function(enterPressed: boolean)
-	if con.open and enterPressed then
-		local fake = { KeyCode = Enum.KeyCode.Return }
-		consolelib.handleKey(con, fake :: any)
-		conInput:CaptureFocus()
 	end
 end)
 

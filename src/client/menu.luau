@@ -163,7 +163,7 @@ function menu.handleKey(m: Menu, input: InputObject): boolean
 	local key = input.KeyCode
 
 	if m.state == "help" then
-		if key == Enum.KeyCode.Escape then
+		if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.M then
 			m.state = "main"
 			m.helpPage.Visible = false
 			setMainVisible(m, true)
@@ -177,8 +177,8 @@ function menu.handleKey(m: Menu, input: InputObject): boolean
 		return true
 	end
 
-	-- main menu
-	if key == Enum.KeyCode.Escape then
+	-- main menu (M toggles; Escape is reserved by Roblox)
+	if key == Enum.KeyCode.M or key == Enum.KeyCode.Backspace then
 		menu.toggle(m)
 	elseif key == Enum.KeyCode.Up then
 		m.cursor = (m.cursor + MAIN_ITEMS - 1) % MAIN_ITEMS
