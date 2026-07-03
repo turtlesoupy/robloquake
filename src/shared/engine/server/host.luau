@@ -40,6 +40,13 @@ function host.newGame(fs: vfslib.Vfs, maxclients: number): svlib.Server
 		svr.clients[i] = svlib.newClient(i)
 	end
 	svr.setIdealPitch = sv_user.setIdealPitch
+
+	-- COM_CheckRegistered: the presence of gfx/pop.lmp marks the registered
+	-- version; QC reads cvar("registered") for episode/rune logic
+	if vfslib.fileLength(fs, "gfx/pop.lmp") > 0 then
+		cvarlib.setValue(svr.cvars, "registered", 1)
+		svr.print("Playing registered version.")
+	end
 	return svr
 end
 
