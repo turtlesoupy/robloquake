@@ -6,6 +6,25 @@ local AssetService = game:GetService("AssetService")
 
 local textures = {}
 
+-- probe once: are the Mesh & Image APIs available at this security level?
+local meshApiAvailable: boolean? = nil
+function textures.canUseMeshApi(): boolean
+	if meshApiAvailable == nil then
+		meshApiAvailable = pcall(function()
+			local em = AssetService:CreateEditableMesh()
+			local v1 = em:AddVertex(Vector3.zero)
+			local v2 = em:AddVertex(Vector3.xAxis)
+			local v3 = em:AddVertex(Vector3.yAxis)
+			em:AddTriangle(v1, v2, v3)
+			AssetService:CreateMeshPartAsync(Content.fromObject(em))
+		end)
+		if not meshApiAvailable then
+			warn("[robloquake] Mesh & Image APIs are disabled — using fallback rendering. Enable them in Game Settings → Security for full visuals.")
+		end
+	end
+	return meshApiAvailable :: boolean
+end
+
 export type Palette = { r: { number }, g: { number }, b: { number } }
 
 -- gfx/palette.lmp -> arrays (mirrors wad.parsePalette; duplicated here so
@@ -38,12 +57,36 @@ function textures.toRGBA(pixels: buffer, count: number, pal: Palette, alphaIndex
 	return out
 end
 
--- Create an EditableImage from palettized pixels.
-function textures.createImage(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): EditableImage
-	local img = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
-	local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
-	img:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+-- Create an EditableImage from palettized pixels. Returns nil when the
+-- Mesh & Image APIs are not enabled for the experience (Game Settings →
+-- Security); callers must tolerate untextured output.
+function textures.createImage(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): EditableImage?
+	local ok, img = pcall(function()
+		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
+		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+		return image
+	end)
+	if not ok then
+		return nil
+	end
 	return img
+end
+
+-- Average color of a palettized image (fallback tint when images are
+-- unavailable).
+function textures.averageColor(pixels: buffer, count: number, pal: Palette): Color3
+	local r, g, b = 0, 0, 0
+	local step = math.max(1, math.floor(count / 256))
+	local n = 0
+	for i = 0, count - 1, step do
+		local p = buffer.readu8(pixels, i)
+		r += pal.r[p + 1]
+		g += pal.g[p + 1]
+		b += pal.b[p + 1]
+		n += 1
+	end
+	return Color3.fromRGB(r / n, g / n, b / n)
 end
 
 return textures

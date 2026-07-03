@@ -41,8 +41,11 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		local img = textures.createImage(sbarPic.pixels, sbarPic.width, sbarPic.height, pal, true)
 		local sbar = Instance.new("ImageLabel")
 		sbar.Name = "sbar"
-		sbar.BackgroundTransparency = 1
-		sbar.ImageContent = Content.fromObject(img)
+		sbar.BackgroundTransparency = if img then 1 else 0.4
+		sbar.BackgroundColor3 = Color3.fromRGB(60, 50, 40)
+		if img then
+			sbar.ImageContent = Content.fromObject(img)
+		end
 		sbar.ResampleMode = Enum.ResamplerMode.Pixelated
 		sbar.AnchorPoint = Vector2.new(0.5, 1)
 		sbar.Position = UDim2.new(0.5, 0, 1, 0)

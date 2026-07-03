@@ -16,7 +16,7 @@ import pathlib
 import shutil
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CHUNK = 1_572_864  # 1.5MB decoded per chunk (2MB base64)
+CHUNK = 147_000  # per-chunk decoded size; base64 must stay under the 200k StringValue cap
 
 
 def build(source: pathlib.Path, game: str) -> None:

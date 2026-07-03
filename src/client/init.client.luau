@@ -204,13 +204,21 @@ camera.FieldOfView = 75
 input.init(90)
 input.lockMouse()
 
+-- announce readiness: the server connects us when it hears from us
+do
+	local hello = buffer.create(1)
+	buffer.writeu8(hello, 0, 1) -- clc_nop
+	reliable:FireServer(hello)
+end
+
 --------------------------------------------------------------------------
 -- frame loop
 
 local sendAccumulator = 0
+local diagAccumulator = 0
 local statics_spawned = false
 
-RunService.RenderStepped:Connect(function(dt: number)
+RunService.Heartbeat:Connect(function(dt: number)
 	-- pump inbound messages
 	if #inbound > 0 then
 		local queue = inbound
@@ -353,6 +361,27 @@ RunService.RenderStepped:Connect(function(dt: number)
 
 	-- hud
 	hudlib.update(hud, c)
+
+	-- diagnostics for external verification
+	diagAccumulator += dt
+	if diagAccumulator > 0.5 then
+		diagAccumulator = 0
+		local e = c.entities[c.viewentity]
+		local visible = 0
+		for i = 1, c.num_entities - 1 do
+			if c.entities[i] and c.entities[i].visible then
+				visible += 1
+			end
+		end
+		workspace:SetAttribute("RQ_Signon", c.signon)
+		workspace:SetAttribute("RQ_Time", c.time)
+		workspace:SetAttribute("RQ_Health", c.stats[cllib.STAT_HEALTH])
+		workspace:SetAttribute("RQ_Shells", c.stats[cllib.STAT_SHELLS])
+		workspace:SetAttribute("RQ_VisEnts", visible)
+		if e then
+			workspace:SetAttribute("RQ_Origin", qcoords.toRoblox(e.origin))
+		end
+	end
 end)
 
 print("[robloquake] client ready")

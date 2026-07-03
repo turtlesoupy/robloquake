@@ -367,6 +367,7 @@ end
 
 -- Host_ClientCommand dispatch (the clc_stringcmd cases SV_ReadClientMessage allows)
 function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
+	s = s:gsub("%s+$", "") -- strip trailing newline/spaces from the wire
 	local cmd, args = s:match("^(%S+)%s*(.*)$")
 	if not cmd then
 		return

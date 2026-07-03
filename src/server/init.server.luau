@@ -70,6 +70,7 @@ end
 
 host.spawnServer(svr, START_MAP)
 assert(svr.active, "server failed to spawn")
+_G.RQ_SERVER = svr -- studio debugging access
 
 -- player <-> client slot bridging
 local slotByPlayer: { [Player]: number } = {}
@@ -106,11 +107,8 @@ svr.onDropClient = function(_svr, client)
 	end
 end
 
-Players.PlayerAdded:Connect(connectPlayer)
-for _, player in Players:GetPlayers() do
-	task.spawn(connectPlayer, player)
-end
-
+-- clients announce readiness with a first message (their remote handlers
+-- must be live before the serverinfo is sent, so PlayerAdded is too early)
 Players.PlayerRemoving:Connect(function(player)
 	local slot = slotByPlayer[player]
 	if slot then
@@ -123,9 +121,16 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 local function onInbound(player: Player, data: unknown)
-	local slot = slotByPlayer[player]
-	if not slot or typeof(data) ~= "buffer" then
+	if typeof(data) ~= "buffer" then
 		return
+	end
+	local slot = slotByPlayer[player]
+	if not slot then
+		connectPlayer(player)
+		slot = slotByPlayer[player]
+		if not slot then
+			return
+		end
 	end
 	local client = svr.clients[slot]
 	if client.active then
@@ -136,11 +141,54 @@ reliable.OnServerEvent:Connect(onInbound)
 unreliable.OnServerEvent:Connect(onInbound)
 
 -- frame loop: Quake host frames clamped like host.c (max 0.1s per tick)
+local vmlib = require(engine.progs.vm)
+local defs = require(engine.progs.defs)
+local diagAccum = 0
 RunService.Heartbeat:Connect(function(dt: number)
 	if not svr.active then
 		return
 	end
 	host.frame(svr, math.clamp(dt, 0.001, 0.1))
+
+	diagAccum += dt
+	if diagAccum > 0.5 then
+		diagAccum = 0
+		local ServerStorage = game:GetService("ServerStorage")
+		ServerStorage:SetAttribute("SV_Time", svr.time)
+		ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+		local c1 = svr.clients[1]
+		if c1 and c1.active and c1.edict then
+			ServerStorage:SetAttribute("SV_CmdF", c1.cmd.forwardmove)
+			local o = vmlib.edVector(c1.edict, defs.ent.origin)
+			local v = vmlib.edVector(c1.edict, defs.ent.velocity)
+			ServerStorage:SetAttribute("SV_Origin", Vector3.new(o.x, o.y, o.z))
+			ServerStorage:SetAttribute("SV_Vel", Vector3.new(v.x, v.y, v.z))
+			ServerStorage:SetAttribute("SV_VAngleY", vmlib.edVector(c1.edict, defs.ent.v_angle).y)
+
+			-- monster census: alive count + nearest live monster to the player
+			local alive = 0
+			local nearest: Vector3? = nil
+			local nearestDist = math.huge
+			for i = 1, svr.vm.num_edicts - 1 do
+				local e = svr.vm.edicts[i + 1]
+				if e.free then
+					continue
+				end
+				if bit32.band(vmlib.edFloat(e, defs.ent.flags), 32) ~= 0 and vmlib.edFloat(e, defs.ent.health) > 0 then
+					alive += 1
+					local mo = vmlib.edVector(e, defs.ent.origin)
+					local d = vector.magnitude(mo - o)
+					if d < nearestDist then
+						nearestDist = d
+						nearest = Vector3.new(mo.x, mo.y, mo.z)
+					end
+				end
+			end
+			ServerStorage:SetAttribute("SV_MonstersAlive", alive)
+			ServerStorage:SetAttribute("SV_NearestMonster", nearest)
+			ServerStorage:SetAttribute("SV_Kills", vmlib.globalFloat(svr.vm, defs.glob.killed_monsters))
+		end
+	end
 
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo

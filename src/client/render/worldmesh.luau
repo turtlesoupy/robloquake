@@ -11,8 +11,13 @@ local bsp = require(engine.bsp.bsp)
 local qcoords = require(engine.client.qcoords)
 
 local textures = require(script.Parent.textures)
+local tris = require(script.Parent.tris)
 
 local worldmesh = {}
+
+function worldmesh.canUseMeshApi(): boolean
+	return textures.canUseMeshApi()
+end
 
 export type BuiltModel = {
 	folder: Model,
@@ -51,6 +56,9 @@ end
 -- MeshPart per texture batch. Vertex positions are relative to the quake
 -- origin so the caller can position the whole Model by entity origin.
 function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instance, name: string): Model
+	if not worldmesh.canUseMeshApi() then
+		return worldmesh.buildWedges(model, pal, parent, name)
+	end
 	local data = model.brush
 
 	-- group surfaces by texture
@@ -129,7 +137,11 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 
 		if tex then
 			local img = textures.createImage(tex.pixels, tex.width, tex.height, pal, false)
-			part.TextureContent = Content.fromObject(img)
+			if img then
+				part.TextureContent = Content.fromObject(img)
+			else
+				part.Color = textures.averageColor(tex.pixels, tex.width * tex.height, pal)
+			end
 		end
 
 		-- CreateMeshPartAsync centers geometry on the part; restore world
@@ -142,6 +154,58 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		end
 		part.CFrame = CFrame.new((mins + maxs) / 2)
 		part.Parent = container
+	end
+
+	container.Parent = parent
+	return container
+end
+
+-- Fallback when the Mesh & Image APIs are disabled: draw every face as
+-- wedge-part triangles tinted by texture average color and lightmap level.
+function worldmesh.buildWedges(model: bsp.Model, pal: textures.Palette, parent: Instance, name: string): Model
+	local data = model.brush
+	local container = Instance.new("Model")
+	container.Name = name
+
+	local texColors: { [number]: Color3 } = {}
+
+	for i = 0, model.nummodelsurfaces - 1 do
+		local surf = data.surfaces[model.firstmodelsurface + i + 1]
+		local ti = data.texinfo[surf.texinfonum + 1]
+		local tex = data.textures[ti.miptex + 1]
+
+		local base = texColors[ti.miptex]
+		if not base then
+			base = if tex
+				then textures.averageColor(tex.pixels, tex.width * tex.height, pal)
+				else Color3.fromRGB(128, 128, 128)
+			texColors[ti.miptex] = base
+		end
+
+		-- average lightmap level across the face
+		local vecs = ti.vecs
+		local verts: { Vector3 } = {}
+		local lightSum, lightN = 0, 0
+		for e = 0, surf.numedges - 1 do
+			local se = data.surfedges[surf.firstedge + e + 1]
+			local v: vector
+			if se >= 0 then
+				v = data.vertexes[data.edges0[se + 1] + 1]
+			else
+				v = data.vertexes[data.edges1[-se + 1] + 1]
+			end
+			local s = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
+			local t = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
+			lightSum += sampleLight(data, surf, s, t)
+			lightN += 1
+			table.insert(verts, qcoords.toRoblox(v))
+		end
+		local light = if lightN > 0 then lightSum / lightN else 1
+		local color = Color3.new(base.R * light, base.G * light, base.B * light)
+
+		for k = 3, #verts do
+			tris.draw(verts[1], verts[k - 1], verts[k], color, container)
+		end
 	end
 
 	container.Parent = parent

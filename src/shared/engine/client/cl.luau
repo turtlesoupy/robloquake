@@ -281,6 +281,9 @@ end
 
 -- CL_ParseServerInfo
 local function parseServerInfo(c: Client, r: msg.Reader)
+	-- a new serverinfo starts a fresh signon sequence (level change)
+	c.signon = 0
+	c.movemessages = 0
 	-- wipe the state
 	c.entities = {}
 	c.num_entities = 0

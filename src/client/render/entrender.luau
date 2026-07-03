@@ -25,6 +25,7 @@ export type ModelDef = {
 	flags: number,
 	skinImages: { EditableImage }?,
 	spriteImages: { EditableImage }?,
+	palRef: any?, -- palette, kept for fallback tinting
 }
 
 -- One rendered entity instance
@@ -50,7 +51,36 @@ export type RenderEnt = {
 
 -- Build the static topology of an alias model (UVs/triangles); vertex
 -- positions are filled per-frame.
+local function buildAliasBoxEnt(def: ModelDef, parent: Instance): RenderEnt
+	local am = def.alias :: mdl.AliasModel
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CastShadow = false
+	part.Material = Enum.Material.SmoothPlastic
+	-- size from frame 0's packed bbox
+	local f0 = am.frames[1]
+	local mins = f0.bboxmin * am.scale + am.scale_origin
+	local maxs = f0.bboxmax * am.scale + am.scale_origin
+	local size = (maxs - mins) * qcoords.SCALE
+	part.Size = Vector3.new(math.max(size.x, 0.5), math.max(size.z, 0.5), math.max(size.y, 0.5))
+	local skin = am.skins[1]
+	local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
+	part.Color = textures.averageColor(pixels, am.skinwidth * am.skinheight, def.palRef :: any)
+	part.Parent = parent
+	return {
+		kind = "aliasbox",
+		modelindex = 0,
+		lastFrame = -1,
+		billboardPart = part,
+	}
+end
+
 local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
+	if not textures.canUseMeshApi() then
+		return buildAliasBoxEnt(def, parent)
+	end
 	local am = def.alias :: mdl.AliasModel
 	local em = AssetService:CreateEditableMesh()
 
@@ -161,6 +191,12 @@ function entrender.updateAlias(
 	syncbase: number,
 	time: number
 )
+	if re.kind == "aliasbox" then
+		local part = re.billboardPart :: Part
+		part.CFrame = CFrame.new(qcoords.toRoblox(origin) + Vector3.new(0, part.Size.Y / 2 - 24 * qcoords.SCALE, 0))
+			* CFrame.Angles(0, math.rad(angles.y), 0)
+		return
+	end
 	local am = def.alias :: mdl.AliasModel
 	local em = re.em :: EditableMesh
 	local part = re.part :: MeshPart
@@ -308,20 +344,27 @@ end
 
 -- build the shared images for a model definition
 function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
+	def.palRef = pal
 	if def.kind == "alias" then
 		local am = def.alias :: mdl.AliasModel
-		local imgs = {}
-		for _, skin in am.skins do
+		local imgs: { EditableImage } = {}
+		for si, skin in am.skins do
 			local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
-			table.insert(imgs, textures.createImage(pixels, am.skinwidth, am.skinheight, pal, false))
+			local img = textures.createImage(pixels, am.skinwidth, am.skinheight, pal, false)
+			if img then
+				imgs[si] = img
+			end
 		end
 		def.skinImages = imgs
 	elseif def.kind == "sprite" then
 		local sm = def.sprite :: spr.SpriteModel
-		local imgs = {}
-		for _, fd in sm.frames do
+		local imgs: { EditableImage } = {}
+		for fi, fd in sm.frames do
 			local f = fd.frames[1]
-			table.insert(imgs, textures.createImage(f.pixels, f.width, f.height, pal, true))
+			local img = textures.createImage(f.pixels, f.width, f.height, pal, true)
+			if img then
+				imgs[fi] = img
+			end
 		end
 		def.spriteImages = imgs
 	end

@@ -99,6 +99,29 @@ end
 
 -- CL_BaseMove
 function input.sample(): InputState
+	-- scripted-test hooks (verification harness drives the real input path)
+	local forceForward = workspace:GetAttribute("RQ_ForceForward")
+	local forceUp = workspace:GetAttribute("RQ_ForceUp")
+	local forceYaw = workspace:GetAttribute("RQ_ForceYaw")
+	local forcePitch = workspace:GetAttribute("RQ_ForcePitch")
+	local forceAttack = workspace:GetAttribute("RQ_ForceAttack")
+	if forceYaw then
+		yaw = forceYaw
+	end
+	if forcePitch then
+		pitch = forcePitch
+	end
+	if forceForward or forceAttack or forceUp then
+		return {
+			forwardmove = forceForward or 0,
+			sidemove = 0,
+			upmove = forceUp or 0,
+			attack = forceAttack == true,
+			jump = false,
+			impulse = 0,
+		}
+	end
+
 	local fwd = key(Enum.KeyCode.W) + key(Enum.KeyCode.Up)
 	local back = key(Enum.KeyCode.S) + key(Enum.KeyCode.Down)
 	local right = key(Enum.KeyCode.D)
