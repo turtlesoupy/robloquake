@@ -23,14 +23,25 @@ function qcoords.fromRoblox(v: Vector3): vector
 	return vector.create(v.X / qcoords.SCALE, -v.Z / qcoords.SCALE, v.Y / qcoords.SCALE)
 end
 
--- Build a Roblox CFrame from a Quake position and quake-space
--- forward/right/up basis vectors (from mathlib.angleVectors).
+-- Build a CAMERA CFrame from a Quake position and quake-space
+-- forward/right/up basis vectors (roblox cameras look along -Z).
 function qcoords.cframe(origin: vector, forward: vector, right: vector, up: vector): CFrame
 	local pos = qcoords.toRoblox(origin)
 	local f = qcoords.dirToRoblox(forward)
 	local r = qcoords.dirToRoblox(right)
 	local u = qcoords.dirToRoblox(up)
 	return CFrame.fromMatrix(pos, r, u, -f)
+end
+
+-- Build a MODEL CFrame: mesh vertices are quake model space converted with
+-- toRoblox, so model-forward lies along mesh +X (and model-right along
+-- mesh +Z). The part basis must map those axes to the world directions.
+function qcoords.modelCFrame(origin: vector, forward: vector, right: vector, up: vector): CFrame
+	local pos = qcoords.toRoblox(origin)
+	local f = qcoords.dirToRoblox(forward)
+	local r = qcoords.dirToRoblox(right)
+	local u = qcoords.dirToRoblox(up)
+	return CFrame.fromMatrix(pos, f, u, r)
 end
 
 return qcoords

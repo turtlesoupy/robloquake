@@ -44,6 +44,9 @@ export type RenderEnt = {
 	-- brush
 	model: Model?,
 	baseCFrames: { [BasePart]: CFrame }?,
+	-- CreateMeshPartAsync centers geometry on the part; this restores the
+	-- model-origin-relative placement (alias models)
+	centerOffset: CFrame?,
 }
 
 --------------------------------------------------------------------------
@@ -83,6 +86,9 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	end
 	local am = def.alias :: mdl.AliasModel
 	local em = AssetService:CreateEditableMesh()
+	if not em then
+		return buildAliasBoxEnt(def, parent) -- memory budget exhausted
+	end
 
 	local skinW, skinH = am.skinwidth, am.skinheight
 
@@ -122,19 +128,52 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	-- set frame 0 positions before building the part (a degenerate mesh
 	-- fails CreateMeshPartAsync)
 	local frame0 = am.frames[1].frames[1]
+	local bmins = Vector3.new(math.huge, math.huge, math.huge)
+	local bmaxs = -bmins
+	local positions: { Vector3 } = table.create(am.numverts)
 	for i = 1, am.numverts do
 		local pos = mdl.frameVert(am, frame0, i)
 		local rp = Vector3.new(pos.x * qcoords.SCALE, pos.z * qcoords.SCALE, -pos.y * qcoords.SCALE)
+		bmins = bmins:Min(rp)
+		bmaxs = bmaxs:Max(rp)
+		positions[i] = rp
+	end
+	-- center the vertices on the mesh origin so the part pivot is exact
+	local centerVec = (bmins + bmaxs) / 2
+	for i = 1, am.numverts do
+		local rp = positions[i] - centerVec
 		em:SetPosition(vids[i], rp)
 		em:SetPosition(backVids[i], rp)
+	end
+	local centerOffset = CFrame.new(centerVec)
+
+	-- fixed-size copy: a dynamic EditableMesh reserves the 60k-vertex max
+	-- against the memory budget; the copy reserves only its actual size and
+	-- still allows SetPosition (frame animation)
+	local okF, fixedOrErr = pcall(function()
+		return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+	end)
+	em:Destroy()
+	if not okF or not fixedOrErr then
+		warn(`[robloquake] alias fixed copy failed: {fixedOrErr}`)
+		return buildAliasBoxEnt(def, parent)
+	end
+	em = fixedOrErr :: EditableMesh
+
+	-- remap vertex ids: the copy preserves creation order (front/back interleaved)
+	local ids = em:GetVertices()
+	for i = 1, am.numverts do
+		vids[i] = ids[2 * i - 1]
+		backVids[i] = ids[2 * i]
 	end
 
 	local ok, partOrErr = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(em), { CollisionFidelity = Enum.CollisionFidelity.Box })
 	end)
 	if not ok then
+		em:Destroy()
 		warn(`[robloquake] alias mesh failed: {partOrErr}`)
-		return nil
+		return buildAliasBoxEnt(def, parent)
 	end
 	local part = partOrErr :: MeshPart
 	part.Anchored = true
@@ -157,6 +196,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		vids = vids,
 		backVids = backVids,
 		lastFrame = 0,
+		centerOffset = centerOffset,
 	}
 end
 
@@ -210,12 +250,13 @@ function entrender.updateAlias(
 		local scale = am.scale
 		local sorigin = am.scale_origin
 		local SCALE = qcoords.SCALE
+		local centerVec = (re.centerOffset or CFrame.identity).Position
 		for i = 1, am.numverts do
 			local o = (i - 1) * 4
 			local x = buffer.readu8(verts, o) * scale.x + sorigin.x
 			local y = buffer.readu8(verts, o + 1) * scale.y + sorigin.y
 			local z = buffer.readu8(verts, o + 2) * scale.z + sorigin.z
-			local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE)
+			local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE) - centerVec
 			em:SetPosition(vids[i], rp)
 			em:SetPosition(backVids[i], rp)
 		end
@@ -230,7 +271,7 @@ function entrender.updateAlias(
 	-- entity angles: pitch, yaw, roll (quake degrees). Alias models pitch
 	-- opposite to view pitch.
 	local forward, right, up = mathlib.angleVectors(vector.create(-angles.x, angles.y, angles.z))
-	part.CFrame = qcoords.cframe(origin, forward, right, up)
+	part.CFrame = qcoords.modelCFrame(origin, forward, right, up) * (re.centerOffset or CFrame.identity)
 end
 
 --------------------------------------------------------------------------

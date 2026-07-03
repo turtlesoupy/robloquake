@@ -25,6 +25,16 @@ local glob = defs.glob
 sv.ss_loading = 1
 sv.ss_active = 2
 
+local ZERO_BASELINE = {
+	origin = vector.zero,
+	angles = vector.zero,
+	modelindex = 0,
+	frame = 0,
+	colormap = 0,
+	skin = 0,
+	effects = 0,
+}
+
 export type UserCmd = {
 	forwardmove: number,
 	sidemove: number,
@@ -362,8 +372,9 @@ function sv.writeEntitiesToClient(svr: Server, clent: vmlib.Edict, out: msg.Size
 			return
 		end
 
-		-- send an update
-		local baseline = edict.baseline :: Baseline
+		-- send an update (entities spawned after SV_CreateBaseline have no
+		-- baseline; C uses the embedded zeroed struct)
+		local baseline = (edict.baseline or ZERO_BASELINE) :: Baseline
 		local bits = 0
 
 		local origin = vmlib.edVector(edict, ent.origin)

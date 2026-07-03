@@ -19,6 +19,25 @@ function worldmesh.canUseMeshApi(): boolean
 	return textures.canUseMeshApi()
 end
 
+-- MeshParts render FROM their EditableMesh object, so the (fixed-size)
+-- meshes must stay referenced for as long as their container lives. A
+-- dynamic EditableMesh reserves the 60k-vertex maximum against the memory
+-- budget; a FixedSize copy only reserves its actual size, which is why
+-- every builder goes dynamic → fixed copy → destroy dynamic.
+local liveMeshes: { [Instance]: { EditableMesh } } = {}
+
+local function retainMesh(container: Instance, em: EditableMesh)
+	local list = liveMeshes[container]
+	if not list then
+		list = {}
+		liveMeshes[container] = list
+		container.Destroying:Connect(function()
+			liveMeshes[container] = nil
+		end)
+	end
+	table.insert(list, em)
+end
+
 export type BuiltModel = {
 	folder: Model,
 	-- parts positioned assuming entity origin (0,0,0); reposition by setting
@@ -80,6 +99,18 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	for miptex, surfs in byTexture do
 		local tex = data.textures[miptex + 1]
 		local em = AssetService:CreateEditableMesh()
+		if not em then
+			-- memory budget exhausted: fall back to wedges for the rest
+			warn("[robloquake] EditableMesh budget exhausted; falling back to wedges")
+			container:Destroy()
+			return worldmesh.buildWedges(model, pal, parent, name)
+		end
+
+		-- pass 1: gather face data and the batch bounding box
+		type FaceData = { pos: { Vector3 }, uv: { Vector2 }, light: { number } }
+		local faceList: { FaceData } = {}
+		local mins = Vector3.new(math.huge, math.huge, math.huge)
+		local maxs = -mins
 
 		for _, surf in surfs do
 			local ti = data.texinfo[surf.texinfonum + 1]
@@ -87,10 +118,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			local texW = if tex then tex.width else 64
 			local texH = if tex then tex.height else 64
 
-			-- gather the polygon's vertices
-			local vids = {}
-			local uvids = {}
-			local cids = {}
+			local fd: FaceData = { pos = {}, uv = {}, light = {} }
 			for e = 0, surf.numedges - 1 do
 				local se = data.surfedges[surf.firstedge + e + 1]
 				local v: vector
@@ -103,30 +131,58 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				local s = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
 				local t = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
 
-				table.insert(vids, em:AddVertex(qcoords.toRoblox(v)))
-				table.insert(uvids, em:AddUV(Vector2.new(s / texW, t / texH)))
-				local light = sampleLight(data, surf, s, t)
+				local rp = qcoords.toRoblox(v)
+				mins = mins:Min(rp)
+				maxs = maxs:Max(rp)
+				table.insert(fd.pos, rp)
+				table.insert(fd.uv, Vector2.new(s / texW, t / texH))
+				table.insert(fd.light, sampleLight(data, surf, s, t))
+			end
+			table.insert(faceList, fd)
+		end
+
+		-- pass 2: build the mesh with vertices centered on the batch origin,
+		-- so the part pivot (mesh bounds center) is exactly (mins+maxs)/2
+		local center = (mins + maxs) / 2
+		for _, fd in faceList do
+			local vids = {}
+			local uvids = {}
+			local cids = {}
+			for i, rp in fd.pos do
+				table.insert(vids, em:AddVertex(rp - center))
+				table.insert(uvids, em:AddUV(fd.uv[i]))
+				local light = fd.light[i]
 				table.insert(cids, em:AddColor(Color3.new(light, light, light), 1))
 			end
-
-			-- fan triangulation; quake polys wind clockwise viewed from
-			-- the front, which lands correctly in roblox's convention
-			-- after the handedness flip
+			-- quake winds clockwise from the front; roblox fronts are CCW
 			for k = 3, #vids do
-				local fid = em:AddTriangle(vids[1], vids[k - 1], vids[k])
-				em:SetFaceUVs(fid, { uvids[1], uvids[k - 1], uvids[k] })
-				em:SetFaceColors(fid, { cids[1], cids[k - 1], cids[k] })
+				local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
+				em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
+				em:SetFaceColors(fid, { cids[1], cids[k], cids[k - 1] })
 			end
 		end
 
-		local ok, partOrErr = pcall(function()
-			return AssetService:CreateMeshPartAsync(Content.fromObject(em))
+		-- fixed-size copy releases the 60k-vertex reservation
+		local ok, fixedOrErr = pcall(function()
+			return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
 		end)
-		if not ok then
+		em:Destroy()
+		if not ok or not fixedOrErr then
+			warn(`[robloquake] fixed mesh copy failed for texture {miptex}: {fixedOrErr}`)
+			continue
+		end
+		local fixed = fixedOrErr :: EditableMesh
+
+		local ok2, partOrErr = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))
+		end)
+		if not ok2 then
+			fixed:Destroy()
 			warn(`[robloquake] mesh build failed for texture {miptex}: {partOrErr}`)
 			continue
 		end
 		local part = partOrErr :: MeshPart
+		retainMesh(container, fixed)
 		part.Name = if tex then tex.name else tostring(miptex)
 		part.Anchored = true
 		part.CanCollide = false
@@ -146,12 +202,6 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 
 		-- CreateMeshPartAsync centers geometry on the part; restore world
 		-- placement from the mesh bounding box center
-		local mins, maxs = Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
-		for _, vid in em:GetVertices() do
-			local p = em:GetPosition(vid)
-			mins = mins:Min(p)
-			maxs = maxs:Max(p)
-		end
 		part.CFrame = CFrame.new((mins + maxs) / 2)
 		part.Parent = container
 	end

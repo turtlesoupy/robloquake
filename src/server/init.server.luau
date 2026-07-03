@@ -187,6 +187,96 @@ RunService.Heartbeat:Connect(function(dt: number)
 			ServerStorage:SetAttribute("SV_MonstersAlive", alive)
 			ServerStorage:SetAttribute("SV_NearestMonster", nearest)
 			ServerStorage:SetAttribute("SV_Kills", vmlib.globalFloat(svr.vm, defs.glob.killed_monsters))
+
+			-- nearest door (debug)
+			local bestDoor: Vector3? = nil
+			local bestDist = math.huge
+			for i = 1, svr.vm.num_edicts - 1 do
+				local e = svr.vm.edicts[i + 1]
+				if e.free then
+					continue
+				end
+				local cn = vmlib.edString(svr.vm, e, defs.ent.classname)
+				if cn == "door" or cn == "door_trigger" then
+					local mo = (vmlib.edVector(e, defs.ent.absmin) + vmlib.edVector(e, defs.ent.absmax)) * 0.5
+					local d = vector.magnitude(mo - o)
+					if d < bestDist then
+						bestDist = d
+						bestDoor = Vector3.new(mo.x, mo.y, mo.z)
+					end
+				end
+			end
+			ServerStorage:SetAttribute("SV_NearestDoor", bestDoor)
+			ServerStorage:SetAttribute("SV_NearestDoorDist", bestDist)
+
+			-- debug: fire the use function of a door by edict number (-1 = nearest)
+			local useReq = ServerStorage:GetAttribute("SVDBG_UseDoor")
+			if typeof(useReq) == "number" then
+				ServerStorage:SetAttribute("SVDBG_UseDoor", nil)
+				local doorEd = nil
+				if useReq >= 1 then
+					doorEd = svr.vm.edicts[useReq + 1]
+				else
+					local bd = math.huge
+					for i = 1, svr.vm.num_edicts - 1 do
+						local e = svr.vm.edicts[i + 1]
+						if not e.free and vmlib.edString(svr.vm, e, defs.ent.classname) == "door" then
+							local mo = (vmlib.edVector(e, defs.ent.absmin) + vmlib.edVector(e, defs.ent.absmax)) * 0.5
+							local d = vector.magnitude(mo - o)
+							if d < bd then
+								bd = d
+								doorEd = e
+							end
+						end
+					end
+				end
+				if doorEd and not doorEd.free then
+					local fn = vmlib.edInt(doorEd, defs.ent.use)
+					if fn ~= 0 then
+						buffer.writef32(svr.vm.globals, defs.glob.time * 4, svr.time)
+						buffer.writei32(svr.vm.globals, defs.glob.self * 4, doorEd.num)
+						buffer.writei32(svr.vm.globals, defs.glob.other * 4, c1.edict.num)
+						local adef = svr.vm.progs.globaldefsByName["activator"]
+						if adef then
+							buffer.writei32(svr.vm.globals, adef.ofs * 4, c1.edict.num)
+						end
+						vmlib.exec(svr.vm, fn)
+						print("[svdbg] fired use of door", doorEd.num)
+					end
+				end
+			end
+
+			-- debug teleport request: try the exact spot, then nearby offsets,
+			-- keeping the first position the player isn't stuck in
+			local tp = ServerStorage:GetAttribute("SVDBG_SetOrigin")
+			if typeof(tp) == "Vector3" then
+				ServerStorage:SetAttribute("SVDBG_SetOrigin", nil)
+				local world = require(engine.server.world)
+				local before = vmlib.edVector(c1.edict, defs.ent.origin)
+				local candidates = { vector.create(tp.X, tp.Y, tp.Z) }
+				for _, d in { 48, 96, 144 } do
+					table.insert(candidates, vector.create(tp.X + d, tp.Y, tp.Z))
+					table.insert(candidates, vector.create(tp.X - d, tp.Y, tp.Z))
+					table.insert(candidates, vector.create(tp.X, tp.Y + d, tp.Z))
+					table.insert(candidates, vector.create(tp.X, tp.Y - d, tp.Z))
+					table.insert(candidates, vector.create(tp.X, tp.Y, tp.Z + d))
+				end
+				local placed = false
+				for _, cand in candidates do
+					vmlib.edSetVector(c1.edict, defs.ent.origin, cand)
+					world.linkEdict(svr.world, c1.edict, false)
+					if not world.testEntityPosition(svr.world, c1.edict) then
+						placed = true
+						print("[svdbg] teleported player to", cand)
+						break
+					end
+				end
+				if not placed then
+					vmlib.edSetVector(c1.edict, defs.ent.origin, before)
+					world.linkEdict(svr.world, c1.edict, false)
+					print("[svdbg] teleport failed: all candidates solid")
+				end
+			end
 		end
 	end
 
