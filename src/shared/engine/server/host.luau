@@ -420,6 +420,42 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 				end
 			end
 		end
+	elseif cmd == "map" or cmd == "changelevel" then
+		local target = (args :: string):match("%S+")
+		if target then
+			svr.changelevelTo = target
+		end
+	elseif cmd == "skill" or cmd == "deathmatch" or cmd == "coop" or cmd == "sv_gravity" or cmd == "sv_maxspeed" then
+		local v = tonumber((args :: string):match("%S+") or "")
+		if v then
+			cvarlib.setValue(svr.cvars, cmd == "sv_gravity" and "sv_gravity" or cmd, v)
+			svlib.broadcastPrint(svr, `{cmd} set to {v}\n`)
+		end
+	elseif cmd == "give" then
+		-- Host_Give_f essentials: weapons by number, ammo/health by letter
+		local edict = client.edict
+		local what, amount = (args :: string):match("(%S+)%s*(%d*)")
+		local n = tonumber(amount or "") or 0
+		if what then
+			local c0 = what:sub(1, 1)
+			local items2 = vmlib.edFloat(edict, ent.items)
+			if c0 >= "1" and c0 <= "8" then
+				local num = tonumber(c0) :: number
+				if num >= 2 then
+					vmlib.edSetFloat(edict, ent.items, bit32.bor(items2, bit32.lshift(1, num - 2)))
+				end
+			elseif c0 == "s" then
+				vmlib.edSetFloat(edict, ent.ammo_shells, n)
+			elseif c0 == "n" then
+				vmlib.edSetFloat(edict, ent.ammo_nails, n)
+			elseif c0 == "r" then
+				vmlib.edSetFloat(edict, ent.ammo_rockets, n)
+			elseif c0 == "c" then
+				vmlib.edSetFloat(edict, ent.ammo_cells, n)
+			elseif c0 == "h" then
+				vmlib.edSetFloat(edict, ent.health, n)
+			end
+		end
 	elseif cmd == "status" or cmd == "ping" then
 		-- informational; not needed for gameplay
 	else

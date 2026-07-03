@@ -91,7 +91,14 @@ local function connectPlayer(player: Player)
 	slotByPlayer[player] = slot
 	local client = svr.clients[slot]
 	client.sendUnreliable = function(data: buffer)
-		unreliable:FireClient(player, data)
+		-- UnreliableRemoteEvents silently drop payloads over ~900 bytes;
+		-- busy scenes exceed that, so oversized datagrams ride the
+		-- reliable channel instead (packet loss isn't a thing here anyway)
+		if buffer.len(data) > 850 then
+			reliable:FireClient(player, data)
+		else
+			unreliable:FireClient(player, data)
+		end
 		return true
 	end
 	client.sendReliable = function(data: buffer)

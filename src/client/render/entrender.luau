@@ -401,6 +401,18 @@ function entrender.create(def: ModelDef, parent: Instance): RenderEnt?
 	return nil
 end
 
+-- R_LightPoint tint: models are shaded by the floor lightmap under them
+-- (software adds an ambient floor so nothing goes fully black)
+function entrender.setLight(re: RenderEnt, light: number)
+	local part = re.part
+	if not part then
+		return
+	end
+	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
+	l = l ^ 0.7 -- match the world lighting gamma
+	part.Color = Color3.new(l, l, l)
+end
+
 function entrender.destroy(re: RenderEnt)
 	if re.part then
 		re.part:Destroy()

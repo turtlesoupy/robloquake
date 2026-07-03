@@ -25,7 +25,10 @@ local entrender = require(script.render.entrender)
 local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
 local worldmesh = require(script.render.worldmesh)
+local consolelib = require(script.console)
 local hudlib = require(script.hud)
+local lightpoint = require(script.render.lightpoint)
+local menulib = require(script.menu)
 local soundlib = require(script.sound)
 local input = require(script.input)
 local viewlib = require(script.view)
@@ -104,9 +107,39 @@ local entFolder = Instance.new("Folder")
 entFolder.Name = "QuakeEnts"
 entFolder.Parent = Workspace
 
-local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
+local playerGui = player:WaitForChild("PlayerGui")
+local hud = hudlib.create(fs, pal, playerGui)
 local psys = particleslib.new(pal, Workspace)
 local snd = soundlib.new(Workspace)
+
+-- console + menu live on their own gui above the hud
+local overlayGui = Instance.new("ScreenGui")
+overlayGui.Name = "QuakeOverlay"
+overlayGui.IgnoreGuiInset = true
+overlayGui.DisplayOrder = 20
+overlayGui.ResetOnSpawn = false
+overlayGui.Parent = playerGui
+
+-- fullscreen palette-flash tint (V_UpdatePalette)
+local cshiftFrame = Instance.new("Frame")
+cshiftFrame.Name = "cshift"
+cshiftFrame.BorderSizePixel = 0
+cshiftFrame.Size = UDim2.new(1, 0, 1, 0)
+cshiftFrame.BackgroundTransparency = 1
+cshiftFrame.ZIndex = 1
+cshiftFrame.Parent = overlayGui
+
+local con = consolelib.create(fs, pal, overlayGui)
+local mnu = menulib.create(fs, pal, overlayGui)
+
+-- hidden textbox for native text capture while the console is open
+local conInput = Instance.new("TextBox")
+conInput.Name = "conInput"
+conInput.BackgroundTransparency = 1
+conInput.TextTransparency = 1
+conInput.Size = UDim2.fromOffset(1, 1)
+conInput.ClearTextOnFocus = false
+conInput.Parent = overlayGui
 
 -- model definitions by precache index
 local modelDefs: { [number]: entrender.ModelDef } = {}
@@ -117,6 +150,9 @@ local worldModels: { bsplib.Model } = {}
 -- animated lightstyle vertices across all built brush geometry
 local lightAnim: { worldmesh.AnimEntry } = {}
 local styleValues: { [number]: number } = {}
+local function styleValueFor(style: number): number
+	return styleValues[style] or worldmesh.BASE_STYLE_VALUE
+end
 -- water / sky textures that rewrite their images every tick
 local textureAnims: { worldmesh.TextureAnim } = {}
 
@@ -215,13 +251,68 @@ end
 
 c.print = function(s: string)
 	hudlib.print(hud, s)
+	consolelib.print(con, s)
 	print("[q] " .. s)
+end
+
+-- console command execution: a few local commands, everything else is
+-- forwarded to the server like Cmd_ForwardToServer
+local function sendStringCmd(line: string)
+	local buf = buffer.create(#line + 2)
+	buffer.writeu8(buf, 0, 4) -- clc_stringcmd
+	buffer.writestring(buf, 1, line)
+	buffer.writeu8(buf, 1 + #line, 0)
+	reliable:FireServer(buf)
+end
+
+con.onCommand = function(line: string)
+	local cmd, args = line:match("^(%S+)%s*(.*)$")
+	if not cmd then
+		return
+	end
+	cmd = cmd:lower()
+	if cmd == "clear" then
+		table.clear(con.lines)
+	elseif cmd == "sensitivity" then
+		local v = tonumber(args)
+		if v then
+			input.setSensitivity(v)
+			consolelib.print(con, `"sensitivity" is "{v}"`)
+		end
+	elseif cmd == "impulse" then
+		input.setImpulse(tonumber(args) or 0)
+	elseif cmd == "toggleconsole" then
+		consolelib.toggle(con)
+	elseif cmd == "version" then
+		consolelib.print(con, "robloquake — WinQuake 1.09 port")
+	else
+		sendStringCmd(line)
+	end
+end
+
+mnu.onNewGame = function()
+	sendStringCmd("map start")
+end
+mnu.onQuit = function()
+	consolelib.print(con, "use the Roblox menu to leave the experience")
+end
+mnu.print = function(s: string)
+	consolelib.print(con, s)
+	hudlib.print(hud, s)
 end
 c.centerPrint = function(s: string)
 	hudlib.centerPrint(hud, s, c.time)
 end
 c.onSetAngle = function(_c, angles)
 	input.setAngles(angles)
+end
+c.onStuffText = function(_c, text)
+	-- QC stuffs console commands at the client; "bf" is the bonus flash
+	for line in text:gmatch("[^\n;]+") do
+		if line == "bf" then
+			c.cshift_bonus_percent = 50
+		end
+	end
 end
 c.onParticle = function(_c, org, dir, color, count)
 	particleslib.runEffect(psys, org, dir, color, count, c.time)
@@ -293,6 +384,67 @@ camera.FieldOfView = 75
 
 input.init(90)
 input.lockMouse()
+
+local UserInputService = game:GetService("UserInputService")
+
+local function refreshInputMode()
+	local uiOpen = con.open or menulib.isOpen(mnu)
+	input.setEnabled(not uiOpen)
+	if con.open then
+		conInput.Text = ""
+		conInput:CaptureFocus()
+	else
+		conInput:ReleaseFocus()
+	end
+end
+
+UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolean)
+	if io.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	local key = io.KeyCode
+	-- tilde/backquote toggles the console from anywhere
+	if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
+		consolelib.toggle(con)
+		refreshInputMode()
+		return
+	end
+	if con.open then
+		if key == Enum.KeyCode.Escape then
+			consolelib.toggle(con)
+			refreshInputMode()
+		else
+			consolelib.handleKey(con, io)
+		end
+		return
+	end
+	if key == Enum.KeyCode.Escape then
+		menulib.toggle(mnu)
+		refreshInputMode()
+		return
+	end
+	if menulib.isOpen(mnu) then
+		menulib.handleKey(mnu, io)
+		refreshInputMode()
+		return
+	end
+end)
+
+-- textbox feeds the console input line (native shift/symbol handling)
+conInput:GetPropertyChangedSignal("Text"):Connect(function()
+	if con.open and conInput.Text ~= "" then
+		local txt = conInput.Text:gsub("[`~]", "")
+		consolelib.handleText(con, txt)
+		conInput.Text = ""
+	end
+end)
+conInput.FocusLost:Connect(function(enterPressed: boolean)
+	if con.open and enterPressed then
+		local fake = { KeyCode = Enum.KeyCode.Return }
+		consolelib.handleKey(con, fake :: any)
+		conInput:CaptureFocus()
+	end
+end)
 
 -- announce readiness: the server connects us when it hears from us
 do
@@ -463,6 +615,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 				colors = c.scores[e.colormap].colors
 			end
 			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
+			entrender.setLight(rr, lightpoint.at(worldModels[1], e.origin, styleValueFor))
 		elseif rr.kind == "sprite" then
 			entrender.updateSprite(rr, def, e.origin, e.frame)
 		elseif rr.kind == "brush" then
@@ -492,6 +645,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		if ge then
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
 			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
+			entrender.setLight(ge, lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor))
 		end
 	elseif gunEnt then
 		setEntVisible(gunEnt, false)
@@ -499,6 +653,63 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- particles
 	particleslib.update(psys, c.time, dt)
+
+	-- console / menu overlays
+	consolelib.update(con, c.time)
+	menulib.update(mnu, c.time)
+
+	-- V_UpdatePalette: decay + blend the palette flashes into the tint frame
+	c.cshift_damage_percent = math.max(c.cshift_damage_percent - dt * 150, 0)
+	c.cshift_bonus_percent = math.max(c.cshift_bonus_percent - dt * 100, 0)
+
+	local shifts: { { number } } = {} -- {r,g,b,percent}
+	do
+		-- contents shift from the view leaf (V_SetContentsColor)
+		local leaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
+		local cont = leaf.contents
+		if cont == -3 then -- water
+			table.insert(shifts, { 130, 80, 50, 128 })
+		elseif cont == -4 then -- slime
+			table.insert(shifts, { 0, 25, 5, 150 })
+		elseif cont == -5 then -- lava
+			table.insert(shifts, { 255, 80, 0, 150 })
+		end
+	end
+	-- powerups (V_CalcPowerupCshift)
+	if bit32.band(c.items, 4194304) ~= 0 then -- IT_INVULNERABILITY
+		table.insert(shifts, { 255, 255, 0, 30 })
+	elseif bit32.band(c.items, 2097152) ~= 0 then -- IT_QUAD
+		table.insert(shifts, { 0, 0, 255, 30 })
+	elseif bit32.band(c.items, 1048576) ~= 0 then -- IT_SUIT
+		table.insert(shifts, { 0, 255, 0, 20 })
+	elseif bit32.band(c.items, 524288) ~= 0 then -- IT_INVISIBILITY
+		table.insert(shifts, { 100, 100, 100, 100 })
+	end
+	if c.cshift_damage_percent > 0 then
+		local dc = c.cshift_damage_color
+		table.insert(shifts, { dc.x, dc.y, dc.z, c.cshift_damage_percent })
+	end
+	if c.cshift_bonus_percent > 0 then
+		table.insert(shifts, { 215, 186, 69, c.cshift_bonus_percent })
+	end
+
+	if #shifts > 0 then
+		local r, g, b, a = 0, 0, 0, 0
+		for _, sh in shifts do
+			local a2 = math.clamp(sh[4], 0, 255) / 255
+			a = a + a2 * (1 - a)
+			if a > 0 then
+				local w2 = a2 / a
+				r = r * (1 - w2) + sh[1] * w2
+				g = g * (1 - w2) + sh[2] * w2
+				b = b * (1 - w2) + sh[3] * w2
+			end
+		end
+		cshiftFrame.BackgroundColor3 = Color3.fromRGB(r, g, b)
+		cshiftFrame.BackgroundTransparency = 1 - math.min(a, 0.85)
+	else
+		cshiftFrame.BackgroundTransparency = 1
+	end
 
 	-- hud
 	hudlib.update(hud, c)

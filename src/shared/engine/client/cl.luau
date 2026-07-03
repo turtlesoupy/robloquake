@@ -102,6 +102,10 @@ export type Client = {
 	dmg_time: number,
 	dmg_roll: number,
 	dmg_pitch: number,
+	-- palette flashes (V_ParseDamage / V_BonusFlash)
+	cshift_damage_percent: number,
+	cshift_damage_color: vector,
+	cshift_bonus_percent: number,
 	-- outbound reliable stream
 	message: msg.SizeBuf,
 	-- hooks
@@ -208,6 +212,9 @@ function cl.new(playerName: string, color: number): Client
 		dmg_time = 0,
 		dmg_roll = 0,
 		dmg_pitch = 0,
+		cshift_damage_percent = 0,
+		cshift_damage_color = vector.create(255, 0, 0),
+		cshift_bonus_percent = 0,
 		message = msg.newBuf(qd.MAX_MSGLEN),
 		print = print,
 		centerPrint = print,
@@ -521,6 +528,16 @@ local function parseDamage(c: Client, r: msg.Reader)
 	end
 
 	c.faceanimtime = c.time + 0.2 -- put sbar face into pain frame
+
+	-- palette flash (cshifts[CSHIFT_DAMAGE])
+	c.cshift_damage_percent = math.clamp(c.cshift_damage_percent + 3 * count, 0, 150)
+	if armor > blood then
+		c.cshift_damage_color = vector.create(200, 100, 100)
+	elseif armor > 0 then
+		c.cshift_damage_color = vector.create(220, 50, 50)
+	else
+		c.cshift_damage_color = vector.create(255, 0, 0)
+	end
 
 	-- calculate view angle kicks
 	local e = c.entities[c.viewentity]
