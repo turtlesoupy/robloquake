@@ -152,8 +152,8 @@ local function publishClientAssets()
 			publishFile(name)
 		end
 	end
-	-- soundmap (uploaded asset ids) is a plain StringValue, mirrored as-is
-	local soundmap = assets:FindFirstChild("soundmap")
+	-- soundmap (bank asset id + regions) is a plain StringValue, mirrored as-is
+	local soundmap = gameFolder:FindFirstChild("soundmap") or assets:FindFirstChild("soundmap")
 	if soundmap and not clientFS:FindFirstChild("soundmap") then
 		soundmap:Clone().Parent = clientFS
 	end
