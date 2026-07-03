@@ -570,7 +570,7 @@ local function tryUnstick(svr: svlib.Server, ed: vmlib.Edict, oldvel: vector): n
 end
 
 -- SV_WalkMove: only used by players
-local function walkMove(svr: svlib.Server, ed: vmlib.Edict)
+function sv_phys.walkMove(svr: svlib.Server, ed: vmlib.Edict)
 	local w = svr.world
 
 	-- do a regular slide move unless it looks like you ran into a step
@@ -685,7 +685,7 @@ function sv_phys.physicsClient(svr: svlib.Server, ed: vmlib.Edict, num: number)
 			sv_phys.addGravity(svr, ed)
 		end
 		sv_phys.checkStuck(svr, ed)
-		walkMove(svr, ed)
+		sv_phys.walkMove(svr, ed)
 	elseif movetype == qd.MOVETYPE_TOSS or movetype == qd.MOVETYPE_BOUNCE then
 		sv_phys.physicsToss(svr, ed)
 	elseif movetype == qd.MOVETYPE_FLY then
