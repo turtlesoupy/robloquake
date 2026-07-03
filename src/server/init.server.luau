@@ -47,7 +47,7 @@ end
 local gameFolder = assets:WaitForChild(gameDir)
 
 local startAttr = assets:GetAttribute("startmap")
-local START_MAP = if typeof(startAttr) == "string" then startAttr elseif gameDir == "id1" then "e1m1" else "start"
+local START_MAP = if typeof(startAttr) == "string" then startAttr else "start"
 
 local fsys = vfs.new()
 for _, pakName in { "pak0", "pak1" } do
