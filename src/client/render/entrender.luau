@@ -1,0 +1,330 @@
+--!strict
+--!optimize 2
+-- Entity rendering: alias models (.mdl) as animated EditableMeshes,
+-- sprites as billboards, and brush submodels (doors/plats) as prebuilt
+-- MeshPart groups positioned by entity origin.
+
+local AssetService = game:GetService("AssetService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local engine = ReplicatedStorage:WaitForChild("Shared").engine
+local mathlib = require(engine.common.mathlib)
+local mdl = require(engine.models.mdl)
+local spr = require(engine.models.spr)
+local qcoords = require(engine.client.qcoords)
+
+local textures = require(script.Parent.textures)
+
+local entrender = {}
+
+export type ModelDef = {
+	kind: "alias" | "sprite" | "brush" | "none",
+	alias: mdl.AliasModel?,
+	sprite: spr.SpriteModel?,
+	brushModel: Model?, -- prebuilt template (cloned per entity)
+	flags: number,
+	skinImages: { EditableImage }?,
+	spriteImages: { EditableImage }?,
+}
+
+-- One rendered entity instance
+export type RenderEnt = {
+	kind: string,
+	modelindex: number,
+	-- alias
+	em: EditableMesh?,
+	part: MeshPart?,
+	vids: { number }?, -- vertex ids by mdl vertex index (front + back seam copies)
+	backVids: { number }?,
+	lastFrame: number,
+	-- sprite
+	billboardPart: Part?,
+	billboardImage: ImageLabel?,
+	-- brush
+	model: Model?,
+	baseCFrames: { [BasePart]: CFrame }?,
+}
+
+--------------------------------------------------------------------------
+-- alias models
+
+-- Build the static topology of an alias model (UVs/triangles); vertex
+-- positions are filled per-frame.
+local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
+	local am = def.alias :: mdl.AliasModel
+	local em = AssetService:CreateEditableMesh()
+
+	local skinW, skinH = am.skinwidth, am.skinheight
+
+	-- vertices: each mdl vertex gets a front-facing and a back-facing copy
+	-- (back-facing verts on the seam have s + skinwidth/2)
+	local vids = table.create(am.numverts)
+	local backVids = table.create(am.numverts)
+	for i = 1, am.numverts do
+		vids[i] = em:AddVertex(Vector3.zero)
+		backVids[i] = em:AddVertex(Vector3.zero)
+	end
+
+	local frontUV = table.create(am.numverts)
+	local backUV = table.create(am.numverts)
+	for i = 1, am.numverts do
+		local stv = am.stverts[i]
+		frontUV[i] = em:AddUV(Vector2.new((stv.s + 0.5) / skinW, (stv.t + 0.5) / skinH))
+		local bs = if stv.onseam then stv.s + skinW / 2 else stv.s
+		backUV[i] = em:AddUV(Vector2.new((bs + 0.5) / skinW, (stv.t + 0.5) / skinH))
+	end
+
+	for tri = 1, am.numtris do
+		local facesfront = am.facesfront[tri]
+		local i1 = am.vertindex[(tri - 1) * 3 + 1] + 1
+		local i2 = am.vertindex[(tri - 1) * 3 + 2] + 1
+		local i3 = am.vertindex[(tri - 1) * 3 + 3] + 1
+		local v1 = if facesfront then vids[i1] else backVids[i1]
+		local v2 = if facesfront then vids[i2] else backVids[i2]
+		local v3 = if facesfront then vids[i3] else backVids[i3]
+		local u1 = if facesfront then frontUV[i1] else backUV[i1]
+		local u2 = if facesfront then frontUV[i2] else backUV[i2]
+		local u3 = if facesfront then frontUV[i3] else backUV[i3]
+		local fid = em:AddTriangle(v1, v3, v2) -- flip winding for roblox
+		em:SetFaceUVs(fid, { u1, u3, u2 })
+	end
+
+	-- set frame 0 positions before building the part (a degenerate mesh
+	-- fails CreateMeshPartAsync)
+	local frame0 = am.frames[1].frames[1]
+	for i = 1, am.numverts do
+		local pos = mdl.frameVert(am, frame0, i)
+		local rp = Vector3.new(pos.x * qcoords.SCALE, pos.z * qcoords.SCALE, -pos.y * qcoords.SCALE)
+		em:SetPosition(vids[i], rp)
+		em:SetPosition(backVids[i], rp)
+	end
+
+	local ok, partOrErr = pcall(function()
+		return AssetService:CreateMeshPartAsync(Content.fromObject(em), { CollisionFidelity = Enum.CollisionFidelity.Box })
+	end)
+	if not ok then
+		warn(`[robloquake] alias mesh failed: {partOrErr}`)
+		return nil
+	end
+	local part = partOrErr :: MeshPart
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Material = Enum.Material.SmoothPlastic
+	local skinImages = def.skinImages
+	if skinImages and skinImages[1] then
+		part.TextureContent = Content.fromObject(skinImages[1])
+	end
+	part.Parent = parent
+
+	return {
+		kind = "alias",
+		modelindex = 0,
+		em = em,
+		part = part,
+		vids = vids,
+		backVids = backVids,
+		lastFrame = 0,
+	}
+end
+
+-- pick the frame (handling framegroups by time)
+local function aliasFrame(am: mdl.AliasModel, frame: number, syncbase: number, time: number): mdl.Frame
+	if frame >= am.numframes or frame < 0 then
+		frame = 0
+	end
+	local fd = am.frames[frame + 1]
+	if fd.group then
+		local intervals = fd.intervals :: { number }
+		local fullinterval = intervals[#intervals]
+		local targettime = (time + syncbase) - math.floor((time + syncbase) / fullinterval) * fullinterval
+		for i, interval in intervals do
+			if interval > targettime then
+				return fd.frames[i]
+			end
+		end
+		return fd.frames[1]
+	end
+	return fd.frames[1]
+end
+
+-- update an alias entity's pose for this frame
+function entrender.updateAlias(
+	re: RenderEnt,
+	def: ModelDef,
+	origin: vector,
+	angles: vector,
+	frame: number,
+	skinnum: number,
+	syncbase: number,
+	time: number
+)
+	local am = def.alias :: mdl.AliasModel
+	local em = re.em :: EditableMesh
+	local part = re.part :: MeshPart
+	local vids = re.vids :: { number }
+	local backVids = re.backVids :: { number }
+
+	if frame ~= re.lastFrame or am.frames[frame + 1] and am.frames[frame + 1].group then
+		re.lastFrame = frame
+		local f = aliasFrame(am, frame, syncbase, time)
+		local verts = f.verts
+		local scale = am.scale
+		local sorigin = am.scale_origin
+		local SCALE = qcoords.SCALE
+		for i = 1, am.numverts do
+			local o = (i - 1) * 4
+			local x = buffer.readu8(verts, o) * scale.x + sorigin.x
+			local y = buffer.readu8(verts, o + 1) * scale.y + sorigin.y
+			local z = buffer.readu8(verts, o + 2) * scale.z + sorigin.z
+			local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE)
+			em:SetPosition(vids[i], rp)
+			em:SetPosition(backVids[i], rp)
+		end
+	end
+
+	-- skins
+	local skinImages = def.skinImages
+	if skinImages and skinImages[skinnum + 1] and re.modelindex ~= skinnum + 1000000 then
+		part.TextureContent = Content.fromObject(skinImages[skinnum + 1])
+	end
+
+	-- entity angles: pitch, yaw, roll (quake degrees). Alias models pitch
+	-- opposite to view pitch.
+	local forward, right, up = mathlib.angleVectors(vector.create(-angles.x, angles.y, angles.z))
+	part.CFrame = qcoords.cframe(origin, forward, right, up)
+end
+
+--------------------------------------------------------------------------
+-- sprites
+
+local function buildSpriteEnt(def: ModelDef, parent: Instance): RenderEnt
+	local sm = def.sprite :: spr.SpriteModel
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.Transparency = 1
+	part.Size = Vector3.new(0.1, 0.1, 0.1)
+
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromScale(sm.maxwidth * qcoords.SCALE, sm.maxheight * qcoords.SCALE)
+	gui.LightInfluence = 0
+	gui.Parent = part
+
+	local img = Instance.new("ImageLabel")
+	img.BackgroundTransparency = 1
+	img.Size = UDim2.fromScale(1, 1)
+	img.ResampleMode = Enum.ResamplerMode.Pixelated
+	local spriteImages = def.spriteImages
+	if spriteImages and spriteImages[1] then
+		img.ImageContent = Content.fromObject(spriteImages[1])
+	end
+	img.Parent = gui
+
+	part.Parent = parent
+	return {
+		kind = "sprite",
+		modelindex = 0,
+		lastFrame = -1,
+		billboardPart = part,
+		billboardImage = img,
+	}
+end
+
+function entrender.updateSprite(re: RenderEnt, def: ModelDef, origin: vector, frame: number)
+	local part = re.billboardPart :: Part
+	part.Position = qcoords.toRoblox(origin)
+	if frame ~= re.lastFrame then
+		re.lastFrame = frame
+		local spriteImages = def.spriteImages
+		local img = re.billboardImage
+		if spriteImages and img and spriteImages[frame + 1] then
+			img.ImageContent = Content.fromObject(spriteImages[frame + 1])
+		end
+	end
+end
+
+--------------------------------------------------------------------------
+-- brush submodels
+
+function entrender.updateBrush(re: RenderEnt, origin: vector, angles: vector)
+	local model = re.model :: Model
+	local baseCFrames = re.baseCFrames :: { [BasePart]: CFrame }
+	local offset = qcoords.toRoblox(origin)
+	-- brush entities in vanilla don't rotate (except rotating brushes,
+	-- which id1 doesn't use), so translation is enough
+	local _ = angles
+	for part, base in baseCFrames do
+		part.CFrame = base + offset
+	end
+end
+
+--------------------------------------------------------------------------
+-- instance management
+
+function entrender.create(def: ModelDef, parent: Instance): RenderEnt?
+	if def.kind == "alias" then
+		return buildAliasEnt(def, parent)
+	elseif def.kind == "sprite" then
+		return buildSpriteEnt(def, parent)
+	elseif def.kind == "brush" then
+		local template = def.brushModel
+		if not template then
+			return nil
+		end
+		local model = template:Clone()
+		local baseCFrames: { [BasePart]: CFrame } = {}
+		for _, part in model:GetDescendants() do
+			if part:IsA("BasePart") then
+				baseCFrames[part] = part.CFrame
+			end
+		end
+		model.Parent = parent
+		return {
+			kind = "brush",
+			modelindex = 0,
+			lastFrame = -1,
+			model = model,
+			baseCFrames = baseCFrames,
+		}
+	end
+	return nil
+end
+
+function entrender.destroy(re: RenderEnt)
+	if re.part then
+		re.part:Destroy()
+	end
+	if re.billboardPart then
+		re.billboardPart:Destroy()
+	end
+	if re.model then
+		re.model:Destroy()
+	end
+end
+
+-- build the shared images for a model definition
+function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
+	if def.kind == "alias" then
+		local am = def.alias :: mdl.AliasModel
+		local imgs = {}
+		for _, skin in am.skins do
+			local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
+			table.insert(imgs, textures.createImage(pixels, am.skinwidth, am.skinheight, pal, false))
+		end
+		def.skinImages = imgs
+	elseif def.kind == "sprite" then
+		local sm = def.sprite :: spr.SpriteModel
+		local imgs = {}
+		for _, fd in sm.frames do
+			local f = fd.frames[1]
+			table.insert(imgs, textures.createImage(f.pixels, f.width, f.height, pal, true))
+		end
+		def.spriteImages = imgs
+	end
+end
+
+return entrender
