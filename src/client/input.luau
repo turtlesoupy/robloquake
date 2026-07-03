@@ -33,13 +33,14 @@ local pendingImpulse = 0
 
 local yaw = 0
 local pitch = 0
+local enabled = true
 
 function input.init(startYaw: number)
 	yaw = startYaw
 	pitch = 0
 
 	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
-		if processed then
+		if processed or not enabled then
 			return
 		end
 		if io.UserInputType == Enum.UserInputType.Keyboard then
@@ -67,7 +68,7 @@ function input.init(startYaw: number)
 	end)
 
 	UserInputService.InputChanged:Connect(function(io: InputObject)
-		if io.UserInputType == Enum.UserInputType.MouseMovement then
+		if io.UserInputType == Enum.UserInputType.MouseMovement and enabled then
 			yaw -= io.Delta.X * m_yaw * sensitivity
 			pitch += io.Delta.Y * m_pitch * sensitivity
 			pitch = math.clamp(pitch, -70, 80)
@@ -88,6 +89,26 @@ function input.viewangles(): vector
 end
 
 -- svc_setangle: the server takes control of the view direction
+-- console/menu take over the keyboard and mouse
+function input.setEnabled(on: boolean)
+	enabled = on
+	if on then
+		input.lockMouse()
+	else
+		table.clear(keysDown)
+		attackDown = false
+	end
+end
+
+-- console "impulse N" (the classic cheat path: QC's CheatCommand)
+function input.setImpulse(n: number)
+	pendingImpulse = n
+end
+
+function input.setSensitivity(v: number)
+	sensitivity = v
+end
+
 function input.setAngles(angles: vector)
 	pitch = angles.x
 	yaw = angles.y
@@ -99,6 +120,11 @@ end
 
 -- CL_BaseMove
 function input.sample(): InputState
+	if not enabled then
+		local imp = pendingImpulse
+		pendingImpulse = 0
+		return { forwardmove = 0, sidemove = 0, upmove = 0, attack = false, jump = false, impulse = imp }
+	end
 	-- scripted-test hooks (verification harness drives the real input path)
 	local forceForward = workspace:GetAttribute("RQ_ForceForward")
 	local forceUp = workspace:GetAttribute("RQ_ForceUp")
