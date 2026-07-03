@@ -24,7 +24,7 @@ import struct
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RATE = 22050  # bank sample rate; quake wavs are 11025 or 22050
-GAP = 0.15  # silence between entries, absorbs region-boundary imprecision
+GAP = 0.1  # silence between entries, absorbs region-boundary imprecision
 
 
 def pak_entries(pakpath: pathlib.Path):
@@ -76,18 +76,19 @@ def parse_wav(blob: bytes):
         n = len(pcm) // 2
         samples = list(struct.unpack(f"<{n}h", pcm[: n * 2]))
     # to the bank rate
-    if rate == RATE:
-        pass
-    elif RATE % rate == 0:
-        k = RATE // rate
-        samples = [s for s in samples for _ in range(k)]
-        loopstart = loopstart * k if loopstart >= 0 else -1
-    elif rate % RATE == 0:
-        k = rate // RATE
-        samples = samples[::k]
-        loopstart = loopstart // k if loopstart >= 0 else -1
-    else:
-        return None
+    if rate != RATE:
+        n_out = max(1, round(len(samples) * RATE / rate))
+        step = (len(samples) - 1) / max(n_out - 1, 1)
+        out = []
+        for i in range(n_out):
+            x = i * step
+            j = int(x)
+            frac = x - j
+            a = samples[j]
+            b = samples[min(j + 1, len(samples) - 1)]
+            out.append(int(a + (b - a) * frac))
+        samples = out
+        loopstart = round(loopstart * RATE / rate) if loopstart >= 0 else -1
     return samples, loopstart
 
 
