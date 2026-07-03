@@ -94,12 +94,31 @@ function worldmesh.combineLight(layers: { { number } }?, styleValue: (style: num
 	for _, sv in layers do
 		total += sv[2] * styleValue(sv[1]) / 256
 	end
-	return math.min(total * 2, 255) / 255
+	-- overbright x2 then gamma-brighten toward the DOS look
+	local linear = math.min(total * 2, 255) / 255
+	return linear ^ 0.7
 end
 local combineLight = worldmesh.combineLight
 
 local function baseStyleValue(_style: number): number
 	return worldmesh.BASE_STYLE_VALUE
+end
+
+-- Animated textures (water/sky) registered during builds; the client takes
+-- and owns them (worldmesh.takeTextureAnims) and rewrites the images.
+export type TextureAnim = {
+	kind: string, -- "turb" | "sky"
+	img: EditableImage,
+	pixels: buffer,
+	w: number,
+	h: number,
+}
+worldmesh.textureAnims = {} :: { TextureAnim }
+
+function worldmesh.takeTextureAnims(): { TextureAnim }
+	local t = worldmesh.textureAnims
+	worldmesh.textureAnims = {}
+	return t
 end
 
 -- One animated vertex color: recomputed when its styles' values change.
@@ -135,22 +154,37 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	local container = Instance.new("Model")
 	container.Name = name
 
+	-- shared per-texture images; turb/sky textures register for animation
+	local texImages: { [number]: EditableImage? } = {}
+	local function textureImage(miptex: number): EditableImage?
+		local tex = data.textures[miptex + 1]
+		if not tex then
+			return nil
+		end
+		if texImages[miptex] ~= nil then
+			return texImages[miptex]
+		end
+		local img = textures.createImage(tex.pixels, tex.width, tex.height, pal, false)
+		texImages[miptex] = img
+		if img then
+			local first = tex.name:sub(1, 1)
+			if first == "*" then
+				table.insert(worldmesh.textureAnims, { kind = "turb", img = img, pixels = tex.pixels, w = tex.width, h = tex.height })
+			elseif tex.name:sub(1, 3) == "sky" then
+				table.insert(worldmesh.textureAnims, { kind = "sky", img = img, pixels = tex.pixels, w = tex.width, h = tex.height })
+			end
+		end
+		return img
+	end
+
+	type FaceData = { pos: { Vector3 }, uv: { Vector2 }, layers: { { { number } }? } }
+	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh cap
+
 	for miptex, surfs in byTexture do
 		local tex = data.textures[miptex + 1]
-		local em = AssetService:CreateEditableMesh()
-		if not em then
-			-- memory budget exhausted: fall back to wedges for the rest
-			warn("[robloquake] EditableMesh budget exhausted; falling back to wedges")
-			container:Destroy()
-			return worldmesh.buildWedges(model, pal, parent, name), {}
-		end
 
-		-- pass 1: gather face data and the batch bounding box
-		type FaceData = { pos: { Vector3 }, uv: { Vector2 }, layers: { { { number } }? } }
+		-- pass 1: gather face data
 		local faceList: { FaceData } = {}
-		local mins = Vector3.new(math.huge, math.huge, math.huge)
-		local maxs = -mins
-
 		for _, surf in surfs do
 			local ti = data.texinfo[surf.texinfonum + 1]
 			local vecs = ti.vecs
@@ -170,106 +204,139 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				local s = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
 				local t = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
 
-				local rp = qcoords.toRoblox(v)
-				mins = mins:Min(rp)
-				maxs = maxs:Max(rp)
-				table.insert(fd.pos, rp)
+				table.insert(fd.pos, qcoords.toRoblox(v))
 				table.insert(fd.uv, Vector2.new(s / texW, t / texH))
 				fd.layers[#fd.pos] = sampleLightStyles(data, surf, s, t)
 			end
 			table.insert(faceList, fd)
 		end
 
-		-- pass 2: build the mesh with vertices centered on the batch origin,
-		-- so the part pivot (mesh bounds center) is exactly (mins+maxs)/2
-		local center = (mins + maxs) / 2
-		-- rank = nth AddColor call; used to remap ids onto the fixed copy
-		local pendingAnim: { { rank: number, layers: { { number } } } } = {}
-		local colorRank = 0
-		for _, fd in faceList do
-			local vids = {}
-			local uvids = {}
-			local cids = {}
-			for i, rp in fd.pos do
-				table.insert(vids, em:AddVertex(rp - center))
-				table.insert(uvids, em:AddUV(fd.uv[i]))
-				local layers = fd.layers[i]
-				local light = combineLight(layers, baseStyleValue)
-				local cid = em:AddColor(Color3.new(light, light, light), 1)
-				colorRank += 1
-				table.insert(cids, cid)
-				if layers then
-					-- animated if any layer's style is non-zero (style 0 is constant)
-					for _, sv in layers do
-						if sv[1] ~= 0 then
-							table.insert(pendingAnim, { rank = colorRank, layers = layers })
-							break
+		-- pass 2: chunk faces so each mesh stays under the vertex cap, then
+		-- build one MeshPart per chunk
+		local chunk: { FaceData } = {}
+		local chunkVerts = 0
+
+		local function flushChunk()
+			if #chunk == 0 then
+				return
+			end
+			local faces = chunk
+			chunk = {}
+			chunkVerts = 0
+
+			local em = AssetService:CreateEditableMesh()
+			if not em then
+				warn("[robloquake] EditableMesh budget exhausted; skipping batch")
+				return
+			end
+
+			local mins = Vector3.new(math.huge, math.huge, math.huge)
+			local maxs = -mins
+			for _, fd in faces do
+				for _, rp in fd.pos do
+					mins = mins:Min(rp)
+					maxs = maxs:Max(rp)
+				end
+			end
+			local center = (mins + maxs) / 2
+
+			-- rank = nth AddColor call; used to remap ids onto the fixed copy
+			local pendingAnim: { { rank: number, layers: { { number } } } } = {}
+			local colorRank = 0
+			for _, fd in faces do
+				local vids = {}
+				local uvids = {}
+				local cids = {}
+				for i, rp in fd.pos do
+					table.insert(vids, em:AddVertex(rp - center))
+					table.insert(uvids, em:AddUV(fd.uv[i]))
+					local layers = fd.layers[i]
+					local light = combineLight(layers, baseStyleValue)
+					local cid = em:AddColor(Color3.new(light, light, light), 1)
+					colorRank += 1
+					table.insert(cids, cid)
+					if layers then
+						-- animated if any layer's style is non-zero
+						for _, sv in layers do
+							if sv[1] ~= 0 then
+								table.insert(pendingAnim, { rank = colorRank, layers = layers })
+								break
+							end
 						end
 					end
 				end
-			end
-			-- quake winds clockwise from the front; roblox fronts are CCW
-			for k = 3, #vids do
-				local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
-				em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
-				em:SetFaceColors(fid, { cids[1], cids[k], cids[k - 1] })
-			end
-		end
-
-		-- fixed-size copy releases the 60k-vertex reservation
-		local ok, fixedOrErr = pcall(function()
-			return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
-		end)
-		em:Destroy()
-		if not ok or not fixedOrErr then
-			warn(`[robloquake] fixed mesh copy failed for texture {miptex}: {fixedOrErr}`)
-			continue
-		end
-		local fixed = fixedOrErr :: EditableMesh
-
-		local ok2, partOrErr = pcall(function()
-			return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))
-		end)
-		if not ok2 then
-			fixed:Destroy()
-			warn(`[robloquake] mesh build failed for texture {miptex}: {partOrErr}`)
-			continue
-		end
-		local part = partOrErr :: MeshPart
-		retainMesh(container, fixed)
-
-		-- remap animated colors onto the fixed copy: GetColors returns ids in
-		-- creation order, so the nth AddColor call maps to newIds[n]
-		if #pendingAnim > 0 then
-			local newIds = fixed:GetColors()
-			for _, entry in pendingAnim do
-				local newId = newIds[entry.rank]
-				if newId then
-					table.insert(animOut, { em = fixed, cid = newId, layers = entry.layers })
+				-- quake winds clockwise from the front; roblox fronts are CCW
+				for k = 3, #vids do
+					local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
+					em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
+					em:SetFaceColors(fid, { cids[1], cids[k], cids[k - 1] })
 				end
 			end
-		end
-		part.Name = if tex then tex.name else tostring(miptex)
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.CastShadow = false
-		part.Material = Enum.Material.SmoothPlastic
 
-		if tex then
-			local img = textures.createImage(tex.pixels, tex.width, tex.height, pal, false)
+			-- fixed-size copy releases the 60k-vertex reservation
+			local ok, fixedOrErr = pcall(function()
+				return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+			end)
+			em:Destroy()
+			if not ok or not fixedOrErr then
+				warn(`[robloquake] fixed mesh copy failed for texture {miptex}: {fixedOrErr}`)
+				return
+			end
+			local fixed = fixedOrErr :: EditableMesh
+
+			local ok2, partOrErr = pcall(function()
+				return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))
+			end)
+			if not ok2 then
+				fixed:Destroy()
+				warn(`[robloquake] mesh build failed for texture {miptex}: {partOrErr}`)
+				return
+			end
+			local part = partOrErr :: MeshPart
+			retainMesh(container, fixed)
+
+			-- remap animated colors onto the fixed copy: GetColors returns
+			-- ids in creation order (nth AddColor -> newIds[n])
+			if #pendingAnim > 0 then
+				local newIds = fixed:GetColors()
+				for _, entry in pendingAnim do
+					local newId = newIds[entry.rank]
+					if newId then
+						table.insert(animOut, { em = fixed, cid = newId, layers = entry.layers })
+					end
+				end
+			end
+			part.Name = if tex then tex.name else tostring(miptex)
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.CastShadow = false
+			part.Material = Enum.Material.SmoothPlastic
+
+			local img = textureImage(miptex)
 			if img then
 				part.TextureContent = Content.fromObject(img)
-			else
+			elseif tex then
 				part.Color = textures.averageColor(tex.pixels, tex.width * tex.height, pal)
 			end
+
+			-- CreateMeshPartAsync centers geometry on the part; restore
+			-- placement from this chunk's bounding box center
+			part.CFrame = CFrame.new(center)
+			part.Parent = container
 		end
 
-		-- CreateMeshPartAsync centers geometry on the part; restore world
-		-- placement from the mesh bounding box center
-		part.CFrame = CFrame.new((mins + maxs) / 2)
-		part.Parent = container
+		for _, fd in faceList do
+			-- front/back seam handling never applies to world faces; each
+			-- face contributes #pos vertices
+			if chunkVerts + #fd.pos > MAX_BATCH_VERTS then
+				flushChunk()
+			end
+			table.insert(chunk, fd)
+			chunkVerts += #fd.pos
+		end
+		flushChunk()
 	end
 
 	container.Parent = parent

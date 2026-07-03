@@ -102,6 +102,69 @@ function textures.translatePixels(pixels: buffer, count: number, colors: number)
 	return out
 end
 
+-- Turbulent water/lava warp (D_DrawTurbulent look): the texture scrolls
+-- through a sine displacement on both axes.
+function textures.writeTurbFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+	local out = buffer.create(w * h * 4)
+	local pr, pg, pb = pal.r, pal.g, pal.b
+	local sinx = table.create(w)
+	local siny = table.create(h)
+	for x = 0, w - 1 do
+		sinx[x + 1] = math.floor(8 * math.sin(2 * math.pi * (x / 32) + time * 2) + 0.5)
+	end
+	for y = 0, h - 1 do
+		siny[y + 1] = math.floor(8 * math.sin(2 * math.pi * (y / 32) + time * 2) + 0.5)
+	end
+	for y = 0, h - 1 do
+		local rowOfs = y * w * 4
+		for x = 0, w - 1 do
+			local sx = (x + siny[y + 1]) % w
+			local sy = (y + sinx[x + 1]) % h
+			local pidx = buffer.readu8(pixels, sy * w + sx)
+			local o = rowOfs + x * 4
+			buffer.writeu8(out, o, pr[pidx + 1])
+			buffer.writeu8(out, o + 1, pg[pidx + 1])
+			buffer.writeu8(out, o + 2, pb[pidx + 1])
+			buffer.writeu8(out, o + 3, 255)
+		end
+	end
+	img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), out)
+end
+
+-- Scrolling sky: quake sky textures are 256x128 with the front (masked)
+-- cloud layer on the left half and the solid background on the right.
+-- Both halves of the image are rewritten with the composited scroll so any
+-- UV mapping shows moving clouds.
+function textures.writeSkyFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+	local half = math.floor(w / 2)
+	if half < 1 then
+		return
+	end
+	local out = buffer.create(w * h * 4)
+	local pr, pg, pb = pal.r, pal.g, pal.b
+	local shiftFront = math.floor(time * 16) % half
+	local shiftBack = math.floor(time * 8) % half
+	for y = 0, h - 1 do
+		local rowOfs = y * w * 4
+		for x = 0, w - 1 do
+			local cx = x % half
+			-- front layer (left half of source), palette 0 = transparent
+			local fx = (cx + shiftFront) % half
+			local pidx = buffer.readu8(pixels, y * w + fx)
+			if pidx == 0 then
+				local bx = (cx + shiftBack) % half + half
+				pidx = buffer.readu8(pixels, y * w + bx)
+			end
+			local o = rowOfs + x * 4
+			buffer.writeu8(out, o, pr[pidx + 1])
+			buffer.writeu8(out, o + 1, pg[pidx + 1])
+			buffer.writeu8(out, o + 2, pb[pidx + 1])
+			buffer.writeu8(out, o + 3, 255)
+		end
+	end
+	img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), out)
+end
+
 -- Average color of a palettized image (fallback tint when images are
 -- unavailable).
 function textures.averageColor(pixels: buffer, count: number, pal: Palette): Color3

@@ -54,9 +54,14 @@ end
 
 local assets = ReplicatedStorage:WaitForChild("QuakeAssets")
 local id1 = assets:WaitForChild("id1")
+local gameDir = assets:GetAttribute("game")
+if typeof(gameDir) ~= "string" then
+	gameDir = "id1"
+end
+local gameFolder = assets:WaitForChild(gameDir)
 local fs = vfslib.new()
 for _, pakName in { "pak0", "pak1" } do
-	local pack = loadPak(id1, pakName)
+	local pack = loadPak(gameFolder, pakName)
 	if pack then
 		vfslib.addPack(fs, pack)
 	end
@@ -112,6 +117,8 @@ local worldModels: { bsplib.Model } = {}
 -- animated lightstyle vertices across all built brush geometry
 local lightAnim: { worldmesh.AnimEntry } = {}
 local styleValues: { [number]: number } = {}
+-- water / sky textures that rewrite their images every tick
+local textureAnims: { worldmesh.TextureAnim } = {}
 
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
 local staticEnts: { entrender.RenderEnt } = {}
@@ -136,6 +143,9 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			template, anim = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
 			for _, e in anim do
 				table.insert(lightAnim, e)
+			end
+			for _, ta in worldmesh.takeTextureAnims() do
+				table.insert(textureAnims, ta)
 			end
 			brushTemplates[name] = template
 		end
@@ -196,7 +206,11 @@ c.onServerInfo = function()
 	for _, e in anim do
 		table.insert(lightAnim, e)
 	end
-	print(`[cl] world built: {worldName} ({#lightAnim} animated light verts)`)
+	table.clear(textureAnims)
+	for _, ta in worldmesh.takeTextureAnims() do
+		table.insert(textureAnims, ta)
+	end
+	print(`[cl] world built: {worldName} ({#lightAnim} animated light verts, {#textureAnims} animated textures)`)
 end
 
 c.print = function(s: string)
@@ -348,6 +362,13 @@ RunService.Heartbeat:Connect(function(dt: number)
 	if styleFrame ~= lastStyleFrame and #lightAnim > 0 then
 		lastStyleFrame = styleFrame
 		workspace:SetAttribute("RQ_LightTick", styleFrame)
+		for _, ta in textureAnims do
+			if ta.kind == "turb" then
+				textures.writeTurbFrame(ta.img, ta.pixels, ta.w, ta.h, pal, c.time)
+			else
+				textures.writeSkyFrame(ta.img, ta.pixels, ta.w, ta.h, pal, c.time)
+			end
+		end
 		local changed: { [number]: boolean } = {}
 		for style, map in c.lightstyles do
 			local value

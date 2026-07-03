@@ -16,7 +16,7 @@ local vfs = require(engine.common.vfs)
 local host = require(engine.server.host)
 local svlib = require(engine.server.sv)
 
-local START_MAP = "e1m1"
+-- start map: attribute override, else per-game default
 
 -- reassemble pak files from base64 chunk StringValues
 local function loadPak(gameFolder: Instance, pakName: string): pak.Pack?
@@ -40,14 +40,21 @@ local function loadPak(gameFolder: Instance, pakName: string): pak.Pack?
 end
 
 local assets = ReplicatedStorage:WaitForChild("QuakeAssets")
-local id1 = assets:WaitForChild("id1")
+local gameDir = assets:GetAttribute("game")
+if typeof(gameDir) ~= "string" then
+	gameDir = "id1"
+end
+local gameFolder = assets:WaitForChild(gameDir)
+
+local startAttr = assets:GetAttribute("startmap")
+local START_MAP = if typeof(startAttr) == "string" then startAttr elseif gameDir == "id1" then "e1m1" else "start"
 
 local fsys = vfs.new()
 for _, pakName in { "pak0", "pak1" } do
-	local pack = loadPak(id1, pakName)
+	local pack = loadPak(gameFolder, pakName)
 	if pack then
 		vfs.addPack(fsys, pack)
-		print(`[robloquake] loaded {pakName}.pak ({pack.numfiles} files)`)
+		print(`[robloquake] loaded {gameDir}/{pakName}.pak ({pack.numfiles} files)`)
 	end
 end
 
