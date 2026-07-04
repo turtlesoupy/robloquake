@@ -17,13 +17,17 @@ no from-memory claims. Statuses:
 Each manifest ends with a list of port-side additions that have no C
 counterpart, each with its justification.
 
-| Manifest | Rows | Verified | Pending | Unimplemented | Substituted |
-|---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 455 | 157 | 125 | 62 | 111 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 264 | 59 | 73 | 65 | 67 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 236 | 120 | 51 | 24 | 41 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 226 | 53 | 56 | 69 | 48 |
-| **Total** | **1181** | **389** | **305** | **220** | **267** |
+| Manifest | Rows | Verified | Pending | Unimplemented | Substituted | N/A |
+|---|---|---|---|---|---|---|
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 455 | 124 | 159 | 61 | 111 | 0 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 267 | 17 | 119 | 62 | 66 | 3 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 240 | 111 | 64 | 21 | 42 | 2 |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 230 | 45 | 76 | 60 | 49 | 0 |
+| **Total** | **1192** | **297** | **418** | **204** | **268** | **5** |
+
+Counts as of 2026-07-04 after the evidence reset (VERIFIED = re-runnable
+evidence only) and the first burn-down passes; regenerate with
+`grep -oE '"'"'\| (VERIFIED|PENDING|UNIMPLEMENTED|SUBSTITUTED|N/A) '"'"' docs/coverage/*.md | sort | uniq -c`.
 
 Notes on reading the numbers: 13 of the nq-server UNIMPLEMENTED rows are
 dead code in the original build (QUAKE2/#if 0/PF_Fixme slots); the
@@ -51,6 +55,19 @@ rows.
 | S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | — | TBD |
 
 ## Changelog
+
+### 2026-07-04 (qw-server DEMOTED cleared)
+- Final 25 qw-server DEMOTED rows re-earned: the shared VM rows against
+  test_vm's named checks (alloc/free/parse/exec/string battery — one
+  implementation serves both engines), model registry vs test_models +
+  the setmodel "*1" bounds check, Mod_PointInLeaf vs test_bsp + the PHS
+  guncock, netchan setup vs the loopback sequence checks, FatPVS vs the
+  packet-entity/PHS checks, the four pmove trace internals vs the
+  two-course ground truth, and SV_RunEntity via a new test_qwsv check
+  (nailgun spike flies through the movetype dispatch; firing backward —
+  RunNewmis flies the missile immediately, so a wall-facing shot dies
+  in the same tick it spawns). PF_Fixme ruled N/A (dead-slot trap).
+  qw-server manifest now has zero DEMOTED rows.
 
 ### 2026-07-04 (qw builtins re-earned at the register level)
 - New tests/test_qwbuiltins.luau (53 checks): PF_* builtins driven

@@ -417,4 +417,10 @@ callStr(70, "e1m3")
 callStr(70, "e1m4")
 t.eq(svr.changelevelTo, "e1m3", "PF_changelevel latches once (double-issue guard as C)")
 
+--------------------------------------------------------------------------
+-- VM dispatch guard: PR_ExecuteProgram null-function error
+local okNull = pcall(function()
+	vmlib.exec(vm, 0)
+end)
+t.check(not okNull, "exec(0) errors (PR_RunError null function)")
 t.finish("test_qwbuiltins")

@@ -97,6 +97,47 @@ t.check(sawFire, "guncock sound emitted")
 -- world runs: lightstyles registered, time advances
 t.check(svr.lightstyles[0] ~= nil or svr.time > 1, "server frames ran")
 
+-- fire the nailgun: spawns a MOVETYPE_FLYMISSILE spike that SV_RunEntity
+-- must fly through the world on subsequent frames
+vmlib.edSetFloat(player, ent.items, bit32.bor(vmlib.edFloat(player, ent.items) // 1, 4)) -- IT_NAILGUN
+vmlib.edSetFloat(player, ent.ammo_nails, 40)
+for _ = 1, 12 do
+	qwsv.frame(svr, 0.05) -- let the shotgun's attack_finished elapse
+end
+-- face back down the corridor the player came from, so the nail has
+-- open air to fly through (RunNewmis flies it immediately on spawn)
+local backYaw = (spawnYaw + 180) % 360
+qwsv.executeCmd(svr, client, {
+	angles = vector.create(0, backYaw, 0),
+	forwardmove = 0,
+	sidemove = 0,
+	upmove = 0,
+	buttons = 0,
+	impulse = 4,
+	msec = 50,
+})
+qwsv.executeCmd(svr, client, {
+	angles = vector.create(0, backYaw, 0),
+	forwardmove = 0,
+	sidemove = 0,
+	upmove = 0,
+	buttons = 1,
+	msec = 50,
+})
+local spike: vmlib.Edict? = nil
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "spike" then
+		spike = e
+		break
+	end
+end
+assert(spike, "nailgun spawned a spike")
+local spikeOrg = vmlib.edVector(spike, ent.origin)
+qwsv.frame(svr, 0.05)
+local flew = vector.magnitude(vmlib.edVector(spike, ent.origin) - spikeOrg)
+t.check(not spike.free and flew > 20, `SV_RunEntity flew the spike {math.floor(flew)} units in one frame`)
+
 --------------------------------------------------------------------------
 -- frame updates: full frame, then a delta frame against the acked one
 

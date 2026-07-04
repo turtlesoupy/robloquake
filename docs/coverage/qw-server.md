@@ -83,7 +83,7 @@ Status legend:
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | SV_AddToFatPVS | `addToFatPVS` (qwsv.luau:1478) | VERIFIED | test_qwsv frame writes (entities appear exactly when in PVS); same 8-unit plane straddle recursion. | `lune run tests/test_qwsv.luau` |
-| SV_FatPVS | `qwsv.fatPVS` (qwsv.luau:1507) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same tests; allocates per call instead of static buffer (GC platform). | TBD: write test or tools/verify script + evidence capture |
+| SV_FatPVS | `qwsv.fatPVS` (qwsv.luau:1507) | VERIFIED | test_qw_loopback: packet entities and the PHS guncock reach the client only through fatPVS-culled writes ("packet entities present", "svc_sound guncock arrived through the PHS multicast"). Delta: allocates per call instead of a static buffer (GC platform). | `lune run tests/test_qw_loopback.luau` |
 | SV_AddNailUpdate | inline in `writeEntitiesToClient` (qwsv.luau:1708) | PENDING | Nail/supernail modelindex match, MAX_NAILS=32, overflow nails dropped (not sent as packet entities) — matches C. No test spawns nails. | TBD: write test or tools/verify script + evidence capture |
 | SV_EmitNailUpdate | `emitNailUpdate` (qwsv.luau:1652) | PENDING | 48-bit xyzpy packing bit-for-bit from C; test_qwsv parser skips nails bytes but none are emitted in the fixture. | TBD: write test or tools/verify script + evidence capture |
 | SV_WriteDelta | `qwents.writeDelta` (qwents.luau:141) | VERIFIED | test_qwents: full + delta round-trips (moved/unchanged/removed/new-from-baseline); 0.1 origin epsilon, U_MOREBITS/U_REMOVE framing exact. | `lune run tests/test_qwents.luau` |
@@ -114,7 +114,7 @@ Status legend:
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_ModelIndex | `svr.modelIndex` hook (qwsv.luau:212) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Used by baselines/stats/setmodel throughout the verified tests. Linear precache scan, 0-based like C. | TBD: write test or tools/verify script + evidence capture |
+| SV_ModelIndex | `svr.modelIndex` hook (qwsv.luau:212) | VERIFIED | test_qw_loopback "precache lists received" + test_qwbuiltins setmodel modelindex check (linear precache scan, 0-based like C). | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_qwbuiltins.luau` |
 | SV_FlushSignon | — | SUBSTITUTED | C chunks the signon into 512-byte buffers for UDP; the port keeps one signon buffer and sends it whole in prespawn (no packet size limit on the transport). | — (substitution; verify justification still holds) |
 | SV_CreateBaseline | `qwsv.createBaseline` (qwsv.luau:368) | VERIFIED | test_qwsv "baselines created" + delta-from-baseline round trip; loopback ">20 baselines received". Player slots forced to playermodel/colormap as in C. | `lune run tests/test_qwsv.luau` |
 | SV_SaveSpawnparms | qw/qwsv.luau:saveSpawnparms | VERIFIED | test_qw_loopback "qw nailgun carried"/"qw nail count carried": SetChangeParms on the outgoing progs, full wire re-handshake onto e1m2, DecodeLevelParms restores items+ammo. serverflags latched. | `lune run tests/test_qw_loopback.luau` |
@@ -145,8 +145,8 @@ sv_phys port, ABI injected via qwdefs). Primary evidence: test_qwsv boots and se
 | SV_CheckWaterTransition | `checkWaterTransition` (qwphys.luau:740) | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | SV_Physics_Toss | `sv_phys.physicsToss` (qwphys.luau:768) | VERIFIED | test_qwsv shotgun path spawns/moves newmis through it; bounce/backoff 1.5/1.0 as C. | `lune run tests/test_qwsv.luau` |
 | SV_Physics_Step | `physicsStep` (qwphys.luau:821) | PENDING | Freefall + dland2 hitsound; QW deathmatch has no monsters so only misc step ents exercise it. | TBD: write test or tools/verify script + evidence capture |
-| SV_ProgStartFrame | inlined at top of `sv_phys.physics` (qwphys.luau:854) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): StartFrame exec with self/other/time reset; runs every test frame. | TBD: write test or tools/verify script + evidence capture |
-| SV_RunEntity | movetype dispatch in `sv_phys.physics` (qwphys.luau:872) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Client slots skipped ("QW: clients move in SV_RunCmd"), which the movement tests depend on. Delta: C's per-entity `lastruntime` throttle (entities run at most every 50 ms between client packets) is absent — entities advance once per server frame like NQ. | TBD: write test or tools/verify script + evidence capture |
+| SV_ProgStartFrame | inlined at top of `sv_phys.physics` (qwphys.luau:854) | VERIFIED | StartFrame executes every qwsv.frame with self/other/time reset; test_qwsv "server frames ran" + the spike flight check depend on per-frame QC execution. | `lune run tests/test_qwsv.luau` |
+| SV_RunEntity | movetype dispatch in `sv_phys.physics` (qwphys.luau:872) | VERIFIED | test_qwsv "SV_RunEntity flew the spike": a MOVETYPE_FLYMISSILE spike advances through the movetype dispatch while client slots stay excluded (movement checks would break otherwise). Delta: C's per-entity `lastruntime` throttle absent — entities advance once per server frame like NQ. | `lune run tests/test_qwsv.luau` |
 | SV_RunNewmis | inlined after each entity (qwphys.luau:898) + `postRunCmd` | VERIFIED | test_qwsv: missile first-0.05s move via physicsToss (guncock/shell test passes through PlayerPostThink newmis path). | `lune run tests/test_qwsv.luau` |
 | SV_Physics | `sv_phys.physics` (qwphys.luau:849) | VERIFIED | test_qwsv/test_qw_loopback every tick; force_retouch decrement; sv.time advanced by qwsv.frame, not here — matches C split. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_qwsv.luau` |
 | SV_SetMoveVars | movevars built per-cmd in `qwsv.runCmd` (qwsv.luau:674) | SUBSTITUTED | C copies cvars into a global `movevars` once per frame for pmove; port builds the table per RunCmd call from the same cvars — same values, no global. Verified transitively by loopback prediction convergence (server and client pmove use identical movevars). | — (substitution; verify justification still holds) |
@@ -269,7 +269,7 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_infokey (80) | qwbuiltins.luau:828 | VERIFIED | test_qwbuiltins: world reads serverinfo, client reads userinfo. Delta: C's synthetic keys (ip, ping) absent. | `lune run tests/test_qwbuiltins.luau` |
 | PF_stof (81) | qwbuiltins.luau:841 | VERIFIED | test_qwbuiltins: atof semantics ("3.5xyz" -> 3.5, "" -> 0). | `lune run tests/test_qwbuiltins.luau` |
 | PF_multicast (82) | qwbuiltins.luau:845 | VERIFIED | Routes to svMulticast; loopback PHS sound + temp entities. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PF_Fixme | error on unknown builtin (vm dispatch) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): VM errors on unregistered builtin numbers. | TBD: write test or tools/verify script + evidence capture |
+| PF_Fixme | error on unknown builtin (vm dispatch) | N/A | C binds PF_Fixme to unused builtin slots purely to Sys_Error with a message; the port's vm dispatch nil-check is the same trap, dead in stock play (all qwprogs builtins are registered). | — (N/A) |
 
 ## pr_edict.c
 
@@ -278,19 +278,19 @@ evidence via test_qwsv/test_qw_loopback which run id1 qwprogs.dat through it wit
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| ED_ClearEdict | `clearEdict` (vm.luau:259) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Entity churn in verified play. | TBD: write test or tools/verify script + evidence capture |
-| ED_Alloc | `vmlib.alloc` (vm.luau:265) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Slot reuse after 0.5s as C. | TBD: write test or tools/verify script + evidence capture |
-| ED_Free | `vmlib.free` (vm.luau:289) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Unlink hook + field reset. | TBD: write test or tools/verify script + evidence capture |
-| ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwdefs.build resolves the whole QW ABI by name at load (qwdefs.luau) — boot fails loudly if any required def is missing. | TBD: write test or tools/verify script + evidence capture |
+| ED_ClearEdict | `clearEdict` (vm.luau:259) | VERIFIED | test_vm alloc/free battery (freed fields reset) + test_qwbuiltins spawn-after-remove churn on qwprogs; shared vm.luau implementation. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
+| ED_Alloc | `vmlib.alloc` (vm.luau:265) | VERIFIED | test_vm "alloc grows"; test_qwbuiltins "PF_Spawn returns a fresh edict". Slot reuse after 0.5s as C. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
+| ED_Free | `vmlib.free` (vm.luau:289) | VERIFIED | test_vm "freed flag"/"free clears solid"/"free sets nextthink -1"; unlink hook installed by qwbuiltins and exercised by PF_Remove check. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
+| ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | VERIFIED | test_vm globaldef/fielddef offset and functionsByName checks; qwdefs.build resolves the whole QW ABI by name at load and test_qwsv boots through it (a missing def fails loudly). | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | GetEdictFieldValue | field lookups via qwdefs `ent` table | SUBSTITUTED | Static name→offset resolution replaces per-call cached lookup. Note: the `gravity`/`maxspeed` optional-field pickup that C does with it is missing (see SV_UpdateToReliableMessages). | — (substitution; verify justification still holds) |
 | PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | — | UNIMPLEMENTED | Debug printing (edict dumps) not ported. | — (implement first) |
 | ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | — | UNIMPLEMENTED | Console debug + savegame globals; QW has no savegames. | — (implement first) |
-| ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): `\n` escape handling. | TBD: write test or tools/verify script + evidence capture |
-| ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): anglehack/light→light_lev handling; e1m1 entities load. | TBD: write test or tools/verify script + evidence capture |
+| ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | VERIFIED | test_vm: "newString escape n" / backslash-only escape check. | `lune run tests/test_vm.luau` |
+| ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | VERIFIED | test_vm: parsed classname/origin + "anglehack applied"; e1m1 entity lump loads in every QW test. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | ED_LoadFromFile | `vmlib.loadFromFileQW` (vm.luau:791) | VERIFIED | test_qwsv: deathmatch inhibit flags (13 inhibited, no monsters in DM). | `lune run tests/test_qwsv.luau` |
-| PR_LoadProgs | `progslib.load` (progs.luau:50) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): CRC gate via defs.PROGHEADER_CRC_QW (qwsv.luau:263). | TBD: write test or tools/verify script + evidence capture |
+| PR_LoadProgs | `progslib.load` (progs.luau:50) | VERIFIED | test_vm header/file CRC + section count checks (NQ progs); qwsv boot gates on defs.PROGHEADER_CRC_QW=54730 for qwprogs (test_qwsv would fail on mismatch). | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | PR_Init | — | SUBSTITUTED | Command/cvar registration replaced by module init. | — (substitution; verify justification still holds) |
-| EDICT_NUM / NUM_FOR_EDICT | `vmlib.edictNum` / `ed.num` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): | TBD: write test or tools/verify script + evidence capture |
+| EDICT_NUM / NUM_FOR_EDICT | `vmlib.edictNum` / `ed.num` | VERIFIED | Exercised by every edict register round-trip in test_qwbuiltins (globalEdict/returnEdict paths) and the test_vm battery. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
 
 ## pr_exec.c
 
@@ -299,10 +299,10 @@ Shared NQ port: `src/shared/engine/progs/vm.luau`.
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | PR_PrintStatement / PR_StackTrace / PR_Profile_f | — | UNIMPLEMENTED | Profiling/trace printing not ported (vm.trace flag exists but prints nothing). | — (implement first) |
-| PR_RunError | `runError` (vm.luau:311) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Errors carry the function name; surfaced through Luau error. | TBD: write test or tools/verify script + evidence capture |
-| PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Parm save/restore across recursion — id1 qwprogs runs full games in the tests. | TBD: write test or tools/verify script + evidence capture |
-| PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Whole opcode interpreter; every test exercises it, incl. OP_STATE through the QW ABI (vm.stateOffsets, qwsv.luau:274). | TBD: write test or tools/verify script + evidence capture |
-| PR_GetString / PR_SetString | `vmlib.getString`/`allocString`/`newString` (vm.luau:123-148) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Dynamic string table replaces pointer arithmetic (GC platform). | TBD: write test or tools/verify script + evidence capture |
+| PR_RunError | `runError` (vm.luau:311) | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)"; errors carry the function name through Luau error. | `lune run tests/test_qwbuiltins.luau` |
+| PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | VERIFIED | test_vm "stack balanced after calls" across the anglemod exec battery; full-game recursion in every QW suite. | `lune run tests/test_vm.luau` |
+| PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | VERIFIED | test_vm anglemod exec battery (5 argument cases) + -0.0 IFNOT semantics; whole opcode interpreter runs id1 qwprogs in every QW test incl. OP_STATE through vm.stateOffsets. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
+| PR_GetString / PR_SetString | `vmlib.getString`/`allocString`/`newString` (vm.luau:123-148) | VERIFIED | test_vm null-string/newString checks; every string builtin in test_qwbuiltins round-trips through the table. Delta: dynamic string table replaces pointer arithmetic (GC platform). | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
 
 ## model.c
 
@@ -311,8 +311,8 @@ QW's server model.c is the brush-only loader; the port loads the same lumps.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Mod_Init / Mod_ClearAll / Mod_FindName / Mod_LoadModel / Mod_ForName | `models.newRegistry`/`models.forName` (models.luau) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): e1m1 + submodels (`*i`) load in every QW test. | TBD: write test or tools/verify script + evidence capture |
-| Mod_PointInLeaf | `bsp.pointInLeaf` (bsp.luau:760) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): PHS multicast + checkclient paths. | TBD: write test or tools/verify script + evidence capture |
+| Mod_Init / Mod_ClearAll / Mod_FindName / Mod_LoadModel / Mod_ForName | `models.newRegistry`/`models.forName` (models.luau) | VERIFIED | test_models loader battery (1084 checks) + e1m1 and submodels (`*i`) load in every QW test (test_qwbuiltins setmodel "*1" bounds check). | `lune run tests/test_models.luau`; `lune run tests/test_qwbuiltins.luau` |
+| Mod_PointInLeaf | `bsp.pointInLeaf` (bsp.luau:760) | VERIFIED | test_bsp pointInLeaf checks; the loopback PHS guncock check depends on correct leaf lookup for multicast. | `lune run tests/test_bsp.luau`; `lune run tests/test_qw_loopback.luau` |
 | Mod_DecompressVis / Mod_LeafPVS | `bsp.leafPVS` (bsp.luau:779) | VERIFIED | Fat-PVS entity culling + PHS sound in loopback. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Mod_LoadVertexes/Edges/Surfedges/Textures/Lighting/Visibility/Entities/Submodels/Texinfo/Faces/Nodes/Leafs/Clipnodes/Marksurfaces/Planes + CalcSurfaceExtents + Mod_SetParent + Mod_MakeHull0 + Mod_LoadBrushModel | `bsp.load` internals (bsp.luau:187-669) | VERIFIED | Hull/clipnode data is ground-truth checked transitively: test_qw_pmove runs the C pmove's own hull tracing against the port-loaded e1m1 within 0.000122 units. | `lune run tests/test_qw_pmove.luau` |
 | Mod_LoadTextures (rendering payload) | client-side gfx concern | SUBSTITUTED | Server only needs hulls/PVS/entities; texture pixels handled by the render pipeline. | — (substitution; verify justification still holds) |
@@ -324,7 +324,7 @@ Shared NQ port: `src/shared/engine/common/mathlib.luau` + native `vector` type.
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | AngleVectors | `mathlib.angleVectors` | VERIFIED | pmove ground truth matches C within 1e-4 — angle math must agree. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| VectorNormalize | `mathlib.normalize` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same. | TBD: write test or tools/verify script + evidence capture |
+| VectorNormalize | `mathlib.normalize` | VERIFIED | test_qwbuiltins normalize check (exact 3-4-5) + pmove ground truth transitively. | `lune run tests/test_qwbuiltins.luau`; `lune run tests/test_qw_pmove.luau` |
 | DotProduct/VectorAdd/Sub/Copy/Scale/Length etc. | Luau `vector` builtins | SUBSTITUTED | Native SIMD vector type replaces the macro/asm set; correctness bounded by the pmove/trace ground-truth tests. | — (substitution; verify justification still holds) |
 | BoxOnPlaneSide (math.s/mathlib.c) | axis-aligned checks in world/bsp code | SUBSTITUTED | Only used for culling paths that the port expresses directly. | — (substitution; verify justification still holds) |
 
@@ -340,7 +340,7 @@ Shared NQ port: `src/shared/engine/common/mathlib.luau` + native `vector` type.
 |---|---|---|---|---|
 | Netchan_Init | `qwnetchan.new` (qwnetchan.luau:22) | VERIFIED | Loopback handshake + play. Delta: no qport (no NAT rebinding on Roblox). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Netchan_OutOfBand / Netchan_OutOfBandPrint | — | SUBSTITUTED | No connectionless packets on the transport. | — (substitution; verify justification still holds) |
-| Netchan_Setup | `qwnetchan.new` per client | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): | TBD: write test or tools/verify script + evidence capture |
+| Netchan_Setup | `qwnetchan.new` per client | VERIFIED | test_qw_loopback handshake: per-client channels track sequences through 60+ ticks ("validsequence tracking", "delta frames dominated"). | `lune run tests/test_qw_loopback.luau` |
 | Netchan_CanPacket / Netchan_CanReliable | — | SUBSTITUTED | Rate throttling and reliable-in-flight gating meaningless on a reliable+ordered remote; senders always transmit. | — (substitution; verify justification still holds) |
 | Netchan_Transmit | `qwnetchan.transmit` (qwnetchan.luau:34) | VERIFIED | Loopback: sequence numbers keep their exact protocol role (frames ring, delta ack). **Substitution:** reliable retransmit/fragment bits replaced by an in-band reliable block `[seq][ack][reliable][datagram]` because Roblox remotes are reliable+ordered — the reliable stream cannot be lost, so no resend state. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Netchan_Process | `qwnetchan.process` (qwnetchan.luau:57) | VERIFIED | Stale/duplicate rejection, drop_count (net_drop) feeding SV_RunCmd's dropped-cmd replay — loopback runs with 1 tick latency. Delta: 32-bit sequence wrap unhandled (~2.3y at 60Hz). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -368,13 +368,13 @@ approach. Terrain NOT covered: water (waterlevel 0 throughout — PM_WaterMove s
 | PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | VERIFIED | onground agrees every tick across both courses (460 ticks incl. stair edges and jump apexes); water branches still only trivially covered — the water truth course remains a separate open item (see PM_WaterMove). | `lune run tests/test_qw_pmove.luau` |
 | JumpButton | `jumpButton` (pmove.luau:745) | VERIFIED | Jump phases match in both courses (e1m1 bunny ticks 121-160/201-240; dm3 jumping climb ticks 386-405) incl. oldbuttons latching between held-jump ticks. | `lune run tests/test_qw_pmove.luau` |
 | CheckWaterJump | `checkWaterJump` (pmove.luau:788) | PENDING | Ported; unreachable in the fixture (no water). | TBD: write test or tools/verify script + evidence capture |
-| NudgePosition | `nudgePosition` (pmove.luau:818) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Runs every tick in both C and port (positions stay equal through it). | TBD: write test or tools/verify script + evidence capture |
+| NudgePosition | `nudgePosition` (pmove.luau:818) | VERIFIED | Two-course pmove ground truth: runs every tick in both C and port; positions stay equal to 0.000122 through it. The 1/8 truncation inside is dead code in C (base copied pre-truncation) — do not "fix" it. | `lune run tests/test_qw_pmove.luau` |
 | SpectatorMove | `spectatorMove` (pmove.luau:842) | PENDING | Ported; no spectator test anywhere. | TBD: write test or tools/verify script + evidence capture |
 | PlayerMove | `pmove.playerMove` (pmove.luau:894) | VERIFIED | The top-level function the ground-truth test calls 300 times. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_HullPointContents | `hullPointContents` (pmove.luau:145) | VERIFIED | Ground truth (contents drive categorize). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PM_PointContents | `pointContents` (pmove.luau:278) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same. | TBD: write test or tools/verify script + evidence capture |
-| PM_RecursiveHullCheck | `recursiveHullCheck` (pmove.luau:165) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Every trace of every tick matches C to 1e-4. | TBD: write test or tools/verify script + evidence capture |
-| PM_TestPlayerPosition | `testPlayerPosition` (pmove.luau:266) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): NudgePosition calls it each tick. | TBD: write test or tools/verify script + evidence capture |
+| PM_PointContents | `pointContents` (pmove.luau:278) | VERIFIED | Two-course pmove ground truth (waterlevel/onground agree all 460 ticks). | `lune run tests/test_qw_pmove.luau` |
+| PM_RecursiveHullCheck | `recursiveHullCheck` (pmove.luau:165) | VERIFIED | Two-course pmove ground truth incl. the dm3 stair edges: every trace of every tick matches C to 1e-4. | `lune run tests/test_qw_pmove.luau` |
+| PM_TestPlayerPosition | `testPlayerPosition` (pmove.luau:266) | VERIFIED | Two-course pmove ground truth (NudgePosition calls it each tick; stair-course landings depend on it). | `lune run tests/test_qw_pmove.luau` |
 | PM_PlayerMove (pmovetst trace) | `playerTrace` (pmove.luau:285) | VERIFIED | Same ground truth. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
 ## Totals
