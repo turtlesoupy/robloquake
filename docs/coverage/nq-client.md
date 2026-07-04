@@ -141,10 +141,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SCR_CenterPrint | hud.centerPrint | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: centerprints in conchars with faithful metrics (0.35h block, per-line centering) | TBD: write test or tools/verify script + evidence capture |
+| SCR_CenterPrint | hud.centerPrint | VERIFIED | [evidence/nq-centerprint.jpg](evidence/nq-centerprint.jpg): trigger t31's svc_centerprint rendered in conchars at the 0.35h centered block ([capture context](evidence/nq-centerprint.txt)). | Stage per evidence/nq-centerprint.txt |
 | SCR_EraseCenterString | retained GUI | SUBSTITUTED | no framebuffer erase needed | — (substitution; verify justification still holds) |
-| SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: finale typewriter at scr_printspeed | TBD: write test or tools/verify script + evidence capture |
-| SCR_CheckDrawCenterString | centerTime gate in hud.update | PENDING | scr_centertime 2s; stays up during intermission like C | TBD: write test or tools/verify script + evidence capture |
+| SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | VERIFIED | Per-line centered conchars drawing shown in [evidence/nq-centerprint.jpg](evidence/nq-centerprint.jpg). Finale typewriter reveal (scr_printspeed) journaled — episode-end only, not yet captured. | Stage per evidence/nq-centerprint.txt |
+| SCR_CheckDrawCenterString | centerTime gate in hud.update | VERIFIED | The capture pair shows the 2s gate: present within the window ([nq-centerprint.jpg](evidence/nq-centerprint.jpg)), absent after it lapsed ([nq-centerprint-expired.jpg](evidence/nq-centerprint-expired.jpg)). Intermission persistence per the committed nq-intermission evidence. | Stage per evidence/nq-centerprint.txt |
 | CalcFov | qcoords.calcFovY | VERIFIED | test_qcoords: matches a transcribed screen.c CalcFov on 5 cases + hand-derived anchors (fov 90 -> 73.74 at 4:3, 58.72 at 16:9). Delta: horizontal fov converted to vertical at the real viewport aspect (Roblox FOV is vertical). | `lune run tests/test_qcoords.luau` |
 | SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | Math half VERIFIED offline: test_qcoords (vrect fov_y at reduced height, gun rotation scaling). Visual half needs the S3 anchor screenshot. | `lune run tests/test_qcoords.luau` + S3 evidence capture |
 | SCR_SizeUp_f / SCR_SizeDown_f | accepted no-op commands | UNIMPLEMENTED | viewsize fixed | — (implement first) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 93
-- PENDING: 41
+- VERIFIED: 96
+- PENDING: 38
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

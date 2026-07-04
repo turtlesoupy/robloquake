@@ -1,0 +1,22 @@
+nq-centerprint.jpg / nq-centerprint-expired.jpg (2026-07-04)
+=============================================================
+
+Engine: NQ boot, e1m1, id1 (registered 1.06), viewsize 100.
+Staging: SVDBG_SetOrigin teleport out of and back into the e1m1
+trigger_multiple t31 volume (*51, q(616,192,40), message "You can
+jump up here...", wait 5) — the QC message trigger sends
+svc_centerprint on touch.
+
+nq-centerprint.jpg — captured within the 2s window: "YOU CAN JUMP UP
+HERE..." rendered in conchars, per-line centered in the upper-middle
+block (SCR_CenterPrint -> SCR_DrawCenterString metrics).
+
+nq-centerprint-expired.jpg — the same spot captured after the
+scr_centertime 2s window on the previous touch had lapsed: no center
+string (SCR_CheckDrawCenterString gate).
+
+Not shown: the finale typewriter reveal (scr_printspeed) — episode-end
+only; journaled.
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.
