@@ -56,6 +56,16 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (nq-server PENDING sweep 1)
+- tests/test_com.luau: Q_atoi/Q_atof/anglemod vs transcribed C
+  (documented deltas: Luau tonumber accepts exponents where Q_atof
+  stops at "e"; C char constants unsupported). test_server grows the
+  grunt box-hull clip, a full door pusher cycle (travel + return home),
+  and a lobbed-projectile toss arc coming to rest. 20 nq-server PENDING
+  rows earned: com/math, Mod_* loaders, the NQ world.c twins of the
+  qwtrace battery, SV_TouchLinks via the scenario pickup, PR_RunError
+  via the shared vm, and the pusher/toss physics family.
+
 ### 2026-07-04 (particle effect batteries)
 - test_particles2 extended (+7 checks, 10250 total): R_EntityParticles
   (162 anorms, 64±16 shell), R_TeleportSplash (896-particle grid,

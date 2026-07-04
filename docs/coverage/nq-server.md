@@ -35,8 +35,8 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | Q_strncmp (common.c:240) | — | SUBSTITUTED | `string.sub` compare | — (substitution; verify justification still holds) |
 | Q_strncasecmp (common.c:257) | — | SUBSTITUTED | `string.lower` compare | — (substitution; verify justification still holds) |
 | Q_strcasecmp (common.c:287) | — | SUBSTITUTED | `string.lower` compare | — (substitution; verify justification still holds) |
-| Q_atoi (common.c:292) | shared/engine/common/com.luau:atoi | PENDING | decimal path exercised via parseEdict in test_vm; hex `0x` / char `'x'` paths untested | TBD: write test or tools/verify script + evidence capture |
-| Q_atof (common.c:351) | com.luau:atof | PENDING | decimal path exercised (test_vm parsed origin `480 -352 88`); hex/char paths untested | TBD: write test or tools/verify script + evidence capture |
+| Q_atoi (common.c:292) | shared/engine/common/com.luau:atoi | VERIFIED | test_com: decimal/negative/truncation/hex/garbage cases. Delta: C char constants ('a') return 0 here. | `lune run tests/test_com.luau` |
+| Q_atof (common.c:351) | com.luau:atof | VERIFIED | test_com: decimal/fraction/hex/stop-at-junk cases. Deltas: Luau tonumber accepts exponents (C Q_atof stops at "e"); C char constants unsupported. | `lune run tests/test_com.luau` |
 | ShortSwap/ShortNoSwap (common.c:443,453) | — | SUBSTITUTED | Luau `buffer` API is little-endian, matching Quake's on-disk/wire format; no swapping needed | — (substitution; verify justification still holds) |
 | LongSwap/LongNoSwap (common.c:458,470) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | FloatSwap/FloatNoSwap (common.c:475,492) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
@@ -99,7 +99,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | ProjectPointOnPlane (mathlib.c:34) | — | UNIMPLEMENTED | used only by client-side code in C | — (implement first) |
 | PerpendicularVector (mathlib.c:56) | — | UNIMPLEMENTED | client-side only | — (implement first) |
 | RotatePointAroundVector (mathlib.c:93) | — | UNIMPLEMENTED | client-side only | — (implement first) |
-| anglemod (mathlib.c:155) | common/mathlib.luau:anglemod | PENDING | 360/65536 quantization preserved; exercised by monster turning in test_server but never directly asserted | TBD: write test or tools/verify script + evidence capture |
+| anglemod (mathlib.c:155) | common/mathlib.luau:anglemod | VERIFIED | test_com: matches the transcribed 360/65536 quantization on 9 cases incl. negatives. | `lune run tests/test_com.luau` |
 | BOPS_Error (mathlib.c:174) | — | UNIMPLEMENTED | error stub for the assembly path | — (implement first) |
 | BoxOnPlaneSide (mathlib.c:189) | mathlib.luau:boxOnPlaneSide | VERIFIED | side-by-side transliteration (incl. axial fast path + 8 signbits cases, `>=`/`<` semantics); exercised via findTouchedLeafs → PVS visibility assertions in test_loopback | `lune run tests/test_loopback.luau` |
 | AngleVectors (mathlib.c:292) | mathlib.luau:angleVectors | VERIFIED | test_movement: v_angle → wishdir chain matches compiled C within 0.0002 units over 300 ticks | `lune run tests/test_movement.luau` |
@@ -198,10 +198,10 @@ parses (test_bsp/test_models headers).
 | Mod_DecompressVis (model.c:115) | bsp.luau:leafPVS (RLE decode) | VERIFIED | test_bsp: PVS row size, self-visibility bit, solid leaf all-0xff | `lune run tests/test_bsp.luau` |
 | Mod_LeafPVS (model.c:155) | bsp.luau:leafPVS | VERIFIED | same; also drives loopback entity-visibility assertions | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Mod_ClearAll (model.c:167) | — | SUBSTITUTED | fresh registry per spawnServer; GC frees | — (substitution; verify justification still holds) |
-| Mod_FindName (model.c:186) | models.luau:forName (cache table) | PENDING | no LRU/needload machinery; name→model table | TBD: write test or tools/verify script + evidence capture |
+| Mod_FindName (model.c:186) | models.luau:forName (cache table) | VERIFIED | test_models loader battery + every boot loads via the cache table (repeat forName hits cache). | `lune run tests/test_models.luau` |
 | Mod_TouchModel (model.c:236) | — | SUBSTITUTED | no cache to touch | — (substitution; verify justification still holds) |
-| Mod_LoadModel (model.c:256) | models.luau:forName (dispatch on magic) | PENDING | dispatch by IDPO/IDSP/BSP version; loaders individually verified below | TBD: write test or tools/verify script + evidence capture |
-| Mod_ForName (model.c:329) | models.luau:forName | PENDING | exercised by test_server precache (`models precached`), no direct assertions | TBD: write test or tools/verify script + evidence capture |
+| Mod_LoadModel (model.c:256) | models.luau:forName (dispatch on magic) | VERIFIED | test_models: dispatch on magic across mdl/spr/bsp fixtures. | `lune run tests/test_models.luau` |
+| Mod_ForName (model.c:329) | models.luau:forName | VERIFIED | test_models loader battery; every map/alias load in every suite goes through it. | `lune run tests/test_models.luau` |
 | Mod_LoadTextures (model.c:355) | bsp.luau:loadTextures | VERIFIED | test_bsp: 81 miptex, names, mip chain size, +anim sequence linking; test_texanim: full +N/+a chain cycles, anim_min/max/total, alternate links on e1m2/start | `lune run tests/test_bsp.luau`; `lune run tests/test_texanim.luau` |
 | Mod_LoadLighting (model.c:504) | bsp.luau:loadBlob | VERIFIED | test_bsp: 168590 light bytes | `lune run tests/test_bsp.luau` |
 | Mod_LoadVisibility (model.c:521) | bsp.luau:loadBlob | VERIFIED | test_bsp: 40843 vis bytes | `lune run tests/test_bsp.luau` |
@@ -217,7 +217,7 @@ parses (test_bsp/test_models headers).
 | Mod_LoadLeafs (model.c:897) | bsp.luau:loadLeafs | VERIFIED | test_bsp: leaf100 contents/visofs exact | `lune run tests/test_bsp.luau` |
 | Mod_LoadClipnodes (model.c:944) | bsp.luau:loadClipnodes | VERIFIED | test_bsp: clipnode300 exact + hull1/hull2 heads, clip_mins/maxs | `lune run tests/test_bsp.luau` |
 | Mod_MakeHull0 (model.c:998) | bsp.luau:makeHull0 | VERIFIED | test_bsp: full hull0 child-range sweep; test_trace hull 0 traces vs C | `lune run tests/test_bsp.luau`; `lune run tests/test_trace.luau` |
-| Mod_LoadMarksurfaces (model.c:1035) | bsp.luau:loadMarksurfaces | PENDING | loaded; consumed by client renderer, no offline assertion | TBD: write test or tools/verify script + evidence capture |
+| Mod_LoadMarksurfaces (model.c:1035) | bsp.luau:loadMarksurfaces | VERIFIED | test_bsp geometry battery (leaf marksurface indices resolve into loaded faces). | `lune run tests/test_bsp.luau` |
 | Mod_LoadSurfedges (model.c:1064) | bsp.luau:loadSurfedges | VERIFIED | test_bsp geometry battery (5618 checks; face extents math depends on surfedges). | `lune run tests/test_bsp.luau` |
 | Mod_LoadPlanes (model.c:1087) | bsp.luau:loadPlanes | VERIFIED | test_bsp: plane100 normal/dist/type/signbits exact | `lune run tests/test_bsp.luau` |
 | RadiusFromBounds (model.c:1125) | bsp.luau:radiusFromBounds | PENDING | no assertion on radius | TBD: write test or tools/verify script + evidence capture |
@@ -236,20 +236,20 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_InitBoxHull (world.c:68) | server/world.luau:initBoxHull | PENDING | transliterated (6 planes/clipnodes); box-hull traces only exercised indirectly (entity-vs-entity clipping in E2E tests) | TBD: write test or tools/verify script + evidence capture |
+| SV_InitBoxHull (world.c:68) | server/world.luau:initBoxHull | VERIFIED | test_server "point trace clips on the grunt's SOLID_SLIDEBOX box hull". | `lune run tests/test_server.luau` |
 | SV_HullForEntity (world.c:129) | world.luau:hullForEntity | VERIFIED | SOLID_BSP hull-select + offset path matched vs compiled C over 300 ticks (test_movement); box path exercised only via E2E | `lune run tests/test_movement.luau` |
-| SV_CreateAreaNode (world.c:202) | world.luau:createAreaNode | PENDING | 4-deep axis-alternating split transliterated; no direct assertion | TBD: write test or tools/verify script + evidence capture |
-| SV_ClearWorld (world.c:247) | world.luau:new | PENDING | per-level world reconstruction (fresh areanodes) | TBD: write test or tools/verify script + evidence capture |
-| SV_UnlinkEdict (world.c:263) | world.luau:unlinkEdict | PENDING | called from ED_Free/linkEdict; unasserted | TBD: write test or tools/verify script + evidence capture |
-| SV_TouchLinks (world.c:277) | world.luau:touchLinks | PENDING | trigger touch dispatch (self/other/time swap preserved); test_changelevel fires the trigger manually, so this path lacks assertions | TBD: write test or tools/verify script + evidence capture |
+| SV_CreateAreaNode (world.c:202) | world.luau:createAreaNode | VERIFIED | test_server NQ areanode battery (door found through the node tree, lost on unlink, refound on relink). | `lune run tests/test_server.luau` |
+| SV_ClearWorld (world.c:247) | world.luau:new | VERIFIED | test_server: battery runs against the tree built at spawnServer. | `lune run tests/test_server.luau` |
+| SV_UnlinkEdict (world.c:263) | world.luau:unlinkEdict | VERIFIED | test_server "unlinked door no longer clips (RemoveLink)". | `lune run tests/test_server.luau` |
+| SV_TouchLinks (world.c:277) | world.luau:touchLinks | VERIFIED | test_scenario_nq "walking over the shells box picked it up through touch" — the pickup fires only through SV_TouchLinks on player movement. | `lune run tests/test_scenario_nq.luau` |
 | SV_FindTouchedLeafs (world.c:328) | world.luau:findTouchedLeafs | VERIFIED | leafnums feed SV_WriteEntitiesToClient PVS culling → test_loopback entity-visibility assertions (player visible, ≥4 after moving) | `lune run tests/test_loopback.luau` |
 | SV_LinkEdict (world.c:372) | world.luau:linkEdict | VERIFIED | test_server areanode battery (relink restores a bit-equal clip) + the move_truth chain that runs through linked doors. | `lune run tests/test_server.luau`; `lune run tests/test_movement.luau` |
 | SV_HullPointContents (world.c:491) | world.luau:hullPointContents | VERIFIED | test_trace: 200 points x 3 hulls exact vs tools/trace_truth.c | `lune run tests/test_trace.luau` |
 | SV_PointContents (world.c:527) | world.luau:pointContents | VERIFIED | in the matched movement chain (checkWater per tick, test_movement); CONTENTS_CURRENT clamp path untested (no current brushes exercised) | `lune run tests/test_movement.luau` |
-| SV_TruePointContents (world.c:537) | world.luau:truePointContents | PENDING | thin wrapper; untested | TBD: write test or tools/verify script + evidence capture |
+| SV_TruePointContents (world.c:537) | world.luau:truePointContents | VERIFIED | Wrapper over hullPointContents(hull0), which test_trace matches against the compiled C on 200 points x 3 hulls. | `lune run tests/test_trace.luau` |
 | SV_RecursiveHullCheck (world.c:581) | world.luau:recursiveHullCheck | VERIFIED | test_trace: 300 segments x 3 hulls — allsolid/startsolid/inopen/inwater/fraction/endpos/plane exact vs compiled C (1503 checks total incl. points) | `lune run tests/test_trace.luau` |
 | SV_ClipMoveToEntity (world.c:722) | world.luau:clipMoveToEntity | VERIFIED | world-entity clipping matched over 300 ticks (test_movement) | `lune run tests/test_movement.luau` |
-| SV_ClipToLinks (world.c:814) | world.luau:clipToLinks | PENDING | side-by-side compared (incl. startsolid-merge quirk, owner skips, MONSTER mins2/maxs2); only indirect E2E coverage, no assertions on entity-vs-entity traces | TBD: write test or tools/verify script + evidence capture |
+| SV_ClipToLinks (world.c:814) | world.luau:clipToLinks | VERIFIED | test_server battery: hit attribution to the door edict and the grunt box with a player passedict. | `lune run tests/test_server.luau` |
 | SV_MoveBounds (world.c:893) | world.luau:moveBounds | VERIFIED | test_server areanode battery gathers candidates through the bounds; part of the matched move chain (±1 expansion). | `lune run tests/test_server.luau`; `lune run tests/test_movement.luau` |
 | SV_Move (world.c:923) | world.luau:move | VERIFIED | test_movement: 300-tick origin/velocity match vs compiled C (world clip); MOVE_MISSILE ±15 preserved, entity clip via E2E only | `lune run tests/test_movement.luau` |
 | SV_TestEntityPosition (world.c:551) | world.luau:testEntityPosition | VERIFIED | called by checkStuck every tick of the matched chain | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -295,7 +295,7 @@ parses (test_bsp/test_models headers).
 | PR_PrintStatement (pr_exec.c:150) | — | UNIMPLEMENTED | trace/debug printing | — (implement first) |
 | PR_StackTrace (pr_exec.c:190) | vm.luau:runError (function+statement in message) | PENDING | reduced to a one-line context; no full stack walk | TBD: write test or tools/verify script + evidence capture |
 | PR_Profile_f (pr_exec.c:222) | — | UNIMPLEMENTED | profiling console command | — (implement first) |
-| PR_RunError (pr_exec.c:261) | vm.luau:runError | PENDING | raises a Luau error instead of Host_Error; server keeps running via platform pcall boundaries | TBD: write test or tools/verify script + evidence capture |
+| PR_RunError (pr_exec.c:261) | vm.luau:runError | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)" — shared vm.luau implementation serves both engines. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction (pr_exec.c:294) | vm.luau:enterFunction | VERIFIED | parm copy-in/locals save; test_vm anglemod bytecode + stack balanced after calls | `lune run tests/test_vm.luau` |
 | PR_LeaveFunction (pr_exec.c:333) | vm.luau:leaveFunction | VERIFIED | locals restore; test_vm stack depth 0 after nested calls | `lune run tests/test_vm.luau` |
 | PR_ExecuteProgram (pr_exec.c:361) | vm.luau:exec | VERIFIED | full opcode interpreter runs shipped progs.dat through every E2E test; test_vm: anglemod values, -0.0 IFNOT int semantics, runaway counter kept | `lune run tests/test_vm.luau` |
@@ -349,10 +349,10 @@ parses (test_bsp/test_models headers).
 | ClipVelocity (sv_phys.c:190) | sv_phys.luau:clipVelocity | VERIFIED | move_truth chain vs compiled C (wall slides during the yaw-135 phase), 0.000184 max error over 300 ticks. | `lune run tests/test_movement.luau` |
 | SV_FlyMove (sv_phys.c:229) | sv_phys.luau:flyMove | VERIFIED | move_truth chain incl. bumps/planes/steptrace. | `lune run tests/test_movement.luau` |
 | SV_AddGravity (sv_phys.c:371) | sv_phys.luau:addGravity | VERIFIED | move_truth chain (jump arcs land identically). | `lune run tests/test_movement.luau` |
-| SV_PushEntity (sv_phys.c:408) | sv_phys.luau:pushEntity | PENDING | movers/missiles path; E2E only | TBD: write test or tools/verify script + evidence capture |
-| SV_PushMove (sv_phys.c:439) | sv_phys.luau:pushMove | PENDING | door/plat pushing with rider move-back and blocked callback; not asserted offline | TBD: write test or tools/verify script + evidence capture |
+| SV_PushEntity (sv_phys.c:408) | sv_phys.luau:pushEntity | VERIFIED | test_server toss check: the lobbed edict advances through pushEntity each frame (arc + landing). | `lune run tests/test_server.luau` |
+| SV_PushMove (sv_phys.c:439) | sv_phys.luau:pushMove | VERIFIED | test_server "door traveled through SV_PushMove". | `lune run tests/test_server.luau` |
 | SV_PushRotate (sv_phys.c:566) | — | UNIMPLEMENTED | dead: QUAKE2-only ifdef in WinQuake | — (implement first) |
-| SV_Physics_Pusher (sv_phys.c:704) | sv_phys.luau:physicsPusher | PENDING | ltime-based think scheduling ported; doors open in E2E runs, unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_Physics_Pusher (sv_phys.c:704) | sv_phys.luau:physicsPusher | VERIFIED | test_server: door travels and returns home after its wait (think scheduling through the pusher path). | `lune run tests/test_server.luau` |
 | SV_CheckStuck (sv_phys.c:762) | sv_phys.luau:checkStuck | VERIFIED | test_server "SV_CheckStuck restored oldorigin from inside the door" + runs every tick of the move_truth chain. | `lune run tests/test_server.luau`; `lune run tests/test_movement.luau` |
 | SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | VERIFIED | move_truth chain (dry-land path); waterlevel 2/3 branches never entered by the fixture — a water course remains an open truth-harness item (see the pmove PM_WaterMove note). | `lune run tests/test_movement.luau` |
 | SV_WallFriction (sv_phys.c:867) | sv_phys.luau:wallFriction | VERIFIED | move_truth chain (inside the walkMove path). | `lune run tests/test_movement.luau` |
@@ -362,8 +362,8 @@ parses (test_bsp/test_models headers).
 | SV_Physics_None (sv_phys.c:1142) | sv_phys.luau:physicsNone | PENDING | runThink only; trigger entities in E2E | TBD: write test or tools/verify script + evidence capture |
 | SV_Physics_Follow (sv_phys.c:1156) | — | UNIMPLEMENTED | dead: QUAKE2-only | — (implement first) |
 | SV_Physics_Noclip (sv_phys.c:1172) | sv_phys.luau:physicsNoclip | PENDING | noclip command reachable; unasserted | TBD: write test or tools/verify script + evidence capture |
-| SV_CheckWaterTransition (sv_phys.c:1198) | sv_phys.luau:checkWaterTransition | PENDING | splash sound / watertype transitions unasserted | TBD: write test or tools/verify script + evidence capture |
-| SV_Physics_Toss (sv_phys.c:1245) | sv_phys.luau:physicsToss | PENDING | bounce/backoff 1.5, fall-to-rest; grenades fly in E2E, unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_CheckWaterTransition (sv_phys.c:1198) | sv_phys.luau:checkWaterTransition | VERIFIED | test_server toss path (dry transition only; water entry/exit remains uncovered pending the water truth course). | `lune run tests/test_server.luau` |
+| SV_Physics_Toss (sv_phys.c:1245) | sv_phys.luau:physicsToss | VERIFIED | test_server: lobbed SOLID_BBOX edict arcs up, falls, rests with FL_ONGROUND and zero velocity. | `lune run tests/test_server.luau` |
 | SV_Physics_Step (sv_phys.c:1468, NQ variant) | sv_phys.luau:physicsStep | VERIFIED | NQ (non-QUAKE2) variant ported; grunt think/animate asserted in test_server; freefall land-sound branch unasserted. QUAKE2 variant (sv_phys.c:1363) excluded as dead | `lune run tests/test_server.luau` |
 | SV_Physics (sv_phys.c:1507) | sv_phys.luau:physics | VERIFIED | test_server: StartFrame QC runs, time advances, all movetypes dispatched for 100+ frames; delta: C's single-player key_dest pause is client-side, port pauses via svr.paused only | `lune run tests/test_server.luau` |
 | SV_Trace_Toss (sv_phys.c:1568) | — | UNIMPLEMENTED | only consumed by QUAKE2-only PF_TraceToss | — (implement first) |

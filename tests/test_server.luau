@@ -248,4 +248,69 @@ t.check(
 	"precache_*2 builtins alias the base implementations"
 )
 
+--------------------------------------------------------------------------
+-- SOLID_SLIDEBOX box-hull clip: trace down onto a live grunt with the
+-- player as passedict (SV_InitBoxHull / SV_HullForBox path)
+local grunt2: vmlib.Edict? = nil
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "monster_army" and vmlib.edFloat(e, ent.health) > 0 then
+		grunt2 = e
+		break
+	end
+end
+assert(grunt2, "live grunt present")
+local gorg = vmlib.edVector(grunt2, ent.origin)
+local gtr = worldlib.move(svr.world, gorg + vector.create(0, 0, 60), vector.zero, vector.zero, gorg, 0, player)
+t.check(gtr.ent == grunt2, "point trace clips on the grunt's SOLID_SLIDEBOX box hull")
+
+--------------------------------------------------------------------------
+-- SV_Physics_Pusher / SV_PushMove: exec a door's use function and watch
+-- the bmodel travel and return (the doortest snippet, checked in)
+local moveDoor: vmlib.Edict? = nil
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "door" and vmlib.edInt(e, ent.use) ~= 0 then
+		moveDoor = e
+		break
+	end
+end
+assert(moveDoor, "door with a use function")
+local doorStart = vmlib.edVector(moveDoor, ent.origin)
+buffer.writef32(vm.globals, glob.time * 4, svr.time)
+buffer.writei32(vm.globals, glob.self * 4, moveDoor.num)
+buffer.writei32(vm.globals, glob.other * 4, player.num)
+vmlib.exec(vm, vmlib.edInt(moveDoor, ent.use))
+local maxTravel = 0
+for _ = 1, 40 do
+	host.frame(svr, 0.05)
+	maxTravel = math.max(maxTravel, vector.magnitude(vmlib.edVector(moveDoor, ent.origin) - doorStart))
+end
+t.check(maxTravel > 30, `door traveled through SV_PushMove ({math.floor(maxTravel)} units)`)
+for _ = 1, 140 do
+	host.frame(svr, 0.05)
+end
+t.check(vector.magnitude(vmlib.edVector(moveDoor, ent.origin) - doorStart) < 1, "door returned home after its wait")
+
+--------------------------------------------------------------------------
+-- SV_Physics_Toss: a lobbed SOLID_BBOX edict arcs up, falls, and comes
+-- to rest on the floor (SV_PushEntity + SV_CheckWaterTransition dry path)
+local tossEd = vmlib.alloc(vm)
+vmlib.edSetFloat(tossEd, ent.movetype, qd.MOVETYPE_TOSS)
+vmlib.edSetFloat(tossEd, ent.solid, qd.SOLID_BBOX)
+vmlib.edSetVector(tossEd, ent.mins, vector.zero)
+vmlib.edSetVector(tossEd, ent.maxs, vector.zero)
+local tossStart = vmlib.edVector(player, ent.origin) + vector.create(0, 0, 30)
+vmlib.edSetVector(tossEd, ent.origin, tossStart)
+vmlib.edSetVector(tossEd, ent.velocity, vector.create(0, 60, 160))
+worldlib.linkEdict(svr.world, tossEd, false)
+local apex = tossStart.z
+for _ = 1, 80 do
+	host.frame(svr, 0.05)
+	apex = math.max(apex, vmlib.edVector(tossEd, ent.origin).z)
+end
+local tossEnd = vmlib.edVector(tossEd, ent.origin)
+t.check(apex > tossStart.z + 10, `toss arced upward (apex +{math.floor(apex - tossStart.z)})`)
+t.check(bit32.band(vmlib.edFloat(tossEd, ent.flags), qd.FL_ONGROUND) ~= 0 and vmlib.edVector(tossEd, ent.velocity) == vector.zero, "toss came to rest with FL_ONGROUND and zero velocity")
+
 t.finish("test_server")
