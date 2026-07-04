@@ -22,7 +22,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_DecayLights | heartbeat decay pass | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the wash is gone 1.2s after unpause — radius decay + die gate. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | CL_RelinkEntities | cl.luau relinkEntities + init.client effects/trails dispatch | VERIFIED | tests/test_loopback.luau: forward motion interpolated, visible-entity counts; FIDELITY.md trail record; delta: visedict list → per-entity visible flag on persistent instances | `lune run tests/test_loopback.luau` |
 | CL_ReadFromServer | inbound queue pump in heartbeat | VERIFIED | tests/test_loopback.luau drives the same parse path end to end | `lune run tests/test_loopback.luau` |
-| CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "W→forwardmove 200 over the wire" | TBD: write test or tools/verify script + evidence capture |
+| CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | VERIFIED | Real-key battery: W held 1s moved the server-authoritative origin ~273 units (200 u/s + spawn ramp) and stopped on release — the move reached the server over the wire ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Offline wire shape: test_loopback buildMove. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script); `lune run tests/test_loopback.luau` |
 | CL_Init | init.client boot sequence | PENDING | cvars are hardcoded constants; no cvar registration layer | TBD: write test or tools/verify script + evidence capture |
 
 ## cl_parse.c
@@ -44,14 +44,14 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| KeyDown / KeyUp | input.setButton via +/- command routing | PENDING | delta: no two-keycode tracking per button; attack/jump edge latches only | TBD: write test or tools/verify script + evidence capture |
-| IN_*Down/Up (34 one-line stubs) | BUTTON_CMDS table in init.client | PENDING | +forward/back/left/right/moveleft/moveright/moveup/movedown/jump/attack/use/speed/strafe/klook/mlook/lookup/lookdown all routed | TBD: write test or tools/verify script + evidence capture |
-| IN_Impulse | `impulse` command → input.setImpulse | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| CL_KeyState | boolean btn() | PENDING | delta: no 0.25/0.5/0.75 partial-frame press fractions — taps register a full frame | TBD: write test or tools/verify script + evidence capture |
-| CL_AdjustAngles | input.updateTurn | PENDING | cl_yawspeed 140 / cl_pitchspeed 150 / cl_anglespeedkey 1.5 match; FIDELITY.md records the port, no cited proof | TBD: write test or tools/verify script + evidence capture |
-| CL_BaseMove | input.sample | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "W→forwardmove 200 over the wire"; speeds 200/200/350/200, movespeedkey 2 | TBD: write test or tools/verify script + evidence capture |
+| KeyDown / KeyUp | input.setButton via +/- command routing | VERIFIED | Real W keyDown started motion, keyUp stopped it ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Delta stands: no two-keycode tracking per button. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
+| IN_*Down/Up (34 one-line stubs) | BUTTON_CMDS table in init.client | VERIFIED | +forward (W) and +left (Left arrow) exercised through real keys with measured motion/turn ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)); the rest share the same one-line BUTTON_CMDS routing. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
+| IN_Impulse | `impulse` command → input.setImpulse | VERIFIED | Console `impulse 7` selected and fired the rocket launcher live (black-square session); `impulse 9` battery in earlier committed evidence. Platform note: number-key binds cannot be synthesized (CoreGUI-reserved) — recorded in [evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt). | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script); RQDBG_Console exec "impulse 7" then force attack |
+| CL_KeyState | boolean btn() | VERIFIED | Press/release edges observable in the W battery (motion exactly while held, [evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Delta stands: no partial-frame press fractions. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
+| CL_AdjustAngles | input.updateTurn | VERIFIED | Left arrow held ~0.53s turned yaw +74.7 degrees ~= cl_yawspeed 140 ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
+| CL_BaseMove | input.sample | VERIFIED | W → forwardmove 200 measured as ~200 u/s ground speed over the wire in the real-key battery ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Speeds 200/200/350/200, movespeedkey 2 in code. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
 | CL_SendMove | cl.luau buildMove | VERIFIED | tests/test_loopback.luau (movement observed server-side); first-2-message drop kept | `lune run tests/test_loopback.luau` |
-| CL_InitInput | bind table + BUTTON_CMDS wiring | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| CL_InitInput | bind table + BUTTON_CMDS wiring | VERIFIED | The bind layer resolved real W/Left keys to +forward/+left in the battery ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)); bind/unbind console battery in nq-console-open evidence. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
 
 ## cl_demo.c
 
@@ -98,7 +98,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | V_CheckGamma | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
 | V_ParseDamage | cl.luau parseDamage | VERIFIED | test_view.luau wire battery: count (blood+armor)*.5 floored at 10, faceanimtime +0.2, damage cshift 3*count clamped 0..150, color split (255,0,0)/(200,100,100)/(220,50,50), kicks count*side*0.6 from the hit direction, dmg_time 0.5. | `lune run tests/test_view.luau` |
 | V_cshift_f | — | UNIMPLEMENTED | debug command | — (implement first) |
-| V_BonusFlash_f | "bf" stufftext → cshift_bonus_percent 50 | PENDING | bonus color 215/186/69 matches | TBD: write test or tools/verify script + evidence capture |
+| V_BonusFlash_f | `bf` command (console + stufftext via Cbuf) | VERIFIED | RQ_CshiftBonus decay series: 50 → 36.5/21.7 → 0 in ~0.5-0.6s = percent 50 with the authentic 100/s decay ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). FIDELITY FIX 2026-07-04: bf was a stufftext-only special case — now a real command like C's Cmd_AddCommand, and svc_stufftext routes every line through the Cbuf. Bonus color 215/186/69 in the compositor. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) (bonusProbe) |
 | V_SetContentsColor | init.client view-leaf contents shifts | VERIFIED | [evidence/nq-slime-cshift.jpg](evidence/nq-slime-cshift.jpg) + .txt: full-screen slime tint while submerged, blended with the damage flash from the slime tick. Delta: no CONTENTS_SOLID grey (cannot be seen in play). | Teleport per evidence/nq-slime-cshift.txt, capture, compare |
 | V_CalcPowerupCshift | init.client powerup shifts | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: priority quad > suit > ring > pent matches | TBD: write test or tools/verify script + evidence capture |
 | V_CalcBlend | init.client shift compositor | PENDING | same a2/(1-a) accumulation; delta: final alpha capped at 0.85 | TBD: write test or tools/verify script + evidence capture |
@@ -193,7 +193,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind query + unbind clears the binding. Delta: unbound query prints "x" = "" instead of C's '"x" is not bound'. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) | — (implement first) |
 | Key_Init | default.cfg exec at boot + autoexec layer | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: boot scrollback opens with "execing default.cfg" and "couldn't exec autoexec.cfg" (pak default.cfg + autoexec layer at boot). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Key_Event | init.client keyEvent via UserInputService | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: keyups fire the -command; W→forwardmove chain | TBD: write test or tools/verify script + evidence capture |
+| Key_Event | init.client keyEvent via UserInputService | VERIFIED | Real UserInputService events (not the RQ_Force harness) drove movement, turning, and the menu in the battery; keyup fired the -command (motion stopped) ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
 | Key_ClearStates | input.setEnabled(false) clears buttons | PENDING | cleared when console/menu opens | TBD: write test or tools/verify script + evidence capture |
 
 ## menu.c
@@ -214,7 +214,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | M_Menu_Options_f / M_AdjustSliders / M_DrawSlider / M_DrawCheckbox / M_Options_Draw / M_Options_Key | — | UNIMPLEMENTED | console commands (sensitivity, fov, crosshair, chase_active) cover the options | — (implement first) |
 | M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | UNIMPLEMENTED | bind/unbind console commands cover it | — (implement first) |
 | M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | UNIMPLEMENTED | no video modes on platform | — (implement first) |
-| M_Menu_Help_f / M_Help_Draw / M_Help_Key | help state + gfx/help0-5.lmp pages | PENDING | forward/back paging kept; back on Backspace/M | TBD: write test or tools/verify script + evidence capture |
+| M_Menu_Help_f / M_Help_Draw / M_Help_Key | help state + gfx/help0-5.lmp pages | VERIFIED | [evidence/nq-help-page1.jpg](evidence/nq-help-page1.jpg) (help0 ORDERING, "Pg 1 of 6") entered via Return on HELP/ORDERING; [nq-help-page2.jpg](evidence/nq-help-page2.jpg) (BASIC MOVEMENT) after a real Right key = M_Help_Key forward paging. | Studio: tools/verify_input_nq.luau menu steps + captures |
 | M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | onQuit → print | UNIMPLEMENTED | quitting is Roblox's; no confirm screen | — (implement first) |
 | M_Menu_SerialConfig_f / M_SerialConfig_Draw / M_SerialConfig_Key | — | UNIMPLEMENTED | DOS serial/modem N/A | — (implement first) |
 | M_Menu_ModemConfig_f / M_ModemConfig_Draw / M_ModemConfig_Key | — | UNIMPLEMENTED | N/A | — (implement first) |
@@ -222,9 +222,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | M_Menu_GameOptions_f / M_GameOptions_Draw / M_NetStart_Change / M_GameOptions_Key | — | UNIMPLEMENTED | server rules are server-side console/attributes | — (implement first) |
 | M_Menu_Search_f / M_Search_Draw / M_Search_Key | — | UNIMPLEMENTED | no LAN search | — (implement first) |
 | M_Menu_ServerList_f / M_ServerList_Draw / M_ServerList_Key | — | UNIMPLEMENTED | no server list | — (implement first) |
-| M_Init | menu.create | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| M_Draw | menu.update | PENDING | delta: no console-behind-menu dim (Draw_FadeScreen absent) | TBD: write test or tools/verify script + evidence capture |
-| M_Keydown | menu.handleKey | PENDING | delta: no menu sounds (S_LocalSound absent) | TBD: write test or tools/verify script + evidence capture |
+| M_Init | menu.create | VERIFIED | Menu opens/draws/navigates end-to-end in the committed captures (nq-main-menu.jpg, nq-menu-cursor-help.jpg, help pages). | Studio: tools/verify_input_nq.luau menu steps |
+| M_Draw | menu.update | VERIFIED | [evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg): MAIN plaque, QUAKE sidebar, id logo, item list and spinner cursor rendered mid-game. Delta stands: no Draw_FadeScreen dim. | Studio: tools/verify_input_nq.luau menu steps + capture |
+| M_Keydown | menu.handleKey | VERIFIED | Three real Down keys moved the spinner cursor to HELP/ORDERING ([evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg)); Return entered Help; M closed. Delta stands: no menu sounds. | Studio: tools/verify_input_nq.luau menu steps + captures |
 | M_ConfigureNetSubsystem | — | UNIMPLEMENTED | N/A | — (implement first) |
 
 ## draw.c
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 66
-- PENDING: 68
+- VERIFIED: 80
+- PENDING: 54
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

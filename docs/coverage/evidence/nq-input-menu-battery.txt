@@ -1,0 +1,48 @@
+NQ real-key input + menu battery (2026-07-04)
+==============================================
+
+Engine: NQ boot, e1m1, id1 (registered 1.06), viewsize 100, fov 90.
+Driver: tools/verify_input_nq.luau — Studio MCP user_keyboard_input
+synthesizes REAL UserInputService key events (not the RQ_Force*
+harness), so the whole Key_Event -> keybind -> +command -> CL_BaseMove
+-> CL_SendCmd -> server-move chain is exercised end to end. State read
+back through the RQ_* diagnostic attributes.
+
+MEASUREMENTS (session transcript, reproducible via the tool script):
+
+1. W held 1000ms (bind "+forward", cl_forwardspeed 200):
+     origin r(60, 11, 44) -> r(60, 5.48, 9.92)
+     = quake (480,-352,..) -> (480,-79,..): ~273 units forward
+     (200 u/s ground run + downhill slide at the spawn ramp), motion
+     STOPPED on keyUp (CL_KeyState edge latch behaviour).
+
+2. Left arrow held ~500ms (bind "+left", CL_AdjustAngles):
+     yaw 90 -> 164.73 = +74.7 degrees over ~0.53s ~= cl_yawspeed 140.
+
+3. "bf" (V_BonusFlash_f, now registered as a console command exactly
+   like C's Cmd_AddCommand, and svc_stufftext routes through the same
+   Cbuf path): RQ_CshiftBonus attr series after exec:
+     50 -> 36.5 -> 21.7 -> 0 across repeated runs; gone by ~0.5-0.6s
+     = percent 50 with the authentic 100/s decay through real frames.
+   FIDELITY FIX in the same commit: "bf" only worked as a stufftext
+   special-case before (console "bf" was unknown; other stuffed
+   commands were silently dropped instead of reaching the Cbuf).
+
+4. Menu (real keys M, Down x3, Return, Right — M_Keydown/M_Help_Key):
+     nq-menu-cursor-help.jpg  main menu, spinner cursor on the 4th
+                              item (HELP/ORDERING) after three Downs
+     nq-help-page1.jpg        gfx/help0.lmp ORDERING page, "Pg 1 of 6"
+     nq-help-page2.jpg        page 2 (BASIC MOVEMENT) after Right —
+                              M_Help_Key forward paging
+   Menu closed with M afterwards (Escape is reserved by the platform,
+   recorded divergence on the keys rows).
+
+PLATFORM NOTE: number keys (One..Nine) are permanently bound to CoreGUI
+actions — VirtualInput refuses them, so weapon-slot binds cannot be
+synthesized. IN_Impulse is exercised through the console form instead
+(`impulse 7` selected and fired the rocket launcher live in this
+session's black-square investigation; impulse 9/255 batteries in
+earlier committed evidence).
+
+id1 CONTENT NOTE: rendered from local id1 pak files; local repo only.
+Re-capture on LibreQuake before any public distribution.

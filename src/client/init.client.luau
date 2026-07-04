@@ -649,6 +649,11 @@ execCommand = function(line: string)
 		menulib.toggle(mnu)
 		refreshInputMode()
 		return
+	elseif cmd == "bf" then
+		-- V_BonusFlash_f (Cmd_AddCommand "bf" in C; the server stuffs it
+		-- on every item pickup)
+		c.cshift_bonus_percent = 50
+		return
 	elseif cmd == "messagemode" or cmd == "messagemode2" then
 		consolelib.print(con, "use say <text> or the Roblox chat")
 		return
@@ -844,11 +849,10 @@ c.onSetAngle = function(_c, angles)
 	input.setAngles(angles)
 end
 c.onStuffText = function(_c, text)
-	-- QC stuffs console commands at the client; "bf" is the bonus flash
-	for line in text:gmatch("[^\n;]+") do
-		if line == "bf" then
-			c.cshift_bonus_percent = 50
-		end
+	-- CL_ParseServerMessage svc_stufftext -> Cbuf_AddText: stuffed
+	-- commands run through the same command path as typed input
+	for line in text:gmatch("[^\n]+") do
+		execLine(line)
 	end
 end
 c.onParticle = function(_c, org, dir, color, count)
@@ -1757,6 +1761,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 		workspace:SetAttribute("RQ_Health", c.stats[cllib.STAT_HEALTH])
 		workspace:SetAttribute("RQ_Shells", c.stats[cllib.STAT_SHELLS])
 		workspace:SetAttribute("RQ_VisEnts", visible)
+		workspace:SetAttribute("RQ_CshiftBonus", c.cshift_bonus_percent)
+		workspace:SetAttribute("RQ_Yaw", c.viewangles.y)
 		if e then
 			workspace:SetAttribute("RQ_Origin", qcoords.toRoblox(e.origin))
 		end
