@@ -401,10 +401,11 @@ RunService.Heartbeat:Connect(function(dt: number)
 	if nextLevel then
 		svr.changelevelTo = nil
 		print(`[robloquake] changelevel to {nextLevel}`)
+		host.saveSpawnparms(svr) -- inventory carries across levels
 		host.spawnServer(svr, nextLevel)
 		bundle.publishAll(svr) -- new map + newly precached models
 		for _, slot in slotByPlayer do
-			host.connectClient(svr, slot)
+			host.connectClient(svr, slot, true)
 		end
 	end
 end)

@@ -603,8 +603,26 @@ end
 --------------------------------------------------------------------------
 -- connecting a new client (SV_CheckForNewClients + SV_ConnectClient)
 
-function host.connectClient(svr: svlib.Server, clientnum: number)
-	svlib.connectClient(svr, clientnum)
+function host.connectClient(svr: svlib.Server, clientnum: number, preserveParms: boolean?)
+	svlib.connectClient(svr, clientnum, preserveParms)
+end
+
+-- SV_SaveSpawnparms: run SetChangeParms on every active client so their
+-- inventory/health carry into the next level, and latch serverflags
+-- (rune bits). Must run BEFORE spawnServer tears the world down.
+function host.saveSpawnparms(svr: svlib.Server)
+	local vm = svr.vm
+	svr.serverflags = vmlib.globalFloat(vm, glob.serverflags)
+	for _, client in svr.clients do
+		if not client.active then
+			continue
+		end
+		buffer.writei32(vm.globals, glob.self * 4, client.edict.num)
+		vmlib.exec(vm, vmlib.globalInt(vm, glob.SetChangeParms))
+		for i = 0, proto.NUM_SPAWN_PARMS - 1 do
+			client.spawn_parms[i + 1] = vmlib.globalFloat(vm, glob.parm1 + i)
+		end
+	end
 end
 
 -- find a free slot for a new connection; returns nil if full

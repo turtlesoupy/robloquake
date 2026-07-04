@@ -186,4 +186,43 @@ t.check(cl.players[0].frags < fragsBefore, `frag change rebroadcast ({cl.players
 local lastFrame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_MASK)]
 t.check(#lastFrame.packet_entities > 0, `packet entities present ({#lastFrame.packet_entities})`)
 
+--------------------------------------------------------------------------
+-- changelevel: SV_SaveSpawnparms + full re-handshake over the wire
+-- (mirrors qwserver.luau's changelevelTo consumer)
+vmlib.edSetFloat(player, ent.ammo_nails, 142)
+vmlib.edSetFloat(player, ent.items, bit32.bor(vmlib.edFloat(player, ent.items) // 1, 4)) -- IT_NAILGUN
+
+qwsv.saveSpawnparms(svr)
+qwsv.spawnServer(svr, "e1m2")
+t.check(svr.active, "qw server respawned on e1m2")
+sclient.spawned = false
+qwsv.newF(svr, sclient)
+sclient.send_message = true
+qwsv.replyToClient(svr, sclient)
+
+-- drain and re-run the handshake exactly like the first connect
+pending = {}
+for _ = 1, 20 do
+	while #toClient > 0 do
+		local packet = table.remove(toClient, 1) :: buffer
+		qwcl.processPacket(cl, packet)
+	end
+	qwsv.sendClientMessages(svr)
+	if sclient.spawned then
+		break
+	end
+end
+while #toClient > 0 do
+	local packet = table.remove(toClient, 1) :: buffer
+	qwcl.processPacket(cl, packet)
+end
+t.check(sclient.spawned, "re-handshake completed after changelevel")
+t.eq(cl.servercount, svr.spawncount, "new spawncount agreed")
+t.check(cl.worldmodel ~= nil and cl.model_name[1] == "maps/e1m2.bsp", "client cleared state and loaded e1m2")
+
+-- DecodeLevelParms: the nailgun + nails carried through the parms
+local player2 = sclient.edict
+t.check(bit32.band(vmlib.edFloat(player2, svr.qdefs.ent.items) // 1, 4) ~= 0, "qw nailgun carried")
+t.eq(vmlib.edFloat(player2, svr.qdefs.ent.ammo_nails), 142, "qw nail count carried")
+
 t.finish("test_qw_loopback")

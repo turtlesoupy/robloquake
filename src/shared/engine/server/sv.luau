@@ -750,7 +750,7 @@ function sv.newClient(num: number): Client
 end
 
 -- SV_ConnectClient
-function sv.connectClient(svr: Server, clientnum: number)
+function sv.connectClient(svr: Server, clientnum: number, preserveParms: boolean?)
 	local client = svr.clients[clientnum]
 	local vm = svr.vm
 
@@ -766,8 +766,10 @@ function sv.connectClient(svr: Server, clientnum: number)
 	client.cmd = { forwardmove = 0, sidemove = 0, upmove = 0 }
 	client.old_frags = 0
 
-	if not svr.loadgame then
+	if not svr.loadgame and not preserveParms then
 		-- call the progs to get default spawn parms for the new client
+		-- (changelevel reconnects keep the SetChangeParms-saved parms —
+		-- in C the connection persists and never re-enters this path)
 		vmlib.exec(vm, vmlib.globalInt(vm, glob.SetNewParms))
 		for i = 0, proto.NUM_SPAWN_PARMS - 1 do
 			client.spawn_parms[i + 1] = vmlib.globalFloat(vm, glob.parm1 + i)

@@ -86,12 +86,22 @@ end
 t.eq(svr.changelevelTo, "e1m2", "changelevel to e1m2 issued")
 t.check(intermissionSeen, "client saw intermission")
 
--- platform layer: respawn the server on the next level and reconnect
+-- give the player a nailgun + damage before leaving, so the carry-over
+-- through SetChangeParms/DecodeLevelParms is observable
+local player = svr.clients[1].edict
+vmlib.edSetFloat(player, ent.items, bit32.bor(vmlib.edFloat(player, ent.items) // 1, 4)) -- IT_NAILGUN
+vmlib.edSetFloat(player, ent.ammo_nails, 137)
+vmlib.edSetFloat(player, ent.health, 61)
+
+-- platform layer: SV_SaveSpawnparms, respawn on the next level, and
+-- reconnect preserving the saved parms (C keeps the connection alive
+-- and never re-runs SetNewParms on a changelevel)
 local nextMap = svr.changelevelTo :: string
 svr.changelevelTo = nil
+host.saveSpawnparms(svr)
 host.spawnServer(svr, nextMap)
 t.check(svr.active, "e1m2 spawned")
-host.connectClient(svr, 1)
+host.connectClient(svr, 1, true)
 
 for _ = 1, 10 do
 	pump()
@@ -99,6 +109,12 @@ end
 t.eq(c.signon, cllib.SIGNONS, "signed on to e1m2")
 t.eq(c.levelname, "Castle of the Damned", "e1m2 level name")
 t.eq(c.model_precache[2], "maps/e1m2.bsp", "world is e1m2")
-t.check(vmlib.edFloat(svr.clients[1].edict, ent.health) == 100, "fresh spawn on e1m2")
+
+-- SV_SaveSpawnparms carry-over (parm rules live in QC DecodeLevelParms:
+-- items keep the nailgun, ammo carries, health carries clamped 50..100)
+player = svr.clients[1].edict
+t.check(bit32.band(vmlib.edFloat(player, ent.items) // 1, 4) ~= 0, "nailgun carried to e1m2")
+t.eq(vmlib.edFloat(player, ent.ammo_nails), 137, "nail count carried")
+t.eq(vmlib.edFloat(player, ent.health), 61, "health carried (61)")
 
 t.finish("test_changelevel")

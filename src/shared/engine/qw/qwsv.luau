@@ -236,6 +236,29 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 	return svr
 end
 
+-- SV_SaveSpawnparms (sv_ccmds.c): SetChangeParms per spawned client on
+-- the OUTGOING progs so inventory carries; latch serverflags. Run
+-- before spawnServer reloads the VM.
+function qwsv.saveSpawnparms(svr: any)
+	if not svr.active then
+		return
+	end
+	local vm = svr.vm
+	local qdefs = svr.qdefs
+	svr.serverflags = vmlib.globalFloat(vm, qdefs.glob.serverflags)
+	for i = 1, svr.maxclients do
+		local client: Client = svr.clients[i]
+		if not (client.active and client.spawned) then
+			continue
+		end
+		buffer.writei32(vm.globals, qdefs.glob.self * 4, client.edict.num)
+		vmlib.exec(vm, qdefs.func.SetChangeParms)
+		for j = 1, 16 do
+			client.spawn_parms[j] = vmlib.globalFloat(vm, qdefs.glob["parm" .. j])
+		end
+	end
+end
+
 -- SV_SpawnServer: QW reloads the progs on every level
 function qwsv.spawnServer(svr: any, mapname: string)
 	svr.dprint(`SpawnServer: {mapname}`)

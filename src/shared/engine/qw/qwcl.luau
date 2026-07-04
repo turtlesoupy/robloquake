@@ -205,6 +205,7 @@ end
 
 local function parseServerData(cl: any, r: msg.Reader)
 	clearState(cl)
+	cl.state = "connected" -- ca_connected: redo the handshake (map change)
 	local protover = msg.readLong(r)
 	if protover ~= qwp.PROTOCOL_VERSION then
 		error(`Server returned version {protover}, not {qwp.PROTOCOL_VERSION}`)

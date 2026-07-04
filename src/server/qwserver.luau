@@ -131,6 +131,7 @@ return function(ctx: Ctx)
 		if nextLevel then
 			svr.changelevelTo = nil
 			print(`[robloquake] qw changelevel to {nextLevel}`)
+			qwsv.saveSpawnparms(svr) -- inventory carries across levels
 			qwsv.spawnServer(svr, nextLevel)
 			bundle.publishAll(svr)
 			for i = 1, svr.maxclients do

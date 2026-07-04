@@ -323,7 +323,7 @@ parses (test_bsp/test_models headers).
 | SV_ModelIndex (sv_main.c:904) | sv.luau:modelIndex | VERIFIED | test_server: player.mdl index > 0; errors on missing precache |
 | SV_CreateBaseline (sv_main.c:925) | sv.luau:createBaseline | VERIFIED | test_server: signon > 1000 bytes; loopback: entities render from baselines |
 | SV_SendReconnect (sv_main.c:985) | init.server.luau changelevel block | SUBSTITUTED | no svc_stufftext "reconnect" round-trip; the platform re-runs connectClient for each seated player after spawnServer |
-| SV_SaveSpawnparms (sv_main.c:1015) | — | UNIMPLEMENTED | SetChangeParms is never called on level change: player inventory/health and serverflags (runes) do NOT carry across levels; test_changelevel's "fresh spawn on e1m2" documents the divergent behavior |
+| SV_SaveSpawnparms (sv_main.c:1015) | server/host.luau:saveSpawnparms | VERIFIED | test_changelevel "nailgun carried to e1m2"/"nail count carried"/"health carried (61)": SetChangeParms per active client + serverflags latch; changelevel reconnect preserves parms (connectClient preserveParms — C keeps the connection and never re-runs SetNewParms) |
 | SV_SpawnServer (sv_main.c:1047) | server/host.luau:spawnServer | VERIFIED | test_server: entity census, precaches, lightstyles, two settle frames, baseline; QUAKE2 startspot variant excluded |
 
 ## sv_move.c
@@ -422,7 +422,7 @@ parses (test_bsp/test_models headers).
 | Host_Fly_f (host_cmd.c:183) | clientCommand "fly" | PENDING | delta: no ON/OFF print |
 | Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) |
 | Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | PENDING | delta: does not reset serverflags/spawn parms like C map command |
-| Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | PENDING | delta: missing SV_SaveSpawnparms (see sv_main.c row) |
+| Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | VERIFIED | test_changelevel end-to-end: trigger touch → intermission → changelevel with SV_SaveSpawnparms carry |
 | Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | PENDING | |
 | Host_Reconnect_f (host_cmd.c:396) | — | SUBSTITUTED | client-side signon reset; platform reconnects slots after respawn |
 | Host_Connect_f (host_cmd.c:409) | — | SUBSTITUTED | Roblox join flow replaces connect <host> |
