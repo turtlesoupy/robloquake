@@ -147,6 +147,11 @@ end
 
 local function publishClientAssets()
 	publishFile("gfx.wad")
+	-- config scripts for the client's exec command
+	publishFile("default.cfg")
+	publishFile("quake.rc")
+	publishFile("autoexec.cfg")
+	publishFile("config.cfg")
 	for _, sp in fsys.searchpaths do
 		local pack = sp.pack
 		if pack then

@@ -1,6 +1,7 @@
 --!strict
--- Input: keyboard/mouse to Quake usercmds and view angles. Mirrors the
--- default Quake bindings (always mouselook, always run off).
+-- Input: the cl_input.c button model. Keys map to +commands via binds
+-- (init.client's Key_Event); this module holds button states, view angles,
+-- and builds usercmds (CL_BaseMove / CL_AdjustAngles).
 
 local UserInputService = game:GetService("UserInputService")
 
@@ -15,19 +16,22 @@ export type InputState = {
 	impulse: number,
 }
 
--- cl_forwardspeed etc.; +speed doubles via cl_movespeedkey
+-- cl_* cvars (defaults)
 local cl_forwardspeed = 200
 local cl_backspeed = 200
 local cl_sidespeed = 350
 local cl_upspeed = 200
 local cl_movespeedkey = 2
+local cl_yawspeed = 140
+local cl_pitchspeed = 150
+local cl_anglespeedkey = 1.5
 local m_yaw = 0.022
 local m_pitch = 0.022
 local sensitivity = 3
 
-local keysDown: { [Enum.KeyCode]: boolean } = {}
-local attackDown = false
-local attackImpulse = false -- edge-trigger latch (in_attack.state & 2)
+-- kbutton_t states (down or not; edge latches for attack/jump)
+local buttons: { [string]: boolean } = {}
+local attackImpulse = false -- in_attack.state & 2
 local jumpImpulse = false
 local pendingImpulse = 0
 
@@ -35,40 +39,29 @@ local yaw = 0
 local pitch = 0
 local enabled = true
 
+local function btn(name: string): number
+	return if buttons[name] then 1 else 0
+end
+
+-- KeyDown/KeyUp for the +commands (in_forward, in_attack, ...)
+function input.setButton(name: string, down: boolean)
+	if down and not buttons[name] then
+		if name == "attack" then
+			attackImpulse = true
+		elseif name == "jump" then
+			jumpImpulse = true
+		end
+	end
+	buttons[name] = down
+end
+
 function input.init(startYaw: number)
 	yaw = startYaw
 	pitch = 0
 
-	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
-		if processed or not enabled then
-			return
-		end
-		if io.UserInputType == Enum.UserInputType.Keyboard then
-			keysDown[io.KeyCode] = true
-			if io.KeyCode == Enum.KeyCode.Space then
-				jumpImpulse = true
-			end
-			-- weapon impulses
-			local n = io.KeyCode.Value - Enum.KeyCode.Zero.Value
-			if n >= 1 and n <= 8 then
-				pendingImpulse = n
-			end
-		elseif io.UserInputType == Enum.UserInputType.MouseButton1 then
-			attackDown = true
-			attackImpulse = true
-		end
-	end)
-
-	UserInputService.InputEnded:Connect(function(io: InputObject)
-		if io.UserInputType == Enum.UserInputType.Keyboard then
-			keysDown[io.KeyCode] = nil
-		elseif io.UserInputType == Enum.UserInputType.MouseButton1 then
-			attackDown = false
-		end
-	end)
-
 	UserInputService.InputChanged:Connect(function(io: InputObject)
 		if io.UserInputType == Enum.UserInputType.MouseMovement and enabled then
+			-- IN_MouseMove (always-mouselook)
 			yaw -= io.Delta.X * m_yaw * sensitivity
 			pitch += io.Delta.Y * m_pitch * sensitivity
 			pitch = math.clamp(pitch, -70, 80)
@@ -76,6 +69,29 @@ function input.init(startYaw: number)
 	end)
 
 	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+end
+
+-- CL_AdjustAngles: keyboard turning/looking, run once per frame
+function input.updateTurn(dt: number)
+	if not enabled then
+		return
+	end
+	local speed = dt * (if buttons.speed then cl_anglespeedkey else 1)
+	if not buttons.strafe then
+		yaw -= speed * cl_yawspeed * btn("right")
+		yaw += speed * cl_yawspeed * btn("left")
+	end
+	if buttons.klook then
+		pitch -= speed * cl_pitchspeed * btn("forward")
+		pitch += speed * cl_pitchspeed * btn("back")
+	end
+	pitch -= speed * cl_pitchspeed * btn("lookup")
+	pitch += speed * cl_pitchspeed * btn("lookdown")
+	pitch = math.clamp(pitch, -70, 80)
+end
+
+function input.centerview()
+	pitch = 0
 end
 
 function input.lockMouse()
@@ -88,19 +104,17 @@ function input.viewangles(): vector
 	return vector.create(pitch, yaw, 0)
 end
 
--- svc_setangle: the server takes control of the view direction
 -- console/menu take over the keyboard and mouse
 function input.setEnabled(on: boolean)
 	enabled = on
 	if on then
 		input.lockMouse()
 	else
-		table.clear(keysDown)
-		attackDown = false
+		table.clear(buttons)
 	end
 end
 
--- console "impulse N" (the classic cheat path: QC's CheatCommand)
+-- console "impulse N"
 function input.setImpulse(n: number)
 	pendingImpulse = n
 end
@@ -112,10 +126,6 @@ end
 function input.setAngles(angles: vector)
 	pitch = angles.x
 	yaw = angles.y
-end
-
-local function key(k: Enum.KeyCode): number
-	return if keysDown[k] then 1 else 0
 end
 
 -- CL_BaseMove
@@ -148,17 +158,24 @@ function input.sample(): InputState
 		}
 	end
 
-	local fwd = key(Enum.KeyCode.W) + key(Enum.KeyCode.Up)
-	local back = key(Enum.KeyCode.S) + key(Enum.KeyCode.Down)
-	local right = key(Enum.KeyCode.D)
-	local left = key(Enum.KeyCode.A)
+	local sidemove = 0
+	if buttons.strafe then
+		sidemove += cl_sidespeed * btn("right")
+		sidemove -= cl_sidespeed * btn("left")
+	end
+	sidemove += cl_sidespeed * btn("moveright")
+	sidemove -= cl_sidespeed * btn("moveleft")
 
-	local forwardmove = cl_forwardspeed * math.min(fwd, 1) - cl_backspeed * math.min(back, 1)
-	local sidemove = cl_sidespeed * math.min(right, 1) - cl_sidespeed * math.min(left, 1)
-	local upmove = cl_upspeed * (key(Enum.KeyCode.E) - key(Enum.KeyCode.C))
+	local upmove = cl_upspeed * (btn("moveup") - btn("movedown"))
+
+	local forwardmove = 0
+	if not buttons.klook then
+		forwardmove += cl_forwardspeed * btn("forward")
+		forwardmove -= cl_backspeed * btn("back")
+	end
 
 	-- +speed
-	if keysDown[Enum.KeyCode.LeftShift] then
+	if buttons.speed then
 		forwardmove *= cl_movespeedkey
 		sidemove *= cl_movespeedkey
 		upmove *= cl_movespeedkey
@@ -168,8 +185,8 @@ function input.sample(): InputState
 		forwardmove = forwardmove,
 		sidemove = sidemove,
 		upmove = upmove,
-		attack = attackDown or attackImpulse,
-		jump = keysDown[Enum.KeyCode.Space] == true or jumpImpulse,
+		attack = buttons.attack == true or attackImpulse,
+		jump = buttons.jump == true or jumpImpulse,
 		impulse = pendingImpulse,
 	}
 	attackImpulse = false

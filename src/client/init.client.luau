@@ -305,12 +305,259 @@ end
 local worldlib = require(engine.server.world) -- pure hull math for TraceLine
 local chase_active = false
 
-con.onCommand = function(line: string)
+local camera = Workspace.CurrentCamera
+local refreshInputMode: () -> () = function() end
+
+--------------------------------------------------------------------------
+-- keys.c: bindings, and cmd.c: alias/exec/wait
+
+local KEYNAMES: { [Enum.KeyCode]: string } = {
+	[Enum.KeyCode.Space] = "space",
+	[Enum.KeyCode.Return] = "enter",
+	[Enum.KeyCode.KeypadEnter] = "enter",
+	[Enum.KeyCode.Tab] = "tab",
+	[Enum.KeyCode.Backspace] = "backspace",
+	[Enum.KeyCode.Up] = "uparrow",
+	[Enum.KeyCode.Down] = "downarrow",
+	[Enum.KeyCode.Left] = "leftarrow",
+	[Enum.KeyCode.Right] = "rightarrow",
+	[Enum.KeyCode.LeftControl] = "ctrl",
+	[Enum.KeyCode.RightControl] = "ctrl",
+	[Enum.KeyCode.LeftShift] = "shift",
+	[Enum.KeyCode.RightShift] = "shift",
+	[Enum.KeyCode.LeftAlt] = "alt",
+	[Enum.KeyCode.RightAlt] = "alt",
+	[Enum.KeyCode.Insert] = "ins",
+	[Enum.KeyCode.Delete] = "del",
+	[Enum.KeyCode.PageDown] = "pgdn",
+	[Enum.KeyCode.PageUp] = "pgup",
+	[Enum.KeyCode.Home] = "home",
+	[Enum.KeyCode.End] = "end",
+	[Enum.KeyCode.Pause] = "pause",
+	[Enum.KeyCode.Semicolon] = "semicolon",
+	[Enum.KeyCode.Comma] = ",",
+	[Enum.KeyCode.Period] = ".",
+	[Enum.KeyCode.Slash] = "/",
+	[Enum.KeyCode.Backquote] = "`",
+	[Enum.KeyCode.Minus] = "-",
+	[Enum.KeyCode.Equals] = "=",
+	[Enum.KeyCode.LeftBracket] = "[",
+	[Enum.KeyCode.RightBracket] = "]",
+	[Enum.KeyCode.BackSlash] = "\\",
+	[Enum.KeyCode.Quote] = "'",
+}
+for i = 0, 25 do
+	KEYNAMES[(Enum.KeyCode :: any)[string.char(65 + i)]] = string.char(97 + i)
+end
+for i = 0, 9 do
+	local names = { "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine" }
+	KEYNAMES[(Enum.KeyCode :: any)[names[i + 1]]] = tostring(i)
+end
+for i = 1, 12 do
+	KEYNAMES[(Enum.KeyCode :: any)["F" .. i]] = "f" .. i
+end
+
+local bindings: { [string]: string } = {}
+local aliases: { [string]: string } = {}
+-- +commands routed to the input button model (cl_input.c kbutton_t)
+local BUTTON_CMDS: { [string]: boolean } = {
+	forward = true, back = true, moveleft = true, moveright = true,
+	moveup = true, movedown = true, jump = true, attack = true,
+	speed = true, strafe = true, klook = true, mlook = true,
+	left = true, right = true, lookup = true, lookdown = true, use = true,
+}
+
+-- COM_Parse-ish tokenizer: quoted strings, // comments
+local function tokenize(line: string): { string }
+	local args = {}
+	local i = 1
+	local n = #line
+	while i <= n do
+		local ch = line:sub(i, i)
+		if ch == " " or ch == "\t" then
+			i += 1
+		elseif ch == "/" and line:sub(i + 1, i + 1) == "/" then
+			break
+		elseif ch == '"' then
+			local j = line:find('"', i + 1, true) or (n + 1)
+			table.insert(args, line:sub(i + 1, j - 1))
+			i = j + 1
+		else
+			local j = i
+			while j <= n do
+				local c2 = line:sub(j, j)
+				if c2 == " " or c2 == "\t" or c2 == '"' then
+					break
+				end
+				if c2 == "/" and line:sub(j + 1, j + 1) == "/" then
+					break
+				end
+				j += 1
+			end
+			table.insert(args, line:sub(i, j - 1))
+			i = j
+		end
+	end
+	return args
+end
+
+-- Cbuf_Execute with wait support: wait defers the rest to the next frame
+local cbufDeferred: { string } = {}
+local cbufWait = false
+local execCommand -- forward decl
+local function execLine(text: string)
+	-- Cbuf_Execute: break on ; and newlines, but quotes protect semicolons
+	local pieces = {}
+	local start = 1
+	local inQuote = false
+	for i = 1, #text + 1 do
+		local ch = if i <= #text then text:sub(i, i) else "\n"
+		if ch == '"' then
+			inQuote = not inQuote
+		elseif (ch == ";" and not inQuote) or ch == "\n" then
+			table.insert(pieces, text:sub(start, i - 1))
+			start = i + 1
+		end
+	end
+	for _, piece in pieces do
+		local trimmed = piece:match("^%s*(.-)%s*$") :: string
+		if trimmed ~= "" and trimmed:sub(1, 2) ~= "//" then
+			if cbufWait then
+				table.insert(cbufDeferred, trimmed)
+			else
+				execCommand(trimmed)
+			end
+		end
+	end
+end
+
+local function cbufFrame()
+	cbufWait = false
+	if #cbufDeferred == 0 then
+		return
+	end
+	local q = cbufDeferred
+	cbufDeferred = {}
+	for _, cmdline in q do
+		if cbufWait then
+			table.insert(cbufDeferred, cmdline)
+		else
+			execCommand(cmdline)
+		end
+	end
+end
+
+-- Key_Event: keydowns run the bind; keyups run the matching -command
+local function keyEvent(keyname: string, down: boolean)
+	local b = bindings[keyname]
+	if not b then
+		return
+	end
+	if down then
+		execLine(b)
+	elseif b:sub(1, 1) == "+" then
+		execLine("-" .. b:sub(2))
+	end
+end
+
+execCommand = function(line: string)
 	local cmd, args = line:match("^(%S+)%s*(.*)$")
 	if not cmd then
 		return
 	end
 	cmd = cmd:lower()
+
+	-- keys.c / cmd.c commands
+	local first = cmd:sub(1, 1)
+	if first == "+" or first == "-" then
+		local name = cmd:sub(2)
+		if name == "showscores" then
+			hudlib.setShowScores(hud, first == "+")
+			return
+		elseif BUTTON_CMDS[name] then
+			input.setButton(name, first == "+")
+			return
+		end
+	end
+	if cmd == "bind" then
+		local t = tokenize(line)
+		local key = (t[2] or ""):lower()
+		if key == "" then
+			consolelib.print(con, "bind <key> [command] : attach a command to a key")
+		elseif #t == 2 then
+			consolelib.print(con, `"{key}" = "{bindings[key] or ""}"`)
+		else
+			bindings[key] = table.concat(t, " ", 3)
+		end
+		return
+	elseif cmd == "unbind" then
+		local t = tokenize(line)
+		if t[2] then
+			bindings[(t[2] :: string):lower()] = nil
+		end
+		return
+	elseif cmd == "unbindall" then
+		table.clear(bindings)
+		return
+	elseif cmd == "alias" then
+		local t = tokenize(line)
+		if not t[2] then
+			for n, v in aliases do
+				consolelib.print(con, `{n} : {v}`)
+			end
+		else
+			aliases[t[2]] = table.concat(t, " ", 3)
+		end
+		return
+	elseif cmd == "echo" then
+		consolelib.print(con, args)
+		return
+	elseif cmd == "exec" then
+		local name = args:match("%S+")
+		local buf = if name then vfslib.loadFile(fs, name) else nil
+		if not buf then
+			consolelib.print(con, `couldn't exec {name}`)
+		else
+			consolelib.print(con, `execing {name}`)
+			for cfgline in buffer.tostring(buf):gmatch("[^\r\n]+") do
+				execLine(cfgline)
+			end
+		end
+		return
+	elseif cmd == "wait" then
+		cbufWait = true
+		return
+	elseif cmd == "centerview" then
+		input.centerview()
+		return
+	elseif cmd == "fov" then
+		local v = tonumber(args)
+		if v and v >= 10 and v <= 170 then
+			-- quake fov is horizontal for 4:3; convert to vertical
+			camera.FieldOfView = math.deg(2 * math.atan(math.tan(math.rad(v) / 2) * 0.75))
+		end
+		return
+	elseif cmd == "togglemenu" then
+		menulib.toggle(mnu)
+		refreshInputMode()
+		return
+	elseif cmd == "messagemode" or cmd == "messagemode2" then
+		consolelib.print(con, "use say <text> or the Roblox chat")
+		return
+	elseif cmd == "viewsize" or cmd == "gamma" or cmd == "volume" then
+		return -- accepted, fixed on this platform
+	elseif cmd == "sizeup" or cmd == "sizedown" or cmd == "screenshot" then
+		return
+	elseif cmd == "save" or cmd == "load" or cmd == "quit"
+		or cmd == "menu_save" or cmd == "menu_load" or cmd == "menu_options"
+		or cmd == "menu_multiplayer" or cmd == "help" then
+		consolelib.print(con, `{cmd}: not implemented yet`)
+		return
+	elseif aliases[cmd] then
+		execLine(aliases[cmd])
+		return
+	end
+
 	if cmd == "clear" then
 		table.clear(con.lines)
 	elseif cmd == "sensitivity" then
@@ -345,6 +592,8 @@ con.onCommand = function(line: string)
 		sendStringCmd(line)
 	end
 end
+
+con.onCommand = execLine
 
 mnu.onNewGame = function()
 	sendStringCmd("map start")
@@ -559,7 +808,6 @@ end
 --------------------------------------------------------------------------
 -- camera
 
-local camera = Workspace.CurrentCamera
 camera.CameraType = Enum.CameraType.Scriptable
 camera.FieldOfView = 75
 
@@ -568,7 +816,7 @@ input.lockMouse()
 
 local UserInputService = game:GetService("UserInputService")
 
-local function refreshInputMode()
+refreshInputMode = function()
 	local uiOpen = con.open or menulib.isOpen(mnu)
 	input.setEnabled(not uiOpen)
 end
@@ -673,12 +921,6 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 
-	-- TAB: +showscores
-	if key == Enum.KeyCode.Tab then
-		hudlib.setShowScores(hud, true)
-		return
-	end
-
 	-- the Quake menu lives on M (Escape is reserved by Roblox for its own menu)
 	if key == Enum.KeyCode.M and not menulib.isOpen(mnu) then
 		menulib.toggle(mnu)
@@ -690,13 +932,56 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		refreshInputMode()
 		return
 	end
+
+	-- Key_Event: run the bind
+	local name = KEYNAMES[key]
+	if name then
+		keyEvent(name, true)
+	end
+end)
+
+-- mouse buttons are keys too (MOUSE1-3)
+local MOUSENAMES: { [Enum.UserInputType]: string } = {
+	[Enum.UserInputType.MouseButton1] = "mouse1",
+	[Enum.UserInputType.MouseButton2] = "mouse2",
+	[Enum.UserInputType.MouseButton3] = "mouse3",
+}
+UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
+	local mname = MOUSENAMES[io.UserInputType]
+	if mname and not processed and not con.open and not menulib.isOpen(mnu) then
+		keyEvent(mname, true)
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(io: InputObject)
-	if io.UserInputType == Enum.UserInputType.Keyboard and io.KeyCode == Enum.KeyCode.Tab then
-		hudlib.setShowScores(hud, false)
+	if io.UserInputType == Enum.UserInputType.Keyboard then
+		local name = KEYNAMES[io.KeyCode]
+		if name then
+			keyEvent(name, false)
+		end
+	else
+		local mname = MOUSENAMES[io.UserInputType]
+		if mname then
+			keyEvent(mname, false)
+		end
 	end
 end)
+
+-- quake.rc: the 1996 defaults, then the modern layout as the authentic
+-- autoexec mechanism (WASD wasn't the default; arrows were)
+execLine("exec default.cfg")
+for _, l in {
+	"bind w +forward",
+	"bind s +back",
+	"bind a +moveleft",
+	"bind d +moveright",
+	"bind e +moveup",
+	"bind c +movedown",
+	"bind m togglemenu",
+} do
+	execLine(l)
+end
+execLine("exec autoexec.cfg")
 
 -- announce readiness: the server connects us when it hears from us
 do
@@ -714,6 +999,9 @@ local diagAccumulator = 0
 local statics_spawned = false
 
 RunService.Heartbeat:Connect(function(dt: number)
+	cbufFrame()
+	input.updateTurn(dt)
+
 	-- pump inbound messages
 	if #inbound > 0 then
 		local queue = inbound

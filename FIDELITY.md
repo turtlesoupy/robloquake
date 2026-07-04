@@ -16,6 +16,18 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Fixed during the audit
 
+- **keys.c / cmd.c**: full bind system — Key_Event with quake key names
+  (letters, arrows, modifiers, F-keys, mouse1-3), keyups fire the
+  -command, bind/unbind/unbindall/alias/echo/exec/wait, Cbuf semantics
+  with quote-protected semicolons and frame-deferred wait. The shipped
+  default.cfg execs at boot (authentic 1996 binds: arrows/a/z), then a
+  built-in autoexec layers the modern WASD expectations, then
+  autoexec.cfg from the pak if present. CL_AdjustAngles keyboard turning
+  (+left/+right/+lookup/+lookdown at cl_yawspeed/cl_pitchspeed with
+  cl_anglespeedkey), +strafe/+klook/+speed semantics in CL_BaseMove,
+  centerview, fov (horizontal-to-vertical for the aspect; zoom aliases
+  work). Verified: W→forwardmove 200 over the wire, F11 zoom chain.
+
 - **Per-texel lightmaps + dynamic lights** (the former #1/#2/#3 opens):
   lightatlas.luau ports R_BuildLightMap / R_AddDynamicLights /
   R_MarkLights into EditableImage pages; black alpha-overlay meshes
@@ -69,8 +81,6 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
    (no screen-space shader access); best-effort approximation TBD.
 4. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
    tick on Heartbeat (~60Hz). Audit feel + consider fixed-timestep.
-5. **config.cfg / quake.rc execution**: `bind`/`unbind`/`alias`, cvar
-   persistence, autoexec. None implemented; keys are hardcoded defaults.
 8. **Demo playback/recording** (`cl_demo.c`).
 9. **Save/load** (`host_cmd.c` savegames).
 
@@ -93,6 +103,9 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
   drawing, mip selection, 8-bit dither) is not reproduced.
 - **CD music**: tracks were never in the paks; absent. LibreQuake ships
   music files that could be banked later.
+- **config.cfg persistence**: no writable filesystem; binds/cvars reset
+  each session (Host_WriteConfiguration cannot exist). A DataStore-backed
+  substitute is possible later.
 
 ## Deliberate default changes (one-line divergences, revisit at ship)
 
