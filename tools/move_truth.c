@@ -856,6 +856,16 @@ void SV_WaterMove(void)
         velocity[i] += accelspeed * wishvel[i];
 }
 
+void SV_WaterJump(void)
+{
+    if (sv_time > sv_player->v.teleport_time || !sv_player->v.waterlevel) {
+        sv_player->v.flags = (int)sv_player->v.flags & ~FL_WATERJUMP;
+        sv_player->v.teleport_time = 0;
+    }
+    sv_player->v.velocity[0] = sv_player->v.movedir[0];
+    sv_player->v.velocity[1] = sv_player->v.movedir[1];
+}
+
 void SV_ClientThink(void)
 {
     vec3_t v_angle;
@@ -877,8 +887,10 @@ void SV_ClientThink(void)
     angles[PITCH] = -v_angle[PITCH] / 3;
     angles[YAW] = v_angle[YAW];
 
-    if ((int)sv_player->v.flags & FL_WATERJUMP)
-        return; /* SV_WaterJump not needed on this path */
+    if ((int)sv_player->v.flags & FL_WATERJUMP) {
+        SV_WaterJump();
+        return;
+    }
 
     if (sv_player->v.waterlevel >= 2) {
         SV_WaterMove();
@@ -1071,6 +1083,63 @@ int main(void)
                    player.v.origin[0], player.v.origin[1], player.v.origin[2],
                    player.v.velocity[0], player.v.velocity[1], player.v.velocity[2],
                    ((int)player.v.flags & FL_ONGROUND) ? 1 : 0);
+        }
+    }
+
+    /* course 2 (ticks 301-380): the e1m1 slime pool at (656,992,-330) —
+       SV_WaterMove swim accel/friction and waterlevel transitions, plus a
+       scripted waterjump: at tick 340 the QC-side trigger is emulated
+       deterministically (client.qc CheckWaterJump sets FL_WATERJUMP,
+       movedir and teleport_time) so SV_WaterJump's velocity override and
+       flag-clearing run on both sides. Mirrored in tests/test_movement.luau. */
+    static phase_t waterscript[] = {
+        {20, 400, 0, 0, 90, 30, 0},   /* swim forward pitched down */
+        {35, 400, 0, 200, 270, -45, 0}, /* up-back */
+        {60, 400, 0, 0, 0, -10, 0},   /* toward the +x pool wall */
+        {80, 0, 0, -200, 180, 0, 0},  /* sink back */
+    };
+    memset(&player, 0, sizeof(player));
+    player.v.origin[0] = 656; player.v.origin[1] = 992; player.v.origin[2] = -330;
+    VectorCopy(player.v.origin, player.v.oldorigin);
+    player.v.mins[0] = -16; player.v.mins[1] = -16; player.v.mins[2] = -24;
+    player.v.maxs[0] = 16; player.v.maxs[1] = 16; player.v.maxs[2] = 32;
+    player.v.view_ofs[2] = 22;
+    player.v.movetype = MOVETYPE_WALK;
+    player.v.solid = SOLID_BSP;
+    player.v.health = 100;
+    host_frametime = 0.05;
+    sv_time = 1.0;
+
+    nphases = sizeof(waterscript) / sizeof(waterscript[0]);
+    tick = 0;
+    for (int ph = 0; ph < nphases; ph++) {
+        for (; tick < waterscript[ph].untilTick; tick++) {
+            cmd.forwardmove = waterscript[ph].fwd;
+            cmd.sidemove = waterscript[ph].side;
+            cmd.upmove = waterscript[ph].upm;
+            player.v.v_angle[YAW] = waterscript[ph].yaw;
+            player.v.v_angle[PITCH] = waterscript[ph].pitch;
+
+            if (tick == 39) {
+                /* deterministic client.qc CheckWaterJump emulation */
+                player.v.flags = (int)player.v.flags | FL_WATERJUMP;
+                player.v.movedir[0] = 0; player.v.movedir[1] = 100; player.v.movedir[2] = 0;
+                player.v.velocity[2] = 225;
+                player.v.teleport_time = sv_time + 2;
+            }
+
+            SV_ClientThink();
+            SV_CheckVelocity(&player);
+            if (!SV_CheckWater(&player) && !((int)player.v.flags & FL_WATERJUMP))
+                SV_AddGravity(&player);
+            SV_CheckStuck(&player);
+            SV_WalkMove(&player);
+            sv_time += host_frametime;
+
+            printf("%d %.9g %.9g %.9g %.9g %.9g %.9g %d\n", 300 + tick,
+                player.v.origin[0], player.v.origin[1], player.v.origin[2],
+                player.v.velocity[0], player.v.velocity[1], player.v.velocity[2],
+                (int)player.v.waterlevel);
         }
     }
     return 0;

@@ -89,7 +89,7 @@ for line in fixture:gmatch("[^\n]+") do
 	end
 	table.insert(truth, vals)
 end
-t.eq(#truth, 300, "fixture ticks")
+t.eq(#truth, 380, "fixture ticks (300 dry + 80 water)")
 
 local maxPosErr, maxVelErr = 0, 0
 local firstBigTick = -1
@@ -141,8 +141,82 @@ for _, ph in script do
 	end
 end
 
-print(("max position error: %.6f units, max velocity error: %.6f over %d ticks"):format(maxPosErr, maxVelErr, tick))
-t.check(maxPosErr < 0.5, `movement matches C within 0.5 units (max {maxPosErr})`)
-t.check(maxVelErr < 5, `velocity matches C within 5 u/s (max {maxVelErr})`)
+print(("course 1 (dry): max position error %.6f, max velocity error %.6f"):format(maxPosErr, maxVelErr))
+t.check(maxPosErr < 0.01, "dry-course position matches the verbatim C within 0.01 units")
+t.check(maxVelErr < 0.05, "dry-course velocity matches within 0.05")
 
+--------------------------------------------------------------------------
+-- course 2: the e1m1 slime pool — SV_WaterMove swim accel/friction,
+-- waterlevel transitions, and a deterministic waterjump (the QC-side
+-- CheckWaterJump trigger is emulated identically on both sides at tick
+-- 39: FL_WATERJUMP + movedir + velocity 225 + teleport_time).
+-- Mirrored in tools/move_truth.c ticks 300-379.
+local waterScript: { Phase } = {
+	{ untilTick = 20, fwd = 400, side = 0, upm = 0, yaw = 90, pitch = 30, jump = false },
+	{ untilTick = 35, fwd = 400, side = 0, upm = 200, yaw = 270, pitch = -45, jump = false },
+	{ untilTick = 60, fwd = 400, side = 0, upm = 0, yaw = 0, pitch = -10, jump = false },
+	{ untilTick = 80, fwd = 0, side = 0, upm = -200, yaw = 180, pitch = 0, jump = false },
+}
+-- reset the player exactly like the harness memset + re-setup
+for _, fld in { ent.velocity, ent.punchangle, ent.v_angle } do
+	vmlib.edSetVector(player, fld, vector.zero)
+end
+vmlib.edSetVector(player, ent.origin, vector.create(656, 992, -330))
+vmlib.edSetVector(player, ent.oldorigin, vector.create(656, 992, -330))
+vmlib.edSetFloat(player, ent.flags, 0)
+vmlib.edSetFloat(player, ent.waterlevel, 0)
+vmlib.edSetFloat(player, ent.watertype, 0)
+vmlib.edSetFloat(player, ent.teleport_time, 0)
+vmlib.edSetVector(player, ent.movedir, vector.zero)
+world.linkEdict(svr.world, player, false)
+svr.time = 1.0
+vm.time = 1.0
+
+local wMaxPos, wMaxVel, wMismatch = 0, 0, 0
+local seenLevels: { [number]: boolean } = {}
+tick = 0
+for _, ph in waterScript do
+	while tick < ph.untilTick do
+		client.cmd.forwardmove = ph.fwd
+		client.cmd.sidemove = ph.side
+		client.cmd.upmove = ph.upm
+		vmlib.edSetVector(player, ent.v_angle, vector.create(ph.pitch, ph.yaw, 0))
+
+		if tick == 39 then
+			vmlib.edSetFloat(player, ent.flags, bit32.bor(vmlib.edFloat(player, ent.flags) // 1, qd.FL_WATERJUMP))
+			vmlib.edSetVector(player, ent.movedir, vector.create(0, 100, 0))
+			local vel = vmlib.edVector(player, ent.velocity)
+			vmlib.edSetVector(player, ent.velocity, vector.create(vel.x, vel.y, 225))
+			vmlib.edSetFloat(player, ent.teleport_time, svr.time + 2)
+		end
+
+		sv_user.clientThink(svr, client)
+		sv_phys.checkVelocity(svr, player)
+		if not sv_phys.checkWater(svr, player) and bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_WATERJUMP) == 0 then
+			sv_phys.addGravity(svr, player)
+		end
+		sv_phys.checkStuck(svr, player)
+		sv_phys.walkMove(svr, player)
+		world.linkEdict(svr.world, player, false)
+
+		svr.time += svr.frametime
+		vm.time = svr.time
+
+		local row = truth[300 + tick + 1]
+		local org = vmlib.edVector(player, ent.origin)
+		local vel = vmlib.edVector(player, ent.velocity)
+		wMaxPos = math.max(wMaxPos, math.max(math.abs(org.x - row[2]), math.abs(org.y - row[3]), math.abs(org.z - row[4])))
+		wMaxVel = math.max(wMaxVel, math.max(math.abs(vel.x - row[5]), math.abs(vel.y - row[6]), math.abs(vel.z - row[7])))
+		if vmlib.edFloat(player, ent.waterlevel) ~= row[8] then
+			wMismatch += 1
+		end
+		seenLevels[row[8]] = true
+		tick += 1
+	end
+end
+print(("course 2 (water): max position error %.6f, max velocity error %.6f"):format(wMaxPos, wMaxVel))
+t.check(wMaxPos < 0.01, "water-course position matches the verbatim C within 0.01 units")
+t.check(wMaxVel < 0.05, "water-course velocity matches within 0.05")
+t.eq(wMismatch, 0, "waterlevel agrees every tick")
+t.check(seenLevels[3] == true and seenLevels[0] == true, "the course crosses waterlevels 3 down to 0 (the waterjump exits the pool)")
 t.finish("test_movement")

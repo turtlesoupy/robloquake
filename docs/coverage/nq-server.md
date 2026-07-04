@@ -354,7 +354,7 @@ parses (test_bsp/test_models headers).
 | SV_PushRotate (sv_phys.c:566) | — | UNIMPLEMENTED | dead: QUAKE2-only ifdef in WinQuake | — (implement first) |
 | SV_Physics_Pusher (sv_phys.c:704) | sv_phys.luau:physicsPusher | VERIFIED | test_server: door travels and returns home after its wait (think scheduling through the pusher path). | `lune run tests/test_server.luau` |
 | SV_CheckStuck (sv_phys.c:762) | sv_phys.luau:checkStuck | VERIFIED | test_server "SV_CheckStuck restored oldorigin from inside the door" + runs every tick of the move_truth chain. | `lune run tests/test_server.luau`; `lune run tests/test_movement.luau` |
-| SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | VERIFIED | move_truth chain (dry-land path); waterlevel 2/3 branches never entered by the fixture — a water course remains an open truth-harness item (see the pmove PM_WaterMove note). | `lune run tests/test_movement.luau` |
+| SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | VERIFIED | move_truth chains: dry course + the water course (waterlevels 3/2/1/0 transitions agree every tick). | `lune run tests/test_movement.luau` |
 | SV_WallFriction (sv_phys.c:867) | sv_phys.luau:wallFriction | VERIFIED | move_truth chain (inside the walkMove path). | `lune run tests/test_movement.luau` |
 | SV_TryUnstick (sv_phys.c:901) | sv_phys.luau:tryUnstick | PENDING | transliterated 8-direction unstick; unlikely to be hit by the fixture, unasserted | TBD: write test or tools/verify script + evidence capture |
 | SV_WalkMove (sv_phys.c:958) | sv_phys.luau:walkMove | VERIFIED | move_truth chain incl. step-up/down and oldonground handling. | `lune run tests/test_movement.luau` |
@@ -378,8 +378,8 @@ parses (test_bsp/test_models headers).
 | SV_Accelerate (sv_user.c:190) | sv_user.luau:accelerate | VERIFIED | move_truth chain. | `lune run tests/test_movement.luau` |
 | SV_AirAccelerate (sv_user.c:207) | sv_user.luau:airAccelerate | VERIFIED | move_truth chain (wishspd 30 clamp). | `lune run tests/test_movement.luau` |
 | DropPunchAngle (sv_user.c:229) | sv_user.luau:dropPunchAngle | VERIFIED | test_server: shotgun sets punchangle_x = -2 (QC) and the server decays it to zero over the following frames. | `lune run tests/test_server.luau` |
-| SV_WaterMove (sv_user.c:247) | sv_user.luau:waterMove | PENDING | ported (copied verbatim into tools/move_truth.c but the scripted route never enters water) | TBD: write test or tools/verify script + evidence capture |
-| SV_WaterJump (sv_user.c:307) | sv_user.luau:waterJump | PENDING | FL_WATERJUMP path unexercised by fixture | TBD: write test or tools/verify script + evidence capture |
+| SV_WaterMove (sv_user.c:247) | sv_user.luau:waterMove | VERIFIED | move_truth water course (ticks 300-379, e1m1 slime pool): swim accel/friction and the no-input sink match the verbatim C to 0.000127 units across waterlevels 3..0. | `lune run tests/test_movement.luau` |
+| SV_WaterJump (sv_user.c:307) | sv_user.luau:waterJump | VERIFIED | move_truth water course: a deterministic QC-trigger emulation at tick 39 (FL_WATERJUMP + movedir + vel 225) runs the verbatim SV_WaterJump on both sides — the jump carries the player out of the pool identically (flag clear + movedir velocity override). | `lune run tests/test_movement.luau` |
 | SV_AirMove (sv_user.c:326) | sv_user.luau:airMove | VERIFIED | move_truth chain (fwd/side/up wishvel, onground dispatch). | `lune run tests/test_movement.luau` |
 | SV_ClientThink (sv_user.c:380) | sv_user.luau:clientThink | VERIFIED | move_truth chain; includes V_CalcRoll (view.c) for angles roll. | `lune run tests/test_movement.luau` |
 | SV_ReadClientMove (sv_user.c:438) | sv_user.luau:readClientMove | VERIFIED | test_server: clc_move angles/moves/buttons/impulse drive asserted movement + shotgun fire; delta: ping_times[] not tracked (no ping report) | `lune run tests/test_server.luau` |
