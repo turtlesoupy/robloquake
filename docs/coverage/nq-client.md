@@ -83,7 +83,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Chase_Init | chase_active console command | PENDING | cvar-only; chase_back/up/right hardcoded 100/16/0 | TBD: write test or tools/verify script + evidence capture |
 | Chase_Reset | — | UNIMPLEMENTED | C stub is an empty TODO too | — (implement first) |
 | TraceLine | worldlib.recursiveHullCheck against hull 0 | VERIFIED | FIDELITY.md: hull collision bit-exact vs trace_truth (1503 checks) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| Chase_Update | init.client chase branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "chase.c verbatim ... no camera wall clip — authentic quirk" | TBD: write test or tools/verify script + evidence capture |
+| Chase_Update | init.client chase branch | VERIFIED | [evidence/nq-chase-cam.jpg](evidence/nq-chase-cam.jpg) + .txt: chase.c offsets, player.mdl from behind, gun hidden, no wall clip (authentic quirk). | Console "chase_active 1" per evidence/nq-chase-cam.txt, capture, compare |
 
 ## view.c
 
@@ -99,7 +99,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | V_ParseDamage | cl.luau parseDamage | PENDING | kick roll/pitch *0.6, kicktime 0.5, cshift color table, faceanimtime +0.2 all match | TBD: write test or tools/verify script + evidence capture |
 | V_cshift_f | — | UNIMPLEMENTED | debug command | — (implement first) |
 | V_BonusFlash_f | "bf" stufftext → cshift_bonus_percent 50 | PENDING | bonus color 215/186/69 matches | TBD: write test or tools/verify script + evidence capture |
-| V_SetContentsColor | init.client view-leaf contents shifts | PENDING | water/slime/lava values match; delta: no CONTENTS_SOLID case, empty clears implicitly | TBD: write test or tools/verify script + evidence capture |
+| V_SetContentsColor | init.client view-leaf contents shifts | VERIFIED | [evidence/nq-slime-cshift.jpg](evidence/nq-slime-cshift.jpg) + .txt: full-screen slime tint while submerged, blended with the damage flash from the slime tick. Delta: no CONTENTS_SOLID grey (cannot be seen in play). | Teleport per evidence/nq-slime-cshift.txt, capture, compare |
 | V_CalcPowerupCshift | init.client powerup shifts | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: priority quad > suit > ring > pent matches | TBD: write test or tools/verify script + evidence capture |
 | V_CalcBlend | init.client shift compositor | PENDING | same a2/(1-a) accumulation; delta: final alpha capped at 0.85 | TBD: write test or tools/verify script + evidence capture |
 | V_UpdatePalette | cshift Frame tint + decay | SUBSTITUTED | palette blend → fullscreen GUI tint; damage/bonus decay 150/100 per second ported | — (substitution; verify justification still holds) |
@@ -131,10 +131,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn | — (implement first) |
 | Sbar_DrawFace | hud face branch | PENDING | invis+invuln/quad/invis/invuln specials + 5 health bands + pain via faceanimtime match | TBD: write test or tools/verify script + evidence capture |
 | Sbar_Draw | hud.update | PENDING | delta: no viewsize/lineadj interaction — sbar always drawn | TBD: write test or tools/verify script + evidence capture |
-| Sbar_IntermissionNumber | interBigNum | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: big digits at exact C coordinates | TBD: write test or tools/verify script + evidence capture |
+| Sbar_IntermissionNumber | interBigNum | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg): big digits for Time/Secrets/Kills at the C coordinates. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
 | Sbar_DeathmatchOverlay | buildRankings | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: ranking.lmp, colour bars, frags, self marker char 12 | TBD: write test or tools/verify script + evidence capture |
 | Sbar_MiniDeathmatchOverlay | — | UNIMPLEMENTED | small mid-game DM list absent | — (implement first) |
-| Sbar_IntermissionOverlay | buildIntermission | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: complete.lmp/inter.lmp, time/secrets/monsters at C coords | TBD: write test or tools/verify script + evidence capture |
+| Sbar_IntermissionOverlay | buildIntermission | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg) + .txt: complete.lmp plaque + inter.lmp labels + big numbers over the info_intermission vantage. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
 | Sbar_FinaleOverlay | finale.lmp branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md finale record | TBD: write test or tools/verify script + evidence capture |
 
 ## screen.c

@@ -1,0 +1,11 @@
+Evidence: nq-intermission.jpg — Sbar_IntermissionOverlay
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Trigger: player teleported into the e1m1 trigger_changelevel volume
+  (1288-1336, 520-568) via SVDBG_SetOrigin; svc_intermission moved the
+  view to the info_intermission vantage (-112, 704, 56)
+Captured: 2026-07-04, Studio Play (solo); recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the complete.lmp "COMPLETED" plaque, inter.lmp labels,
+and Sbar_IntermissionNumber big digits (Time 0:23, Secrets 0/6, Kills
+0/23) at the C coordinates, drawn over the intermission camera view of
+the exit yard (view weapon hidden, camera detached from the player).

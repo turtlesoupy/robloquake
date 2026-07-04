@@ -1,0 +1,9 @@
+Evidence: nq-chase-cam.jpg — Chase_Update (chase.c)
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), console "chase_active 1" via
+  the RQDBG_Console harness; recovered from the session transcript
+Code state: the commit introducing this file
+What it proves: third-person chase camera at the chase.c offsets (back
+100, up 16), player.mdl rendered from behind, view weapon hidden while
+chased, world visible past the player. No wall clipping — the authentic
+chase.c quirk.

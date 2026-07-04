@@ -1,0 +1,10 @@
+Evidence: nq-slime-cshift.jpg — V_SetContentsColor (slime submersion)
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Position: submerged in the slime pool at (656, 992, -344) via
+  SVDBG_SetOrigin
+Captured: 2026-07-04, Studio Play (solo); recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the CONTENTS_SLIME view tint (0 25 5-family shift)
+covers the full screen while submerged, blended with the red damage
+flash from the slime damage tick (health 81 -> 65 visible, pain face on
+the sbar). V_UpdatePalette's GUI-tint substitution renders the shift.
