@@ -27,6 +27,9 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 - Loading plaque (SCR_BeginLoadingPlaque: notify/centerprint clear, plaque
   holds until the first rendered frame), pause plaque (SCR_DrawPause)
 - Console slide animation (scr_conspeed 300)
+- Lightning beams: CL_ParseBeam/CL_UpdateTEnts ported — bolt/bolt2/bolt3
+  model chains, one segment per 30 units, random roll, player-tracked
+  start position, 0.2s lifetime (pooled render entities)
 
 - Impact sounds (`cl_tent.c R_ParseTEnt`): TE explosions play r_exp3,
   spikes play tink1/ric1-3, wiz/knight hits — the QC r_exp3 call is
@@ -45,10 +48,7 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Open — ordered by visibility
 
-1. **Lightning beams**: real bolt models (`progs/bolt*.mdl`) segmented every
-   30 units with random roll (`CL_UpdateTEnts`); currently placeholder neon
-   rods.
-2. **Intermission / finale overlays**: rankings screen, finale text plaque
+1. **Intermission / finale overlays**: rankings screen, finale text plaque
    (`Sbar_IntermissionOverlay`, `SCR_CheckDrawCenterString`).
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.

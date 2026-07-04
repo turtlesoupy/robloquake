@@ -173,6 +173,14 @@ local function allocDlight(key: number, time: number): lightatlaslib.Dlight
 	return dl
 end
 
+-- lightning beam state (CL_ParseBeam)
+local MAX_BEAMS = 24
+type Beam = { modelName: string, entity: number, startPos: vector, endPos: vector, endtime: number }
+local beams: { Beam? } = {}
+local beamDefs: { [string]: any } = {}
+local beamPool: { [string]: { entrender.RenderEnt } } = {}
+
+
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
 local staticEnts: { entrender.RenderEnt } = {}
 local gunEnt: entrender.RenderEnt? = nil
@@ -253,6 +261,9 @@ c.onServerInfo = function()
 	table.clear(staticEnts)
 	gunEnt = nil
 	gunModelIndex = 0
+	table.clear(beams)
+	table.clear(beamDefs)
+	table.clear(beamPool)
 
 	local worldName = c.model_precache[2]
 	local buf = vfslib.loadFile(fs, worldName, true)
@@ -357,30 +368,114 @@ end
 
 -- CL_ParseTEnt: temp entity events → particle effects; beams as brief
 -- neon rods (sounds come with the audio pass)
-local beamFolder = Instance.new("Folder")
-beamFolder.Name = "QuakeBeams"
-beamFolder.Parent = Workspace
-
-local function spawnBeam(p1: vector, p2: vector)
-	local a = qcoords.toRoblox(p1)
-	local b = qcoords.toRoblox(p2)
-	local len = (b - a).Magnitude
-	if len < 0.1 then
-		return
+-- CL_ParseBeam / CL_UpdateTEnts: lightning renders as chains of the real
+-- bolt models, one segment every 30 units, random roll per segment
+local function beamModelDef(name: string): entrender.ModelDef?
+	local def = beamDefs[name]
+	if def == nil then
+		local buf = vfslib.loadFile(fs, name, true)
+		if buf then
+			local am = mdllib.load(name, buf)
+			def = { kind = "alias", alias = am, flags = am.flags }
+			entrender.prepareImages(def, pal)
+		else
+			def = false
+		end
+		beamDefs[name] = def
 	end
-	local part = Instance.new("Part")
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CastShadow = false
-	part.Material = Enum.Material.Neon
-	part.Color = Color3.fromRGB(160, 170, 255)
-	part.Size = Vector3.new(0.35, 0.35, len)
-	part.CFrame = CFrame.lookAt((a + b) / 2, b)
-	part.Parent = beamFolder
-	task.delay(0.12, function()
-		part:Destroy()
-	end)
+	return if def then def :: entrender.ModelDef else nil
+end
+
+local function parseBeam(modelName: string, te: cllib.TempEntityEvent)
+	local entity = te.entity or 0
+	local endPos = te.pos2 :: vector
+	-- override any beam with the same entity
+	if entity ~= 0 then
+		for i = 1, MAX_BEAMS do
+			local b = beams[i]
+			if b and b.entity == entity then
+				b.modelName = modelName
+				b.startPos = te.pos
+				b.endPos = endPos
+				b.endtime = c.time + 0.2
+				return
+			end
+		end
+	end
+	for i = 1, MAX_BEAMS do
+		local b = beams[i]
+		if not b or b.endtime < c.time then
+			beams[i] = { modelName = modelName, entity = entity, startPos = te.pos, endPos = endPos, endtime = c.time + 0.2 }
+			return
+		end
+	end
+end
+
+local function updateBeams()
+	local used: { [string]: number } = {}
+	for i = 1, MAX_BEAMS do
+		local b = beams[i]
+		if b and b.endtime >= c.time then
+			-- if coming from the player, track the player origin
+			if b.entity == c.viewentity then
+				local pe = c.entities[c.viewentity]
+				if pe then
+					b.startPos = pe.origin
+				end
+			end
+			local def = beamModelDef(b.modelName)
+			if def then
+				local dist = b.endPos - b.startPos
+				local yaw, pitch
+				if dist.x == 0 and dist.y == 0 then
+					yaw = 0
+					pitch = if dist.z > 0 then 90 else 270
+				else
+					yaw = math.deg(math.atan2(dist.y, dist.x))
+					if yaw < 0 then
+						yaw += 360
+					end
+					pitch = math.deg(math.atan2(dist.z, math.sqrt(dist.x * dist.x + dist.y * dist.y)))
+					if pitch < 0 then
+						pitch += 360
+					end
+				end
+				local d = vector.magnitude(dist)
+				local dir = if d > 0 then dist / d else vector.zero
+				local org = b.startPos
+				while d > 0 do
+					local n = (used[b.modelName] or 0) + 1
+					used[b.modelName] = n
+					local pool = beamPool[b.modelName]
+					if not pool then
+						pool = {}
+						beamPool[b.modelName] = pool
+					end
+					local re = pool[n]
+					if not re then
+						re = entrender.create(def, entFolder)
+						if not re then
+							break
+						end
+						pool[n] = re
+					end
+					setEntVisible(re, true)
+					entrender.updateAlias(re, def, org, vector.create(pitch, yaw, math.random(0, 359)), 0, 0, 0, c.time)
+					entrender.setLight(re, 255)
+					org += dir * 30
+					d -= 30
+					if n >= 40 then
+						break
+					end
+				end
+			end
+		end
+	end
+	for name, pool in beamPool do
+		for i = (used[name] or 0) + 1, #pool do
+			setEntVisible(pool[i], false)
+		end
+	end
 end
 
 -- R_ParseTEnt: impact sounds are client-side in NetQuake (the QC r_exp3
@@ -433,8 +528,14 @@ c.onTempEntity = function(_c, te)
 		particleslib.lavaSplash(psys, te.pos, c.time)
 	elseif te.type == proto.TE_TELEPORT then
 		particleslib.teleportSplash(psys, te.pos, c.time)
-	elseif te.pos2 then
-		spawnBeam(te.pos, te.pos2 :: vector)
+	elseif te.type == proto.TE_LIGHTNING1 then
+		parseBeam("progs/bolt.mdl", te)
+	elseif te.type == proto.TE_LIGHTNING2 then
+		parseBeam("progs/bolt2.mdl", te)
+	elseif te.type == proto.TE_LIGHTNING3 then
+		parseBeam("progs/bolt3.mdl", te)
+	elseif te.type == proto.TE_BEAM then
+		parseBeam("progs/beam.mdl", te)
 	end
 end
 c.onDisconnect = function()
@@ -812,6 +913,9 @@ RunService.Heartbeat:Connect(function(dt: number)
 			entrender.updateBrush(rr, e.origin, e.angles)
 		end
 	end
+
+	-- CL_UpdateTEnts: lightning beam segments
+	updateBeams()
 
 	-- view / camera
 	local refdef = viewlib.calcRefdef(c, dt)
