@@ -1406,12 +1406,10 @@ return function()
 			if ge then
 				local def = getModelDef(gunModel) :: entrender.ModelDef
 				local gunorg = eye + fwd * (math.sqrt(cl.simvel.x * cl.simvel.x + cl.simvel.y * cl.simvel.y) * 0.02 * 0.4)
-				-- GL-family gun projection (WebQuake R.js: fov*0.82
-				-- vertical, own matrix) emulated via transverse squash
-				local fovGun = math.rad(currentFov * 0.82) / 2
-				local fovCam = math.rad(camera.FieldOfView) / 2
-				;(ge :: any).vmSquash = math.tan(fovCam) / math.tan(fovGun)
-				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), gunFrame, 0, 0, cl.time)
+				-- vrect: in C the gun hugs the 3D view bottom, which ends
+				-- ABOVE the sbar; rotate it up by the vrect center offset
+				-- so the HUD doesn't cover it (see qcoords.vrect)
+				entrender.updateAlias(ge, def, gunorg, vector.create(-(angles.x - gunVrectPitch), angles.y, angles.z), gunFrame, 0, 0, cl.time)
 				-- R_DrawViewModel: always give some light on the gun
 				local glight = if cl.worldmodel then lightpoint.at(cl.worldmodel, eye, styleValueFor) else 255
 				for _, dl in dlights do
