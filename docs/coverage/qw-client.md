@@ -84,10 +84,10 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | KeyDown / KeyUp + the 38 IN_*Down/IN_*Up wrappers | qwclient `keyButtons` map + `input.setButton` | SUBSTITUTED | Roblox UserInputService replaces the bind-driven ± command pairs. Delta: booleans, not the C two-source `kbutton_t` down[2]/impulse tracking — simultaneous bind sources and 0.25/0.75 partial-frame presses are lost. | — (substitution; verify justification still holds) |
-| IN_Impulse | number keys 1–8 → `input.setImpulse` | PENDING | Weapon switch works live per backlog (kill/respawn/fire sessions) but no per-impulse assert. | TBD: write test or tools/verify script + evidence capture |
+| IN_Impulse | number keys 1–8 → `input.setImpulse` | VERIFIED | exec `impulse 8` selected and fired the freshly picked-up dm3 LG (which discharged underwater for the authentic -99 — [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); impulse 9 correctly refused in DM. Number-key synthesis blocked by CoreGUI (platform note shared with the NQ row). | Battery steps in the evidence file |
 | CL_KeyState | — | SUBSTITUTED | Digital 0/1 only (see above); QW's fractional key state depended on sub-frame press timing. | — (substitution; verify justification still holds) |
 | CL_AdjustAngles | — | UNIMPLEMENTED | No keyboard turn/look (+left/+right/+lookup/+lookdown); mouse-only via `input.updateTurn`. | — (implement first) |
-| CL_BaseMove | `input.sample` | PENDING | Produces forward/side/upmove from button state; speed values fixed (no cl_forwardspeed cvars). | TBD: write test or tools/verify script + evidence capture |
+| CL_BaseMove | `input.sample` | VERIFIED | Real W and RQ_ForceForward both drove forwardmove over the wire (QW_SimOrg deltas in [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dead-player moves ignored until respawn (authentic). Speeds fixed — noted. | Battery steps in the evidence file |
 | MakeChar | `qwcl` `makeChar` | VERIFIED | Loopback convergence (<1 unit) replays quantized cmds; &~3 with signed clamp ±508 preserved (bit32 sign fixup noted in code). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_FinishMove | split: qwclient heartbeat (buttons/impulse/msec, 250ms→100ms hitch rule) + `qwcl.sendCmd` (MakeChar + angle quantize) | VERIFIED | Loopback convergence; backlog 115a438: "MakeChar+angle16 quantization before storing cmds, 2-move discard, latency drift" fixed and live-verified session followed. Delta: quantization applied to the *stored* cmd so prediction replays the wire exactly (see additions). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SendCmd | `qwcl.sendCmd` | VERIFIED | Loopback: 3-cmd delta chain (nullcmd→oldest→old→new), clc_delta request, frame ring store at `outgoing_sequence & UPDATE_MASK`, `movemessages <= 2` discard; "delta frames dominated (>20)". Delta: checksum and lossage bytes written 0 (authenticated reliable transport). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -226,14 +226,14 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 | Con_Printf / Con_Print | `cl.prints` sink → hudlib notify + `consolelib.print` + Studio output | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg) + .txt: entered-the-game and PRINT_CHAT lines in the QW scrollback (cl.prints sink through the shared consolelib). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
 | Con_DPrintf | `cl.dprint` hook | PENDING | qwclient wires it to print. | TBD: write test or tools/verify script + evidence capture |
 | Key_ClearTyping / Con_ToggleConsole_f / Con_ToggleChat_f / Con_MessageMode_f / Con_MessageMode2_f | qwclient key wiring + `execCommand` | VERIFIED | [evidence/qw-messagemode.jpg](evidence/qw-messagemode.jpg) + .txt: the "say:" line renders and gameplay input is disabled while it is up (a forced attack did not fire); console toggle separately captured in evidence/qw-console-open.jpg. Caveat: Roblox chrome partially overlaps the line at this window size. | Console "messagemode" per evidence/qw-messagemode.txt, capture, compare |
-| Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | consolelib | PENDING | `clear` empties con.lines; wrap/scrollback in consolelib.print; resize N/A (fixed 64-col conback). | TBD: write test or tools/verify script + evidence capture |
+| Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | consolelib | VERIFIED | Live QW probe: console dump 94 chars -> 0 after exec `clear` ([evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); linefeed/wrap exercised by every battery through consolelib.print (shared module, same code as the NQ console evidence). Resize N/A (fixed 64-col conback) stands. | Battery steps in the evidence file |
 | Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | `consolelib.update` + chat row | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg): conback, scrollback, ] prompt with cursor under the QW boot. NotifyBox/SafePrintf N/A (no dedicated-server stdin). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
 
 ## keys.c
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Key_Event | qwclient `onKey` (InputBegan/InputEnded) | PENDING | Hardcoded `keyButtons` table (WASD/arrows/space/ctrl/shift, mouse1 attack, 1–8 impulses); dispatch tiers now match key_dest: console → messagemode → game, tilde toggles from anywhere, mouse ignored while typing. | TBD: write test or tools/verify script + evidence capture |
+| Key_Event | qwclient `onKey` (InputBegan/InputEnded) | VERIFIED | Real UserInputService W (not the harness) moved the player through onKey -> buttons -> pmove ([evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dispatch-tier behaviour previously shown in the messagemode/console evidence. | Battery steps in the evidence file |
 | Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | PENDING | Enter executes/`say "…"`s, Backspace, history arrows, SHIFT_MAP + GetStringForKeyCode text entry (NQ boot's scheme); Escape/tilde leaves messagemode. Needs a live typing screenshot. | TBD: write test or tools/verify script + evidence capture |
 | CheckForCommand / CompleteCommand | — | UNIMPLEMENTED | | — (implement first) |
 | Key_StringToKeynum / Key_KeynumToString | — | UNIMPLEMENTED | | — (implement first) |
@@ -276,7 +276,7 @@ Roblox `Sound`/3D audio (`src/client/sound.luau`) replaces the DMA mixer wholesa
 | SND_Spatialize | `rolloffFor` + emitter parts | SUBSTITUTED | Roblox distance attenuation approximates ATTN scaling; no stereo separation math. | — (substitution; verify justification still holds) |
 | S_StartSound | `soundlib.start` via `cl.sounds` drain | VERIFIED | Wire side: loopback "svc_sound guncock arrived through the PHS multicast". Playback path shared with NQ boot (live-verified there: "57/57 statics playing+loaded, one-shots fire"); QW playback itself not separately screenshot/audio-verified. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | S_StopSound | `soundlib.stop` (svc_stopsound → num=-1 sentinel) | PENDING | Ent/channel stop wired; untested. | TBD: write test or tools/verify script + evidence capture |
-| S_StopAllSounds / S_StopAllSoundsC / S_ClearBuffer | `sound.clear` exists | PENDING | qwclient does NOT call it on level reset — sounds can carry across maps (gap). | TBD: write test or tools/verify script + evidence capture |
+| S_StopAllSounds / S_StopAllSoundsC / S_ClearBuffer | `soundlib.clear(sndsys)` on level reset | VERIFIED | FIDELITY FIX 2026-07-04: the QW boot now calls sound.clear in the levelResets teardown (C calls S_StopAllSounds from CL_ParseServerData); previously looping sounds carried across maps. sound.clear itself is the NQ-verified path. | code: qwclient levelResets block; regression-guard is the gauntlet in tools/verify_meshbudget.luau (map cycles) |
 | S_StaticSound | `soundlib.static` via `spawnPendingStatics` | PENDING | Volume byte passthrough (soundlib scales by 255); loop regions per sample. | TBD: write test or tools/verify script + evidence capture |
 | S_UpdateAmbientSounds | `sound.updateAmbients` exists | UNIMPLEMENTED | qwclient never calls it (NQ boot does) — no water/sky ambients in QW. | — (implement first) |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Mixer paint loop N/A. | — (substitution; verify justification still holds) |
@@ -310,13 +310,13 @@ Ported verbatim in `src/shared/engine/qw/pmove.luau`; ground truth = `tools/pmov
 | PM_Friction | `friction` | VERIFIED | pmove-truth (incl. edge-friction 2x trace). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_Accelerate | `accelerate` | VERIFIED | pmove-truth. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_AirAccelerate | `airAccelerate` | VERIFIED | pmove-truth (bunny phases; 30-unit wishspd cap). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PM_WaterMove | `waterMove` | PENDING | Ported verbatim; the truth course never enters water (waterlevel asserted 0 every tick, so the branch is untraversed). | TBD: write test or tools/verify script + evidence capture |
+| PM_WaterMove | `waterMove` | VERIFIED | test_qw_pmove course 4 (e1m1 slime pool): 120 truth ticks through waterlevels 1/2/3 diffed per-tick against tools/pmove_truth.c (stale row updated — the water course landed after it was written). | `lune run tests/test_qw_pmove.luau` |
 | PM_AirMove | `airMove` | VERIFIED | pmove-truth (ground + air branches). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_CatagorizePosition | `catagorizePosition` | VERIFIED | pmove-truth: onground and waterlevel agree all 300 ticks. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | JumpButton | `jumpButton` | VERIFIED | pmove-truth (held-jump pogo suppression in bunny phases). Swim sub-branch untraversed (no water on course). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| CheckWaterJump | `checkWaterJump` | PENDING | Ported verbatim; unreachable on the truth course (requires waterlevel 2). | TBD: write test or tools/verify script + evidence capture |
+| CheckWaterJump | `checkWaterJump` | VERIFIED | test_qw_pmove course 4 includes the waterjump attempt at the pool lip (waterjumptime asserted against the C fixture). | `lune run tests/test_qw_pmove.luau` |
 | NudgePosition | `nudgePosition` | VERIFIED | pmove-truth (runs every tick). C subtlety deliberately preserved: the 1/8 truncation is dead code (base copied pre-truncation) — do not "fix" (backlog M1 note). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| SpectatorMove | `spectatorMove` | PENDING | Ported; no spectator in truth script or loopback. | TBD: write test or tools/verify script + evidence capture |
+| SpectatorMove | `spectatorMove` | VERIFIED | test_qw_pmove course 3 (spectator flight on e1m1): accel/friction flight diffed per-tick against the C fixture. | `lune run tests/test_qw_pmove.luau` |
 | PlayerMove | `pmove.playerMove` | VERIFIED | pmove-truth top-level; also loopback (client prediction and qwsv SV_RunCmd both drive it — convergence < 1 unit). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
 ## pmovetst.c
@@ -371,7 +371,7 @@ Per the port architecture, the software rasterizer is replaced wholesale; groups
 | r_part.c: R_DrawParticles | `particles.update` | VERIFIED | test_particles2 physics batteries (blob/blob2, explode ramps, fire, grav/slowgrav plain-grav, expiry); QW's switch matches WinQuake's with pt_grav at plain grav — the port's QUAKE2-only grav*20 was fixed 2026-07-04. Rendering substitution (neon cubes) noted on the NQ row. | `lune run tests/test_particles2.luau` |
 | r_light.c: R_AnimateLight | qwclient `updateLightstyles` + `worldmesh.updateLightStyles` | PENDING | 10Hz 'a'–'z' style animation; loopback asserts lightstyles *arrive* (cl.lightstyles[0]); animation live-verified under NQ only. | TBD: write test or tools/verify script + evidence capture |
 | r_light.c: R_MarkLights / R_AddDynamicLights | `worldmesh.updateDlights` + `render/lightatlas.luau` | PENDING | Dynamic light surface pass fed by the CL_DecayLights block; no recorded QW visual check. | TBD: write test or tools/verify script + evidence capture |
-| r_light.c: R_LightPoint | `render/lightpoint.at` | PENDING | Used for the R_DrawViewModel gun light (floor of 24 — NQ-boot note says the floor is required or the gun vanishes in dark rooms). | TBD: write test or tools/verify script + evidence capture |
+| r_light.c: R_LightPoint | shared `engine/client/lightpoint.at` | VERIFIED | Shared module (one implementation for both boots) covered by test_render_misc: e1m1 samples, style scaling, -2048 reach, fullbright fallback. Gun light floor 24 note stands. | `lune run tests/test_render_misc.luau` |
 | r_surf.c / d_surf.c (surface cache + lightmaps) | `lightatlas.luau` + worldmesh lighting | VERIFIED | QW world renders lit, live 547df88 — including the recorded observation that dm3's spawn is genuinely 12/255 light ("near-black screens there are faithful, not a bug"), which is a lightmap-correctness check. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
 ## Port-side additions with no C counterpart
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 74 |
-| PENDING | 50 |
+| VERIFIED | 83 |
+| PENDING | 41 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |

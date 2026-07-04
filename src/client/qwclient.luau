@@ -1243,6 +1243,9 @@ return function()
 		-- level change: rebuild the render world from scratch
 		if (cl.levelResets or 0) ~= seenLevelResets then
 			seenLevelResets = cl.levelResets or 0
+			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
+			-- it looping sounds carry across level changes
+			soundlib.clear(sndsys)
 			worldBuilt = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0

@@ -1,0 +1,33 @@
+QW real-key input + console battery (2026-07-04)
+=================================================
+
+Engine: QW boot (engine="qw"), dm3, id1 (registered 1.06).
+Driver: same conventions as the NQ battery (user_keyboard_input for
+real UserInputService events; RQDBG_Console exec; QW_SimOrg/QW_State
+attribute readback).
+
+MEASUREMENTS (session transcript):
+
+1. Key_Event / CL_BaseMove: real W keyDown/keyUp on the live player
+   moved QW_SimOrg (192,-208,-176) -> (192,47.9,-176) over ~0.8s
+   through qwclient onKey -> button state -> pmove -> server move ->
+   packet playerstate. Underwater, the same key produced a swim rise
+   (waterlevel branch). RQ_ForceForward=200 (harness path) moved
+   ~183 units/s on the same player.
+   AUTHENTIC QUIRK confirmed en route: a DEAD player's moves are
+   ignored — both the real key and the harness produced zero motion
+   until the respawn fire-press.
+
+2. IN_Impulse: exec "impulse 8" after walking the dm3 lightning gun
+   pickup selected and fired the LG. (The staging teleport dropped the
+   player into dm3's water channel where the LG lives; firing there
+   DISCHARGED into the water for an instant -99 kill — the authentic
+   W_Attack discharge rule, observed live.) Cheat note: impulse 9 is
+   correctly refused in QW deathmatch, so LG evidence requires the
+   real pickup.
+
+3. Con_Clear_f (shared consolelib on the QW boot): console dump 94
+   chars -> 0 after exec "clear".
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.
