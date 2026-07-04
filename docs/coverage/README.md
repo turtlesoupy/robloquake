@@ -131,3 +131,17 @@ it enters here in the same commit.
   Studio window is 14%% (equal to the Quakespasm scr_sbarscale=3 @1080p
   convention). scr_sbarscale-style adaptivity journaled as a HUD
   iteration item — presentation knob, no C truth at modern resolutions.
+
+### 2026-07-04 (view-model projection: squash reverted, ViewportFrame planned)
+- The transverse-squash emulation of the GL gun projection was exact only
+  within the GL viewport's own coordinates; our window-centered camera
+  shifts everything down by the projection-center offset (vrect center
+  43%% vs window 50%%), so the composite still fell ~10%% short of the
+  reference. Reverted to the verified vrect-rotation state.
+- CORRECT ARCHITECTURE (next): render the view model in a ViewportFrame —
+  own camera with the real fov*0.82 gun projection, frame sized to the
+  vrect (projection center genuinely above the sbar strip), inherently
+  drawn over the world (GL depthRange equivalent) and clipped at the
+  strip. Needs: gun MeshPart in a WorldModel, manual light via setLight
+  (already flat-lit), Ambient-only shading accepted as the platform
+  delta. This closes the projection-center gap exactly for the gun.
