@@ -297,6 +297,7 @@ return function()
 	local seenLevelResets = 0
 	local staticsSpawned = 0
 	local staticSoundsSpawned = 0
+	local staticRes: { entrender.RenderEnt } = {} -- destroyed on level change
 
 	-- model defs come straight from qwcl's loaded models (modellist)
 	local function getModelDef(modelindex: number): entrender.ModelDef?
@@ -368,6 +369,7 @@ return function()
 			if def and def.kind ~= "none" then
 				local re = entrender.create(def, entFolder)
 				if re then
+					table.insert(staticRes, re)
 					if def.kind == "alias" then
 						entrender.updateAlias(re, def, es.origin, es.angles, es.frame, es.skinnum, 0, 0)
 					elseif def.kind == "sprite" then
@@ -1245,6 +1247,13 @@ return function()
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
 			table.clear(modelDefs)
+			-- release the old level's meshes SYNCHRONOUSLY: Destroying
+			-- signals are deferred, so ClearAllChildren alone still holds
+			-- the EditableMesh budget while the new world builds, starving
+			-- it into skipped batches (holes in the world)
+			for _, tpl in brushTemplates do
+				worldmesh.destroyBuild(tpl)
+			end
 			table.clear(brushTemplates)
 			table.clear(lightAnim)
 			table.clear(textureAnims)
@@ -1253,7 +1262,22 @@ return function()
 				renderEnts[key] = nil
 				renderDefs[key] = nil
 			end
-			worldFolder:ClearAllChildren()
+			for _, re in staticRes do
+				entrender.destroy(re)
+			end
+			table.clear(staticRes)
+			if gunEnt then
+				entrender.destroy(gunEnt)
+				gunEnt = nil
+			end
+			gunModelIndex = 0
+			for _, child in worldFolder:GetChildren() do
+				worldmesh.destroyBuild(child)
+			end
+			-- rebuild next frame: destroyed fixed-mesh budget is reclaimed
+			-- asynchronously, and a same-frame rebuild starves into skipped
+			-- batches (holes in the world)
+			return
 		end
 
 		buildWorld()

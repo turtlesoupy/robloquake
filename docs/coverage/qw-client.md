@@ -390,6 +390,7 @@ Per the port architecture, the software rasterizer is replaced wholesale; groups
 | `RQ_ForceForward` / `RQ_ForceUp` / `RQ_ForceYaw` / `RQ_ForcePitch` / `RQ_ForceAttack` attributes | `src/client/input.luau` `sample` | "Scripted-test hooks (verification harness drives the real input path)" — code comment; lets Studio verification inject movement through the same sample() path both boots use. |
 | Per-Heartbeat move accumulator with 250ms→100ms hitch substitution | qwclient heartbeat | Direct transplant of CL_FinishMove's `msec > 250 → 100` rule onto Heartbeat timing (comment cites it); the accumulator itself replaces the fixed-rate Host_Frame pump. |
 | `sendStringCmd` exported helper | `qwcl` | Convenience wrapper over the two MSG writes C inlines everywhere; also the QW_Cmd hook's entry point. |
+| Level-change teardown destroys brush templates (worldmesh.destroyBuild), static ents (staticRes list), gun ent; rebuild waits one frame | qwclient levelResets block | EditableMesh budget: Destroying signals are deferred and unparented templates never fire them — same-frame rebuilds starve into skipped batches (see nq evidence/nq-e1m1-flicker.txt; NQ twin fixed in the same commit). |
 
 No additions were found without a stated justification (code comment or backlog entry).
 

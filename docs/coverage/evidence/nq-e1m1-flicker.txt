@@ -1,0 +1,62 @@
+nq-e1m1-flicker-bright.jpg / nq-e1m1-flicker-dark.jpg
+=======================================================
+
+USER PLAYTEST FINDING (2026-07-04): "this black square here doesn't look
+right, the lighting is off" — a crisp black rectangle on the e1m1 wall
+near the fluorescent light fixture / computer-panel alcove (the first
+secret-door nook, brush model *43 at q(688,56,80)).
+
+ROOT CAUSE: EditableMesh memory-budget starvation on world REBUILD, not a
+lighting bug. Any map transition after the first (playdemo, stopdemo,
+map/changelevel) rebuilt the world while the previous build's meshes
+still held the budget:
+  - Studio defers Destroying signals, so worldmesh's retainMesh cleanup
+    hook ran only AFTER the same-frame rebuild had already failed;
+  - brush templates are built unparented and were only table.clear()ed —
+    their retained meshes leaked outright;
+  - RenderEnt fixed alias meshes (monsters/items/gun/beam pool) were
+    never destroyed;
+  - the textures.canUseMeshApi() probe leaked one dynamic EditableMesh
+    (a full 60k-vertex reservation).
+Starved batches were silently skipped => missing world faces (the black
+"square" is the void behind a dropped batch). In the user's session the
+final e1m1 build lost its tail batches — the alcove faces around the
+style-10 flicker light — after the session had been through demo
+playback experiments (extra world builds).
+
+FIX (same commit): synchronous mesh release on level teardown
+(worldmesh.destroyBuild + entrender.destroy now frees re.em), the world
+build deferred one Heartbeat outside the parse path (NQ onServerInfo
+task.defer; QW frame-loop returns for one frame after teardown), the
+canUseMeshApi probe destroys its mesh, and a failed fixed-size copy
+falls back to rendering the dynamic mesh instead of dropping the batch.
+
+CAPTURE CONTEXT (re-runnable):
+  - Studio Play (NQ boot, id1 pak0/pak1 registered 1.06), rojo-synced
+    working tree at this commit.
+  - Stress sequence first: RQDBG_Console exec "playdemo demo1" (~10s,
+    loads e1m3) -> "stopdemo" -> "map e1m1" -> "map e1m2" -> "map e1m1".
+    That is FOUR world rebuilds; before the fix this sequence reproduced
+    the user's black square (and in the worst case a fully missing
+    world: QuakeWorld "world" Model with 0 BaseParts).
+  - Teleport: ServerStorage attr SVDBG_SetOrigin = Vector3.new(523,314,24)
+    (the user's reported spot); workspace attrs RQ_ForceYaw=302.6,
+    RQ_ForcePitch=-8 aim at the alcove.
+  - tools/verify_meshbudget.luau runs the same gauntlet and asserts the
+    world part count and the alcove atlas region survive it.
+  - Console output for the gauntlet shows zero
+    "EditableMesh budget exhausted" / "fixed mesh copy failed" lines
+    (before the fix: dozens, or every batch).
+
+WHAT THE PAIR SHOWS: the same vantage q(523,314,46) after the 4-rebuild
+gauntlet. BRIGHT: lightstyle 10 'm' tick — fixture strips, computer
+panels, and the alcove interior (hazard-striped secret door face *43)
+all lit. DARK: an 'a' tick a moment later — everything style-10 goes
+dark together. That alternation is the authentic fluorescent-flicker
+map string "mmamammmmammamamaaamammma" (world.qc lightstyle 10); the
+pre-fix symptom was the alcove staying black on BOTH ticks while the
+fixture animated.
+
+id1 CONTENT NOTE: rendered from local id1 pak files; this evidence stays
+in the local repo only (no remote). Re-capture on LibreQuake before any
+public distribution.

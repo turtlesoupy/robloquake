@@ -310,13 +310,39 @@ end
 
 -- world load on serverinfo
 local loadingUp = 0 -- 1 = loading, 2 = built, awaiting first rendered frame
+local worldBuildGen = 0 -- guards the deferred world build against fast changelevels
 c.onServerInfo = function()
 	print(`[cl] serverinfo: {c.levelname}`)
 	-- SCR_BeginLoadingPlaque: sounds stop, notify/centerprints clear, the
 	-- loading plaque holds until the first rendered frame of the new level
 	loadingUp = 1
 	hudlib.setLoading(hud, true)
-	worldFolder:ClearAllChildren()
+	-- release every mesh from the old level SYNCHRONOUSLY. Destroying
+	-- signals are deferred, so ClearAllChildren alone would still hold the
+	-- EditableMesh budget while the new world builds below — starving it
+	-- into skipped batches (holes in the world). Brush templates are
+	-- unparented and render ents own fixed alias meshes, so both leak
+	-- outright without an explicit destroy.
+	for _, child in worldFolder:GetChildren() do
+		worldmesh.destroyBuild(child)
+	end
+	for _, tpl in brushTemplates do
+		worldmesh.destroyBuild(tpl)
+	end
+	for _, re in renderEnts do
+		entrender.destroy(re)
+	end
+	for _, st in staticEnts do
+		entrender.destroy(st.re)
+	end
+	if gunEnt then
+		entrender.destroy(gunEnt)
+	end
+	for _, pool in beamPool do
+		for _, re in pool do
+			entrender.destroy(re)
+		end
+	end
 	entFolder:ClearAllChildren()
 	soundlib.clear(snd)
 	table.clear(modelDefs)
@@ -338,16 +364,29 @@ c.onServerInfo = function()
 	table.clear(styleValues)
 	table.clear(dlights)
 	worldmesh.resetLighting(styleValueFor)
-	local _world, anim = worldmesh.build(worldModels[1], pal, worldFolder, "world")
-	for _, e in anim do
-		table.insert(lightAnim, e)
-	end
-	table.clear(textureAnims)
-	for _, ta in worldmesh.takeTextureAnims() do
-		table.insert(textureAnims, ta)
-	end
-	print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
-	loadingUp = 2
+	-- build the render world OUTSIDE the parse path, one frame later: the
+	-- engine reclaims destroyed fixed-mesh budget asynchronously, so a
+	-- same-frame rebuild starves into skipped batches (holes in the
+	-- world). onServerInfo itself must not yield — the rest of the signon
+	-- buffer parses right after it returns.
+	worldBuildGen += 1
+	local gen = worldBuildGen
+	task.defer(function()
+		task.wait() -- one Heartbeat for the old build's budget to release
+		if gen ~= worldBuildGen then
+			return -- a newer serverinfo superseded this build
+		end
+		local _world, anim = worldmesh.build(worldModels[1], pal, worldFolder, "world")
+		for _, e in anim do
+			table.insert(lightAnim, e)
+		end
+		table.clear(textureAnims)
+		for _, ta in worldmesh.takeTextureAnims() do
+			table.insert(textureAnims, ta)
+		end
+		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
+		loadingUp = 2
+	end)
 end
 
 c.print = function(s: string)
@@ -1111,6 +1150,68 @@ dbgConsole.OnInvoke = function(action: string, arg: string?)
 		return lastKeyInfo
 	elseif action == "lines" then
 		return table.concat(con.lines, "\n")
+	end
+	return ""
+end
+
+-- debug hook: probe the live light atlas (regions by lightofs) and force
+-- rewrites — execute_luau runs in a separate VM so it cannot require the
+-- live module state directly
+local dbgAtlas = Instance.new("BindableFunction")
+dbgAtlas.Name = "RQDBG_Atlas"
+dbgAtlas.Parent = workspace
+dbgAtlas.OnInvoke = function(action: string, arg: string?)
+	local atlas, styleFn = worldmesh._debug()
+	if not atlas then
+		return "no atlas"
+	end
+	if action == "info" then
+		return ("pages=%d regions=%d animated=%d styleFn10=%s styleFn0=%s sv10=%s"):format(
+			#atlas.pages, #atlas.regions, #atlas.animated,
+			tostring(styleFn(10)), tostring(styleFn(0)), tostring(styleValues[10]))
+	elseif action == "region" then
+		local want = tonumber(arg)
+		for _, r in atlas.regions do
+			if r.surf.lightofs == want then
+				local inAnim = table.find(atlas.animated, r) ~= nil
+				local page = atlas.pages[r.page]
+				return ("page=%d x=%d y=%d smax=%d tmax=%d animated=%s inAnimList=%s styles=%d,%d,%d,%d live=%s"):format(
+					r.page, r.x, r.y, r.smax, r.tmax, tostring(r.animated), tostring(inAnim),
+					r.surf.styles[1], r.surf.styles[2], r.surf.styles[3], r.surf.styles[4],
+					tostring(page and page.live))
+			end
+		end
+		return "region not found for lightofs " .. tostring(want)
+	elseif action == "rewrite" then
+		local want = tonumber(arg)
+		for _, r in atlas.regions do
+			if r.surf.lightofs == want then
+				lightatlaslib.writeRegion(atlas, r, function()
+					return 264
+				end)
+				return "rewrote bright"
+			end
+		end
+		return "not found"
+	elseif action == "alpha" then
+		-- current CPU-mirror alpha bytes for the region's first row
+		-- (alpha = 1 - brightness: 0 bright, 255 black)
+		local want = tonumber(arg)
+		for _, r in atlas.regions do
+			if r.surf.lightofs == want then
+				local page = atlas.pages[r.page]
+				if not page then
+					return "no page"
+				end
+				local vals = {}
+				for px = 0, r.smax + 1 do
+					local b = buffer.readu32(page.cpu, ((r.y + 1) * 1024 + r.x + px) * 4)
+					table.insert(vals, tostring(bit32.rshift(b, 24)))
+				end
+				return table.concat(vals, ",")
+			end
+		end
+		return "not found"
 	end
 	return ""
 end

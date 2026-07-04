@@ -283,7 +283,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | R_Init / R_InitTurb | worldmesh/textures init | SUBSTITUTED | software init; turb warp lives in textures.writeTurbFrame | — (substitution; verify justification still holds) |
-| R_NewMap | onServerInfo world build (worldmesh.build) | VERIFIED | tests/test_loopback.luau + test_changelevel.luau world loads; FIDELITY teardown fix | `lune run tests/test_changelevel.luau`; `lune run tests/test_loopback.luau` |
+| R_NewMap | onServerInfo world build (worldmesh.build, deferred one Heartbeat) | VERIFIED | tests/test_loopback.luau + test_changelevel.luau world loads; rebuild-starvation fix (user playtest "black square"): 4-rebuild gauntlet leaves 61 world parts + animated style-10 alcove region, flicker pair committed ([evidence/nq-e1m1-flicker-bright.jpg](evidence/nq-e1m1-flicker-bright.jpg), [-dark.jpg](evidence/nq-e1m1-flicker-dark.jpg), [.txt](evidence/nq-e1m1-flicker.txt)) | `lune run tests/test_changelevel.luau`; Studio: tools/verify_meshbudget.luau gauntlet prints PASS |
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport | — (substitution; verify justification still holds) |
 | R_MarkLeaves | — | UNIMPLEMENTED | no PVS culling — whole map stays resident; GPU frustum-culls (perf, not correctness) | — (implement first) |
 | R_DrawEntitiesOnList | heartbeat entity update loop | PENDING | statics re-posed every frame like C (FIDELITY torch record covers the static case) | TBD: write test or tools/verify script + evidence capture |
@@ -444,7 +444,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | crosshair default 1, always-mouselook, notify below topbar inset, TAB dual player-list | various | FIDELITY.md "Deliberate default changes" section |
 | soundbank PreloadAsync warm + one-shot GC delay timers | sound.luau | code comments: first shot latency; regions misreport Ended while streaming |
 | missing-region warn set | sound.luau | diagnostics for incomplete soundbanks (warn once per sample) |
-| liveMeshes retention + Destroying destroy | worldmesh.luau | code comment: editable memory budget starved consecutive map builds (FIDELITY changelevel fix) |
+| liveMeshes retention + synchronous destroyBuild release (Destroying hook is only a backstop) | worldmesh.luau | code comment: Destroying signals are deferred, so same-frame rebuilds starved the EditableMesh budget into skipped batches — the e1m1 "black square" playtest bug; evidence/nq-e1m1-flicker.txt |
+| level teardown destroys brush templates, RenderEnt alias meshes, beam pool, gun ent; world build deferred one Heartbeat (worldBuildGen guard) | init.client.luau onServerInfo / entrender.destroy | same bug: templates were unparented (no Destroying ever fired) and re.em was never freed, leaking a mesh per entity per map change; verify via tools/verify_meshbudget.luau |
+| RQDBG_Atlas probe (region/alpha/rewrite by lightofs) + worldmesh._debug | init.client.luau / worldmesh.luau | debug hook family (RQDBG_Console twin): execute_luau runs in a separate VM and cannot reach live module state; used by tools/verify_meshbudget.luau |
 | dynamic→FixedSize EditableMesh copy dance | worldmesh.luau / entrender.luau | code comment: dynamic meshes reserve the 60k-vertex max against the memory budget |
 | MAX_BATCH_VERTS chunking, 1px lightmap gutters, epsilon transparency (0.02) | worldmesh.luau / lightatlas.luau | platform constraints: 60k mesh cap, bilinear bleed, translucent-queue per-texel alpha (comments in both files) |
 | aliasbox / buildWedges fallback renderers | entrender.luau / worldmesh.luau | graceful degradation when Mesh & Image APIs are disabled (textures.canUseMeshApi warn) |
@@ -458,6 +460,6 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 - PENDING: 73
 - UNIMPLEMENTED: 65
 - SUBSTITUTED: 67
-- Port-side additions: 16 (all justified; RQ_LightTick has only a weak/implied justification)
+- Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

@@ -56,6 +56,33 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (playtest "black square": map-rebuild EditableMesh starvation — RESOLVED)
+- User playtest report: crisp black rectangle on the e1m1 wall by the
+  fluorescent fixture (the *43 secret-door alcove, q(688,56,80)),
+  "the lighting is off". Diagnosis walked lighting first — live probes
+  (RQDBG_Atlas hook: atlas region/alpha-vs-lightstyle sampling) proved
+  style 10 and the whole lightmap pipeline healthy — then a neon-part
+  occlusion test and a demo→map-cycle repro isolated the truth: the
+  black square is the VOID behind world-mesh batches silently dropped
+  when a rebuild runs while the previous level's meshes still hold the
+  EditableMesh budget. Worst case reproduced: a world Model with zero
+  parts (blue-sky void with one floating door).
+- Root causes fixed (both engines, one commit): Studio defers Destroying
+  signals so retainMesh's cleanup ran after the same-frame rebuild
+  (worldmesh.destroyBuild now releases synchronously); unparented brush
+  templates never fired Destroying at all; entrender.destroy never freed
+  re.em (a leaked mesh per entity per map change, incl. beam pool and
+  gun); textures.canUseMeshApi leaked its 60k-reserving probe mesh; a
+  failed FixedSize copy dropped its whole batch (now falls back to
+  rendering the dynamic mesh). NQ defers the world build one Heartbeat
+  outside the parse path (worldBuildGen guard); QW's frame loop returns
+  for one frame after teardown.
+- Evidence: 4-rebuild gauntlet (playdemo e1m3 → stopdemo → map e1m1 →
+  e1m2 → e1m1) now builds every world clean — zero budget warnings,
+  61 world parts, alcove atlas region animated — and the user-vantage
+  flicker pair is committed (evidence/nq-e1m1-flicker-bright/-dark.jpg
+  + .txt). Re-runnable: tools/verify_meshbudget.luau prints PASS.
+
 ### 2026-07-04 (demo pipeline: offline round-trip + CL_Record_f fidelity fix)
 - tests/test_demo.luau (10 checks): record a live loopback stream in
   the exact .dem block format, play it back through the mirrored

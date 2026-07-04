@@ -10,14 +10,21 @@ local textures = {}
 local meshApiAvailable: boolean? = nil
 function textures.canUseMeshApi(): boolean
 	if meshApiAvailable == nil then
+		local probe: EditableMesh? = nil
 		meshApiAvailable = pcall(function()
 			local em = AssetService:CreateEditableMesh()
+			probe = em
 			local v1 = em:AddVertex(Vector3.zero)
 			local v2 = em:AddVertex(Vector3.xAxis)
 			local v3 = em:AddVertex(Vector3.yAxis)
 			em:AddTriangle(v1, v2, v3)
 			AssetService:CreateMeshPartAsync(Content.fromObject(em))
 		end)
+		-- a dynamic EditableMesh reserves the 60k-vertex maximum against
+		-- the memory budget; leaking the probe starves world builds
+		if probe then
+			(probe :: EditableMesh):Destroy()
+		end
 		if not meshApiAvailable then
 			warn("[robloquake] Mesh & Image APIs are disabled — using fallback rendering. Enable them in Game Settings → Security for full visuals.")
 		end

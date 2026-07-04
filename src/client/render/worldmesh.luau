@@ -47,6 +47,22 @@ local function retainMesh(container: Instance, em: EditableMesh)
 	table.insert(list, em)
 end
 
+-- Destroy a build (world model or brush template) and release its retained
+-- meshes NOW. The Destroying hook above is only a backstop: Studio defers
+-- signals, so a teardown that relies on it still holds the mesh budget
+-- while the next map builds — which starves that build into skipped
+-- batches (missing world geometry).
+function worldmesh.destroyBuild(container: Instance)
+	local held = liveMeshes[container]
+	liveMeshes[container] = nil
+	if held then
+		for _, m in held do
+			m:Destroy()
+		end
+	end
+	container:Destroy()
+end
+
 export type BuiltModel = {
 	folder: Model,
 	-- parts positioned assuming entity origin (0,0,0); reposition by setting
@@ -125,6 +141,11 @@ function worldmesh.resetLighting(styleValue: (number) -> number)
 	end
 	currentAtlas = lightatlaslib.new()
 	currentStyleValue = styleValue
+end
+
+-- debug hook (RQDBG): expose the live atlas + style fn for Studio probing
+function worldmesh._debug(): (lightatlaslib.Atlas?, (number) -> number)
+	return currentAtlas, currentStyleValue
 end
 
 function worldmesh.updateLightStyles(changed: { [number]: boolean })
@@ -265,16 +286,20 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				end
 			end
 
-			-- fixed-size copy releases the 60k-vertex reservation
+			-- fixed-size copy releases the 60k-vertex reservation; if the
+			-- budget can't fit the copy, keep rendering from the dynamic
+			-- mesh rather than dropping the batch (a hole in the world)
 			local ok, fixedOrErr = pcall(function()
 				return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
 			end)
-			em:Destroy()
-			if not ok or not fixedOrErr then
-				warn(`[robloquake] fixed mesh copy failed for {partName}: {fixedOrErr}`)
-				return
+			local fixed: EditableMesh
+			if ok and fixedOrErr then
+				em:Destroy()
+				fixed = fixedOrErr :: EditableMesh
+			else
+				warn(`[robloquake] fixed mesh copy failed for {partName} (rendering dynamic): {fixedOrErr}`)
+				fixed = em
 			end
-			local fixed = fixedOrErr :: EditableMesh
 
 			local ok2, partOrErr = pcall(function()
 				return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))

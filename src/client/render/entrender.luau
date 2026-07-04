@@ -432,6 +432,12 @@ function entrender.destroy(re: RenderEnt)
 	if re.model then
 		re.model:Destroy()
 	end
+	-- the fixed-size alias mesh holds EditableMesh memory budget; leaking
+	-- it across map loads starves the next world build
+	if re.em then
+		re.em:Destroy()
+		re.em = nil
+	end
 end
 
 -- build the shared images for a model definition
