@@ -342,17 +342,45 @@ local function spawnBeam(p1: vector, p2: vector)
 	end)
 end
 
+-- R_ParseTEnt: impact sounds are client-side in NetQuake (the QC r_exp3
+-- call is commented out in the shipped progs); entity -1 = world sounds
+local function teSound(sample: string, pos: vector)
+	soundlib.start(snd, -1, 0, sample, pos, 1, 1)
+end
+
+local function spikeSound(pos: vector)
+	if math.random(0, 4) ~= 0 then
+		teSound("weapons/tink1.wav", pos)
+	else
+		local rnd = math.random(0, 3)
+		if rnd == 1 then
+			teSound("weapons/ric1.wav", pos)
+		elseif rnd == 2 then
+			teSound("weapons/ric2.wav", pos)
+		else
+			teSound("weapons/ric3.wav", pos)
+		end
+	end
+end
+
 c.onTempEntity = function(_c, te)
 	if te.type == proto.TE_SPIKE then
 		particleslib.runEffect(psys, te.pos, vector.zero, 0, 10, c.time)
-	elseif te.type == proto.TE_SUPERSPIKE or te.type == proto.TE_GUNSHOT then
+		spikeSound(te.pos)
+	elseif te.type == proto.TE_SUPERSPIKE then
+		particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, c.time)
+		spikeSound(te.pos)
+	elseif te.type == proto.TE_GUNSHOT then
 		particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, c.time)
 	elseif te.type == proto.TE_EXPLOSION or te.type == proto.TE_EXPLOSION2 or te.type == proto.TE_TAREXPLOSION then
 		particleslib.explosion(psys, te.pos, c.time)
+		teSound("weapons/r_exp3.wav", te.pos)
 	elseif te.type == proto.TE_WIZSPIKE then
 		particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, c.time)
+		teSound("wizard/hit.wav", te.pos)
 	elseif te.type == proto.TE_KNIGHTSPIKE then
 		particleslib.runEffect(psys, te.pos, vector.zero, 226, 20, c.time)
+		teSound("hknight/hit.wav", te.pos)
 	elseif te.type == proto.TE_LAVASPLASH then
 		particleslib.lavaSplash(psys, te.pos, c.time)
 	elseif te.type == proto.TE_TELEPORT then
@@ -439,6 +467,17 @@ dbgConsole.OnInvoke = function(action: string, arg: string?)
 		consolelib.toggle(con)
 		refreshInputMode()
 		return tostring(con.open)
+	elseif action == "isopen" then
+		return tostring(con.open)
+	elseif action == "exec" then
+		-- run command(s) directly, independent of console open state
+		for piece in (arg :: string):gmatch("[^;]+") do
+			local trimmed = piece:match("^%s*(.-)%s*$")
+			if trimmed ~= "" then
+				con.onCommand(trimmed)
+			end
+		end
+		return "ok"
 	elseif action == "key" then
 		consoleKey((Enum.KeyCode :: any)[arg])
 		return con.inputText
