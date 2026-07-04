@@ -29,7 +29,7 @@ local lightpoint = require(script.render.lightpoint)
 local menulib = require(script.menu)
 local soundlib = require(script.sound)
 local input = require(script.input)
-local viewlib = require(script.view)
+local viewlib = require(engine.client.view)
 local viewmodellib = require(script.render.viewmodel)
 
 --------------------------------------------------------------------------

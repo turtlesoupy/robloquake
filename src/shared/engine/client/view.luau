@@ -3,10 +3,8 @@
 -- View setup — port of view.c V_CalcRefdef / V_CalcBob / V_CalcViewRoll:
 -- computes the camera origin and angles (in quake space) from client state.
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local engine = ReplicatedStorage:WaitForChild("Shared").engine
-local cllib = require(engine.client.cl)
-local mathlib = require(engine.common.mathlib)
+local cllib = require("./cl")
+local mathlib = require("../common/mathlib")
 
 local view = {}
 
@@ -118,6 +116,13 @@ function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 		gunmodel = c.stats[cllib.STAT_WEAPON],
 		gunframe = c.stats[cllib.STAT_WEAPONFRAME],
 	}
+end
+
+-- exported for tests (C-truth checks against view.c formulas)
+view.calcRoll = calcRoll
+view.calcBob = calcBob
+view.resetOldz = function(z: number)
+	oldz = z
 end
 
 return view

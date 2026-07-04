@@ -89,26 +89,26 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| V_CalcRoll | view.luau calcRoll | PENDING | cl_rollangle 2 / cl_rollspeed 200 hardcoded | TBD: write test or tools/verify script + evidence capture |
-| V_CalcBob | view.luau calcBob | PENDING | cycle/bobup/clamp -7..4 match C | TBD: write test or tools/verify script + evidence capture |
+| V_CalcRoll | view.luau calcRoll (now shared: src/shared/engine/client/view.luau) | VERIFIED | test_view.luau hand-computed C truths: side scaling 2/200 below rollspeed, clamp at exactly 200, sign from dot(vel,right), yaw-rotated right vector. | `lune run tests/test_view.luau` |
+| V_CalcBob | view.luau calcBob (shared module) | VERIFIED | test_view.luau: cycle fraction of cl_bobcycle .6, pi ramp split at bobup .5 (peak sin at t=.15, trough at t=.45), xy-speed*.02, .3+.7*sin mix, clamps 4/-7. | `lune run tests/test_view.luau` |
 | V_StartPitchDrift | — | UNIMPLEMENTED | always-mouselook: C disables drift under mouselook anyway | — (implement first) |
 | V_StopPitchDrift | — | UNIMPLEMENTED | as above | — (implement first) |
 | V_DriftPitch | — | UNIMPLEMENTED | as above; idealpitch received but unused | — (implement first) |
 | BuildGammaTable | — | SUBSTITUTED | no palette; gamma folded into the ^0.7 light curve | — (substitution; verify justification still holds) |
 | V_CheckGamma | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
-| V_ParseDamage | cl.luau parseDamage | PENDING | kick roll/pitch *0.6, kicktime 0.5, cshift color table, faceanimtime +0.2 all match | TBD: write test or tools/verify script + evidence capture |
+| V_ParseDamage | cl.luau parseDamage | VERIFIED | test_view.luau wire battery: count (blood+armor)*.5 floored at 10, faceanimtime +0.2, damage cshift 3*count clamped 0..150, color split (255,0,0)/(200,100,100)/(220,50,50), kicks count*side*0.6 from the hit direction, dmg_time 0.5. | `lune run tests/test_view.luau` |
 | V_cshift_f | — | UNIMPLEMENTED | debug command | — (implement first) |
 | V_BonusFlash_f | "bf" stufftext → cshift_bonus_percent 50 | PENDING | bonus color 215/186/69 matches | TBD: write test or tools/verify script + evidence capture |
 | V_SetContentsColor | init.client view-leaf contents shifts | VERIFIED | [evidence/nq-slime-cshift.jpg](evidence/nq-slime-cshift.jpg) + .txt: full-screen slime tint while submerged, blended with the damage flash from the slime tick. Delta: no CONTENTS_SOLID grey (cannot be seen in play). | Teleport per evidence/nq-slime-cshift.txt, capture, compare |
 | V_CalcPowerupCshift | init.client powerup shifts | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: priority quad > suit > ring > pent matches | TBD: write test or tools/verify script + evidence capture |
 | V_CalcBlend | init.client shift compositor | PENDING | same a2/(1-a) accumulation; delta: final alpha capped at 0.85 | TBD: write test or tools/verify script + evidence capture |
 | V_UpdatePalette | cshift Frame tint + decay | SUBSTITUTED | palette blend → fullscreen GUI tint; damage/bonus decay 150/100 per second ported | — (substitution; verify justification still holds) |
-| angledelta / CalcGunAngle | gunangles = (-pitch, yaw, 0) | PENDING | delta: no yaw/pitch damped-lag smoothing — gun locked to view | TBD: write test or tools/verify script + evidence capture |
+| angledelta / CalcGunAngle | gunangles = (-pitch, yaw, 0) | SUBSTITUTED | Gun locked to the view: the C damped yaw/pitch lag (angledelta smoothing) is not ported; the base mapping (-pitch, yaw, punch excluded) is asserted in test_view.luau. Expiry: port the damped lag if playtesting reports the gun feeling glued/stiff during fast turns. | `lune run tests/test_view.luau` (base mapping) |
 | V_BoundOffsets | — | UNIMPLEMENTED | scr_ofsx/y/z not supported | — (implement first) |
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale defaults 0 in C; constant kept but unused | — (implement first) |
-| V_CalcViewRoll | folded into view.calcRefdef | PENDING | dead roll 80 kept; delta: no v_centermove interaction | TBD: write test or tools/verify script + evidence capture |
+| V_CalcViewRoll | folded into view.calcRefdef | VERIFIED | test_view.luau: movement roll folded into refdef angles, dmg kick decay (dmg_time/v_kicktime scaling, -= frametime), dead roll pinned at 80. Delta stands: no v_centermove interaction. | `lune run tests/test_view.luau` |
 | V_CalcIntermissionRefdef | — | UNIMPLEMENTED | intermission uses the normal refdef; no idle sway, gun hidden instead | — (implement first) |
-| V_CalcRefdef | view.calcRefdef | PENDING | 1/32 nudge, bob, punchangle, stair smoothing (80/s, 12 cap) match; deltas: no pitch drift, no scr_ofs, no viewsize gun-z fudge, player ent angles not forced to view | TBD: write test or tools/verify script + evidence capture |
+| V_CalcRefdef | view.calcRefdef | VERIFIED | test_view.luau composition battery: origin + viewheight + bob + 1/32 nudge, gun origin eye + forward*bob*.4 + z bob, punch added AFTER gun angles (C order), stair glide 80 u/s with the 12-unit cap and airborne snap, STAT_WEAPON/WEAPONFRAME pass-through. Deltas stand: no pitch drift, no scr_ofs, no viewsize gun-z fudge, player ent angles not forced to view. | `lune run tests/test_view.luau` |
 | V_RenderView | heartbeat camera CFrame + crosshair label | PENDING | crosshair '+' conchars glyph like the C Draw_Character call; defaults ON (recorded divergence) | TBD: write test or tools/verify script + evidence capture |
 | V_Init | constants in view.luau/init.client | SUBSTITUTED | no cvar system; defaults baked in | — (substitution; verify justification still holds) |
 
@@ -456,10 +456,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 61
-- PENDING: 74
+- VERIFIED: 66
+- PENDING: 68
 - UNIMPLEMENTED: 62
-- SUBSTITUTED: 67
+- SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.
