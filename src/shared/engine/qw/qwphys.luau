@@ -893,6 +893,18 @@ function sv_phys.physics(svr: any)
 			error(`SV_Physics: bad movetype {movetype}`)
 		end
 
+		-- SV_RunNewmis: a missile spawned by this entity's think gets its
+		-- first 0.05s move immediately (trap_spikeshooter etc.)
+		local newmis = vmlib.globalInt(vm, glob.newmis)
+		if newmis ~= 0 then
+			local med = vm.edicts[newmis + 1]
+			buffer.writei32(g, glob.newmis * 4, 0)
+			local saved = svr.frametime
+			svr.frametime = 0.05
+			sv_phys.physicsToss(svr, med)
+			svr.frametime = saved
+		end
+
 		i += 1
 	end
 

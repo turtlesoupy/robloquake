@@ -70,6 +70,7 @@ export type Client = {
 export type ClientFrame = {
 	entities: { qwents.EntityState },
 	senttime: number,
+	ping_time: number, -- realtime - senttime when the client acked, -1 pending
 }
 
 function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
@@ -100,6 +101,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 			sv_waterfriction = 4,
 			sv_aim = 2,
 			sv_phs = 1,
+			sv_spectalk = 1,
 			pausable = 1,
 			registered = 1,
 		} :: { [string]: number }
@@ -174,6 +176,9 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 		end
 	end
 	svr.clientPrint = function(_svr: any, client: Client, level: number, text: string)
+		if level < ((client :: any).messagelevel or 0) then
+			return
+		end
 		table.insert(client.prints, text)
 		if client.send then
 			msg.writeByte(client.netchan.message, qwp.svc_print)
@@ -326,6 +331,12 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	buffer.writei32(vm.globals, glob.mapname * 4, vmlib.allocString(vm, svr.name))
 	vmlib.setGlobalFloat(vm, glob.serverflags, svr.serverflags)
 
+	-- SV_ProgStartFrame: let progs latch rule cvars before entity spawns
+	buffer.writei32(vm.globals, glob.self * 4, 0)
+	buffer.writei32(vm.globals, glob.other * 4, 0)
+	buffer.writef32(vm.globals, glob.time * 4, svr.time)
+	vmlib.exec(vm, qdefs.func.StartFrame)
+
 	vmlib.loadFromFileQW(vm, svr.worldmodel.brush.entities, cvarlib.value(svr.cvars, "deathmatch"), glob, ent)
 
 	svr.active = true
@@ -403,9 +414,38 @@ function qwsv.baselineFor(svr: any, num: number): qwents.EntityState
 	return (svr.baselines and svr.baselines[num]) or qwents.nullState(num)
 end
 
--- SV_ExtractFromUserinfo essentials
-local function extractUserinfo(client: Client)
-	client.name = client.userinfo.name or "player"
+-- SV_ExtractFromUserinfo
+local function extractUserinfo(svr: any, client: Client)
+	local val = (client.userinfo.name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if val == "" or val:lower() == "console" then
+		val = "unnamed"
+	end
+	if val ~= client.name then
+		-- dedupe: prefix (N) until unique among other clients
+		local dupe = 1
+		while true do
+			local taken = false
+			for i = 1, svr.maxclients do
+				local other: Client = svr.clients[i]
+				if other.active and other ~= client and other.name == val then
+					taken = true
+					break
+				end
+			end
+			if not taken then
+				break
+			end
+			dupe += 1
+			val = `({dupe}){client.userinfo.name or "unnamed"}`
+		end
+		if client.name ~= "" and client.name ~= val then
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{client.name} changed name to {val}\n`)
+		end
+		client.name = val
+		client.userinfo.name = val
+	end
+	-- msg: client print filter level
+	client.messagelevel = tonumber(client.userinfo.msg) or 0
 end
 
 -- connection + spawn flow (Cmd_New_f/Cmd_Spawn_f/Cmd_Begin_f compressed
@@ -424,7 +464,7 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	client.active = true
 	client.spectator = (userinfo and userinfo.spectator) == "1"
 	client.userinfo = userinfo or {}
-	extractUserinfo(client)
+	extractUserinfo(svr, client)
 	client.oldbuttons = 0
 	client.entgravity = 1
 	client.maxspeed = cvarlib.value(svr.cvars, "sv_maxspeed")
@@ -877,10 +917,29 @@ function qwsv.prespawnF(svr: any, client: Client, args: { string })
 	end
 	local out = client.netchan.message
 	local pos = out.cursize
+	if pos + svr.signon.cursize > out.maxsize then
+		error("prespawn: signon overflows the reliable stream")
+	end
 	buffer.copy(out.data, pos, svr.signon.data, 0, svr.signon.cursize)
 	out.cursize += svr.signon.cursize
 	msg.writeByte(out, qwp.svc_stufftext)
 	msg.writeString(out, `cmd spawn {svr.spawncount} 0\n`)
+end
+
+-- SV_CalcPing: average of the acked frame round-trips, ms
+function qwsv.calcPing(svr: any, cl: Client): number
+	local ping, count = 0, 0
+	for i = 0, qwp.UPDATE_BACKUP - 1 do
+		local f = cl.frames[i]
+		if f and f.ping_time and f.ping_time > 0 then
+			ping += f.ping_time
+			count += 1
+		end
+	end
+	if count == 0 then
+		return 9999
+	end
+	return math.floor(ping / count * 1000)
 end
 
 -- SV_FullClientUpdate
@@ -892,7 +951,7 @@ function qwsv.fullClientUpdate(svr: any, cl: Client, buf: msg.SizeBuf)
 	msg.writeShort(buf, frags)
 	msg.writeByte(buf, qwp.svc_updateping)
 	msg.writeByte(buf, i)
-	msg.writeShort(buf, 0)
+	msg.writeShort(buf, if cl.active then qwsv.calcPing(svr, cl) else 9999)
 	msg.writeByte(buf, qwp.svc_updatepl)
 	msg.writeByte(buf, i)
 	msg.writeByte(buf, cl.lossage)
@@ -994,6 +1053,13 @@ function qwsv.beginF(svr: any, client: Client, args: { string })
 		return
 	end
 	qwsv.spawnIntoGame(svr, client)
+
+	if svr.paused then
+		local out = client.netchan.message
+		msg.writeByte(out, qwp.svc_setpause)
+		msg.writeByte(out, 1)
+		svr.clientPrint(svr, client, qwp.PRINT_HIGH, "Server is paused.\n")
+	end
 end
 
 local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw: string) -> () } = {
@@ -1008,7 +1074,21 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 	drop = function(svr, client)
 		qwsv.dropClient(svr, client)
 	end,
-	pings = function() end,
+	-- SV_Pings_f: refresh everyone's ping/pl on this client
+	pings = function(svr, client)
+		local out = client.netchan.message
+		for i = 1, svr.maxclients do
+			local cl: Client = svr.clients[i]
+			if cl.active and cl.spawned then
+				msg.writeByte(out, qwp.svc_updateping)
+				msg.writeByte(out, i - 1)
+				msg.writeShort(out, qwsv.calcPing(svr, cl))
+				msg.writeByte(out, qwp.svc_updatepl)
+				msg.writeByte(out, i - 1)
+				msg.writeByte(out, cl.lossage)
+			end
+		end
+	end,
 	-- ZOID: spectator autocam target
 	ptrack = function(svr, client, args)
 		if not client.spectator then
@@ -1032,8 +1112,33 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		vmlib.edSetInt(client.edict, ent.goalentity, target.edict.num)
 	end,
 	say = function(svr, client, _args, raw)
+		local c: any = client
+		-- flood protection: fp_messages msgs per fp_persecond seconds
+		c.floodTimes = c.floodTimes or {}
+		if c.lockedTill and svr.time < c.lockedTill then
+			svr.clientPrint(svr, client, qwp.PRINT_CHAT, "You can't talk for 10 seconds.\n")
+			return
+		end
+		table.insert(c.floodTimes, svr.time)
+		if #c.floodTimes > 4 then
+			table.remove(c.floodTimes, 1)
+			if svr.time - c.floodTimes[1] < 4 then
+				c.lockedTill = svr.time + 10
+				svr.clientPrint(svr, client, qwp.PRINT_CHAT, "FLOOD PROTECTION: You can't talk for 10 seconds.\n")
+				return
+			end
+		end
 		local text = (raw:match("^say%s+(.*)$") or ""):gsub('^"(.*)"$', "%1")
-		svr.broadcastPrint(svr, qwp.PRINT_CHAT, `{client.name}: {text}\n`)
+		local prefix = if client.spectator then `[SPEC] {client.name}:` else `{client.name}:`
+		local specOnly = client.spectator and cvarlib.value(svr.cvars, "sv_spectalk") == 0
+		local line = `{prefix} {text}\n`
+		table.insert(svr.printLog, { level = qwp.PRINT_CHAT, text = line })
+		for i = 1, svr.maxclients do
+			local cl: Client = svr.clients[i]
+			if cl.active and cl.spawned and (not specOnly or cl.spectator) then
+				svr.clientPrint(svr, cl, qwp.PRINT_CHAT, line)
+			end
+		end
 	end,
 	say_team = function(svr, client, _args, raw)
 		local text = (raw:match("^say_team%s+(.*)$") or ""):gsub('^"(.*)"$', "%1")
@@ -1059,13 +1164,30 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 			return
 		end
 		client.userinfo[key] = value
-		extractUserinfo(client)
+		extractUserinfo(svr, client)
 		-- process the change and tell everyone over the reliable stream
 		local rd = svr.reliable_datagram
 		msg.writeByte(rd, qwp.svc_setinfo)
 		msg.writeByte(rd, client.num - 1)
 		msg.writeString(rd, key)
 		msg.writeString(rd, value)
+	end,
+	pause = function(svr, client)
+		if cvarlib.value(svr.cvars, "pausable") == 0 then
+			svr.clientPrint(svr, client, qwp.PRINT_HIGH, "Pause not allowed.\n")
+			return
+		end
+		svr.paused = not svr.paused
+		svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{client.name} {if svr.paused then "paused" else "unpaused"} the game.\n`)
+		local rd = svr.reliable_datagram
+		msg.writeByte(rd, qwp.svc_setpause)
+		msg.writeByte(rd, if svr.paused then 1 else 0)
+	end,
+	msg = function(svr, client, args)
+		if args[2] then
+			client.messagelevel = tonumber(args[2]) or 0
+			client.userinfo.msg = args[2]
+		end
 	end,
 	kill = function(svr, client)
 		local vm = svr.vm
@@ -1123,6 +1245,11 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 	local r = qwnetchan.process(chan, packet)
 	if not r then
 		return -- stale packet
+	end
+	-- ping bookkeeping: this packet acks one of our frames
+	local acked = client.frames[bit32.band(chan.incoming_acknowledged, qwp.UPDATE_MASK)]
+	if acked and acked.ping_time == -1 then
+		acked.ping_time = svr.time - acked.senttime
 	end
 	local netDrop = math.max(chan.drop_count, 0)
 	local moveIssued = false
@@ -1554,7 +1681,7 @@ function qwsv.writeEntitiesToClient(svr: any, client: Client, out: msg.SizeBuf)
 	local ent = svr.qdefs.ent
 
 	-- this is the frame we are creating
-	local frame: ClientFrame = { entities = {}, senttime = svr.time }
+	local frame: ClientFrame = { entities = {}, senttime = svr.time, ping_time = -1 }
 	client.frames[bit32.band(client.netchan.incoming_sequence, qwp.UPDATE_MASK)] = frame
 
 	local clent = client.edict
