@@ -56,6 +56,20 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (qw-client offline rows + CalcFov truth)
+- New tests/test_qcoords.luau: CalcFov against a transcribed screen.c
+  formula (5 cases + hand-derived anchors: fov 90 = 73.74 vertical at
+  4:3, 58.72 at 16:9) and the vrect derivation (fov_y at the reduced
+  height, gun rotation scaling with viewsize). CalcFov VERIFIED in both
+  client manifests; SCR_CalcRefdef rows note the math half is now
+  offline-proven and only the S3/S4 anchor screenshots remain.
+- qw-client DEMOTED rows with existing named checks re-cited
+  (CL_ParseClientdata via the loopback prediction/validsequence checks,
+  CL_ParseDelta + MSG_WriteDeltaUsercmd via test_qwents, Angle16 via
+  test_msg + test_qwents). Remaining qw-client DEMOTED (4) are
+  Studio-visual: CL_LinkPacketEntities/CL_EmitEntities/V_CalcRefdef/
+  DropPunchAngle — queued behind the S3/S4 capture pass.
+
 ### 2026-07-04 (nq-server DEMOTED cleared)
 - New tests/test_msg.luau: byte-exact wire codec battery against the C
   encodings (little-endian, (int)-cast truncation for coords/angles,
