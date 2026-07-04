@@ -32,8 +32,10 @@ function msg.newBuf(maxsize: number, allowoverflow: boolean?): SizeBuf
 end
 
 function msg.clear(sb: SizeBuf)
+	-- C SZ_Clear zeroes only cursize; overflowed must survive so the
+	-- send paths can see it (SZ_GetSpace clears the buffer right after
+	-- setting the flag — resetting it here made those checks dead code)
 	sb.cursize = 0
-	sb.overflowed = false
 end
 
 -- SZ_GetSpace

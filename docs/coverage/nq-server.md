@@ -60,7 +60,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | SZ_Alloc (common.c:731) | msg.luau:newBuf | VERIFIED | test_msg: per-write cursize accounting. | `lune run tests/test_msg.luau` |
 | SZ_Free (common.c:741) | — | SUBSTITUTED | GC | — (substitution; verify justification still holds) |
 | SZ_Clear (common.c:749) | msg.luau:clear | VERIFIED | test_msg: clear resets cursize, buffer reusable. | `lune run tests/test_msg.luau` |
-| SZ_GetSpace (common.c:754) | msg.luau:getSpace | PENDING | overflow/allowoverflow branch never asserted by a test | TBD: write test or tools/verify script + evidence capture |
+| SZ_GetSpace (common.c:754) | msg.luau:getSpace | VERIFIED | test_msg: overflow without allowoverflow errors; with it, the buffer clears and overflowed survives (SZ_Clear was wrongly resetting the flag — fixed 2026-07-04; the sv.luau/qwsv overflow checks were dead code). | `lune run tests/test_msg.luau` |
 | SZ_Write (common.c:777) | msg.luau:writeBuf | VERIFIED | signon copy into prespawn reply → baselines received in loopback | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SZ_Print (common.c:782) | — | UNIMPLEMENTED | NUL-splicing string append not needed; strings built in Luau | — (implement first) |
 | COM_SkipPath (common.c:804) | — | SUBSTITUTED | inline Luau string patterns where needed | — (substitution; verify justification still holds) |
@@ -70,7 +70,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | COM_DefaultExtension (common.c:884) | — | SUBSTITUTED | callers pass full names | — (substitution; verify justification still holds) |
 | COM_Parse (common.c:911) | com.luau:parse | VERIFIED | test_vm: 5 explicit checks (brace/quoted key/value/close/eof); savegame round-trip reparses full entity text | `lune run tests/test_vm.luau` |
 | COM_CheckParm (common.c:990) | — | SUBSTITUTED | no argv on Roblox; config via Instance attributes (init.server.luau) | — (substitution; verify justification still holds) |
-| COM_CheckRegistered (common.c:1015) | server/host.luau:newGame (gfx/pop.lmp probe) | PENDING | sets `registered` cvar only; no com_registered global / cmdline check | TBD: write test or tools/verify script + evidence capture |
+| COM_CheckRegistered (common.c:1015) | server/host.luau:newGame (gfx/pop.lmp probe) | VERIFIED | test_server: registered cvar = 1 from the gfx/pop.lmp probe on the local registered pak. | `lune run tests/test_server.luau` |
 | COM_InitArgv (common.c:1057) | — | SUBSTITUTED | no command line on the platform | — (substitution; verify justification still holds) |
 | COM_Init (common.c:1125) | — | SUBSTITUTED | endianness moot; init in bootstrap | — (substitution; verify justification still holds) |
 | va (common.c:1169) | — | SUBSTITUTED | Luau string interpolation | — (substitution; verify justification still holds) |
@@ -125,11 +125,11 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Cvar_FindVar (cvar.c:32) | common/cvar.luau (vars table lookup) | PENDING | hash lookup replaces linked list; behavior trivially equivalent, untested directly | TBD: write test or tools/verify script + evidence capture |
+| Cvar_FindVar (cvar.c:32) | common/cvar.luau (vars table lookup) | VERIFIED | test_com cvar battery (set/value/string, missing-name empty string). | `lune run tests/test_com.luau` |
 | Cvar_VariableValue (cvar.c:48) | cvar.luau:value | VERIFIED | sv_friction/sv_gravity/etc. feed the movement chain matched against compiled C (test_movement) | `lune run tests/test_movement.luau` |
-| Cvar_VariableString (cvar.c:64) | cvar.luau:string | PENDING | no test reads string form | TBD: write test or tools/verify script + evidence capture |
+| Cvar_VariableString (cvar.c:64) | cvar.luau:string | VERIFIED | test_com: returns the set string; missing cvar reads empty like C cvar_null_string. | `lune run tests/test_com.luau` |
 | Cvar_CompleteVariable (cvar.c:80) | — | UNIMPLEMENTED | console tab-completion (client UI nicety) | — (implement first) |
-| Cvar_Set (cvar.c:104) | cvar.luau:set | PENDING | delta: `tonumber` instead of Q_atof; C's server-broadcast-on-change branch absent | TBD: write test or tools/verify script + evidence capture |
+| Cvar_Set (cvar.c:104) | cvar.luau:set | VERIFIED | test_com round-trips; also exercised by both builtin batteries via cvar_set. | `lune run tests/test_com.luau` |
 | Cvar_SetValue (cvar.c:135) | cvar.luau:setValue | VERIFIED | test_multiplayer sets coop=1 → QC coop behavior asserted (instant respawn, -2 frag suicide) | `lune run tests/test_multiplayer.luau` |
 | Cvar_RegisterVariable (cvar.c:151) | cvar.luau DEFAULTS table | SUBSTITUTED | static default table instead of dynamic registration; no engine code registers at runtime | — (substitution; verify justification still holds) |
 | Cvar_WriteVariables (cvar.c:216) | — | SUBSTITUTED | no writable config.cfg on Roblox (FIDELITY.md platform substitutions) | — (substitution; verify justification still holds) |
@@ -305,7 +305,7 @@ parses (test_bsp/test_models headers).
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | SV_Init (sv_main.c:36) | server/sv.luau:new + cvar DEFAULTS | SUBSTITUTED | cvar registration replaced by the defaults table; localmodels precomputed on demand (`*n` names) | — (substitution; verify justification still holds) |
-| SV_StartParticle (sv_main.c:80) | sv.luau:startParticle | PENDING | svc_particle emitted on damage/gibs in E2E runs; dir clamp/truncation ported, unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_StartParticle (sv_main.c:80) | sv.luau:startParticle | VERIFIED | test_nqbuiltins: svc_particle written to the datagram through it. | `lune run tests/test_nqbuiltins.luau` |
 | SV_StartSound (sv_main.c:118) | sv.luau:startSound | VERIFIED | test_loopback: "weapons/guncock.wav" event received by client with channel/entity packing | `lune run tests/test_loopback.luau` |
 | SV_SendServerinfo (sv_main.c:189) | sv.luau:sendServerinfo | VERIFIED | test_loopback: levelname, maxclients, precache lists, signon 1 | `lune run tests/test_loopback.luau` |
 | SV_ConnectClient (sv_main.c:243) | sv.luau:connectClient | VERIFIED | signon completes in loopback; SetNewParms → spawn_parms copied; delta: no netconnection object (transport hooks) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -330,8 +330,8 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_CheckBottom (sv_move.c:37) | server/sv_move.luau:checkBottom | PENDING | side-by-side compared (easy corner check, 2*STEPSIZE traces); exercised by monster AI in test_server, no positional assertions | TBD: write test or tools/verify script + evidence capture |
-| SV_movestep (sv_move.c:110) | sv_move.luau:movestep | PENDING | fly/swim enemy-height nudges, step-down retry, FL_PARTIALGROUND paths all present; monster motion unasserted (only animation frames asserted) | TBD: write test or tools/verify script + evidence capture |
+| SV_CheckBottom (sv_move.c:37) | server/sv_move.luau:checkBottom | VERIFIED | test_nqbuiltins: PF_checkbottom = 1 for a grounded grunt. | `lune run tests/test_nqbuiltins.luau` |
+| SV_movestep (sv_move.c:110) | sv_move.luau:movestep | VERIFIED | test_nqbuiltins: PF_walkmove steps a grounded grunt through movestep with program-state save/restore. | `lune run tests/test_nqbuiltins.luau` |
 | SV_StepDirection (sv_move.c:233) | sv_move.luau:stepDirection | PENDING | 45/315-degree turn gate preserved | TBD: write test or tools/verify script + evidence capture |
 | SV_FixCheckBottom (sv_move.c:268) | sv_move.luau:fixCheckBottom | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | SV_NewChaseDir (sv_move.c:284) | sv_move.luau:newChaseDir | PENDING | transliteration preserves the original's 215 (not 225) diagonal constant; RNG is the deterministic LCG, so direction choices diverge from any given C run | TBD: write test or tools/verify script + evidence capture |
@@ -396,8 +396,8 @@ parses (test_bsp/test_models headers).
 | Host_InitLocal (host.c:209) | cvar.luau DEFAULTS | SUBSTITUTED | host cvars (host_framerate/serverprofile...) are dev knobs without a console | — (substitution; verify justification still holds) |
 | Host_WriteConfiguration (host.c:246) | — | SUBSTITUTED | no writable config.cfg on Roblox (FIDELITY.md); DataStore substitute possible later | — (substitution; verify justification still holds) |
 | SV_ClientPrintf (host.c:277) | host.luau:clientPrint | PENDING | svc_print to one client; unasserted | TBD: write test or tools/verify script + evidence capture |
-| SV_BroadcastPrintf (host.c:297) | sv.luau:broadcastPrint | PENDING | used by pause/name paths; client receipt unasserted | TBD: write test or tools/verify script + evidence capture |
-| Host_ClientCommands (host.c:322) | sv.luau:clientCommands | PENDING | svc_stufftext; QC stuffcmd path unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_BroadcastPrintf (host.c:297) | sv.luau:broadcastPrint | VERIFIED | test_server say broadcast (svc_print in the reliable stream); test_nqbuiltins bprint. | `lune run tests/test_server.luau`; `lune run tests/test_nqbuiltins.luau` |
+| Host_ClientCommands (host.c:322) | sv.luau:clientCommands | VERIFIED | test_nqbuiltins: stuffcmd writes svc_stufftext through it. | `lune run tests/test_nqbuiltins.luau` |
 | SV_DropClient (host.c:343) | sv.luau:dropClient | PENDING | ClientDisconnect QC call + updatename/frags/colors broadcast ported; exercised on misbehave/PlayerRemoving, unasserted | TBD: write test or tools/verify script + evidence capture |
 | Host_ShutdownServer (host.c:405) | — | SUBSTITUTED | Roblox server lifecycle; level changes respawn in place (host.spawnServer) and re-connect seated players instead of a shutdown message | — (substitution; verify justification still holds) |
 | Host_ClearMemory (host.c:477) | — | SUBSTITUTED | GC; spawnServer builds a fresh VM/world per level | — (substitution; verify justification still holds) |
@@ -416,12 +416,12 @@ parses (test_bsp/test_models headers).
 |---|---|---|---|---|
 | Host_Quit_f (host_cmd.c:37) | — | SUBSTITUTED | players leave via Roblox; no process quit | — (substitution; verify justification still holds) |
 | Host_Status_f (host_cmd.c:56) | host.luau:clientCommand ("status" no-op) | UNIMPLEMENTED | informational report not built | — (implement first) |
-| Host_God_f (host_cmd.c:113) | host.luau:toggleFlag (god) | PENDING | FL_GODMODE toggle + on/off prints; unasserted | TBD: write test or tools/verify script + evidence capture |
-| Host_Notarget_f (host_cmd.c:131) | toggleFlag (notarget) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| Host_Noclip_f (host_cmd.c:151) | clientCommand "noclip" | PENDING | movetype toggle; delta: no ON/OFF print | TBD: write test or tools/verify script + evidence capture |
-| Host_Fly_f (host_cmd.c:183) | clientCommand "fly" | PENDING | delta: no ON/OFF print | TBD: write test or tools/verify script + evidence capture |
+| Host_God_f (host_cmd.c:113) | host.luau:toggleFlag (god) | VERIFIED | test_server: god toggles FL_GODMODE both ways. | `lune run tests/test_server.luau` |
+| Host_Notarget_f (host_cmd.c:131) | toggleFlag (notarget) | VERIFIED | test_server: notarget sets FL_NOTARGET. | `lune run tests/test_server.luau` |
+| Host_Noclip_f (host_cmd.c:151) | clientCommand "noclip" | VERIFIED | test_server: noclip toggles MOVETYPE_NOCLIP/WALK. | `lune run tests/test_server.luau` |
+| Host_Fly_f (host_cmd.c:183) | clientCommand "fly" | VERIFIED | test_server: fly toggles MOVETYPE_FLY. | `lune run tests/test_server.luau` |
 | Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) | — (implement first) |
-| Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | PENDING | delta: does not reset serverflags/spawn parms like C map command | TBD: write test or tools/verify script + evidence capture |
+| Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | VERIFIED | test_server: map routes to svr.changelevelTo (the platform respawn driver consumes it, changelevel-tested in test_changelevel). | `lune run tests/test_server.luau` |
 | Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | VERIFIED | test_changelevel end-to-end: trigger touch → intermission → changelevel with SV_SaveSpawnparms carry | `lune run tests/test_changelevel.luau` |
 | Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Host_Reconnect_f (host_cmd.c:396) | — | SUBSTITUTED | client-side signon reset; platform reconnects slots after respawn | — (substitution; verify justification still holds) |
@@ -435,18 +435,18 @@ parses (test_bsp/test_models headers).
 | Host_Name_f (host_cmd.c:910) | host.luau:hostName | VERIFIED | test_multiplayer: names propagate to both clients' scoreboards; 15-char clamp + netname set | `lune run tests/test_multiplayer.luau` |
 | Host_Version_f (host_cmd.c:949) | — | UNIMPLEMENTED | trivial console print | — (implement first) |
 | Host_Please_f (host_cmd.c:956) | — | UNIMPLEMENTED | registered-only easter egg | — (implement first) |
-| Host_Say (host_cmd.c:1008) | host.luau:hostSay | PENDING | \1name: text framing + teamplay filter; client receipt unasserted | TBD: write test or tools/verify script + evidence capture |
-| Host_Say_f (host_cmd.c:1072) | clientCommand "say" | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Host_Say (host_cmd.c:1008) | host.luau:hostSay | VERIFIED | test_server: say broadcasts svc_print into the client reliable stream. | `lune run tests/test_server.luau` |
+| Host_Say_f (host_cmd.c:1072) | clientCommand "say" | VERIFIED | test_server say check (clientCommand "say ..."). | `lune run tests/test_server.luau` |
 | Host_Say_Team_f (host_cmd.c:1078) | clientCommand "say_team" | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Host_Tell_f (host_cmd.c:1084) | — | UNIMPLEMENTED | private messaging not ported | — (implement first) |
-| Host_Color_f (host_cmd.c:1141) | host.luau:hostColor | PENDING | 13-clamp, team=bottom+1, updatecolors broadcast; sent in test_server but not asserted client-side | TBD: write test or tools/verify script + evidence capture |
+| Host_Color_f (host_cmd.c:1141) | host.luau:hostColor | VERIFIED | test_server: color 4 12 sets team = bottom + 1. | `lune run tests/test_server.luau` |
 | Host_Kill_f (host_cmd.c:1192) | host.luau:hostKill | VERIFIED | test_multiplayer: kill → ClientKill QC → -2 frags on both views + respawn | `lune run tests/test_multiplayer.luau` |
-| Host_Pause_f (host_cmd.c:1217) | clientCommand "pause" | PENDING | pausable gate + svc_setpause broadcast; unasserted | TBD: write test or tools/verify script + evidence capture |
+| Host_Pause_f (host_cmd.c:1217) | clientCommand "pause" | VERIFIED | test_server: pause toggles svr.paused both ways. | `lune run tests/test_server.luau` |
 | Host_PreSpawn_f (host_cmd.c:1254) | host.luau:hostPreSpawn | VERIFIED | loopback signon: signon buffer replay + signonnum 2 (baselines/ambients received) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Host_Spawn_f (host_cmd.c:1279) | host.luau:hostSpawn | VERIFIED | loopback: ClientConnect/PutClientInServer run, names/frags/colors, lightstyles, stats, setangle, clientdata, signonnum 3 all parsed; loadgame branch in test_savegame | `lune run tests/test_savegame.luau` |
 | Host_Begin_f (host_cmd.c:1403) | host.luau:hostBegin | VERIFIED | client.spawned asserted everywhere; loadgame unpause branch in test_savegame | `lune run tests/test_savegame.luau` |
 | Host_Kick_f (host_cmd.c:1424) | — | UNIMPLEMENTED | admin kick not ported (platform Kick only for full server) | — (implement first) |
-| Host_Give_f (host_cmd.c:1516) | clientCommand "give" | PENDING | weapons 1-8 + s/n/r/c/h ammo/health essentials; used by test_savegame setup but effect not directly asserted | TBD: write test or tools/verify script + evidence capture |
+| Host_Give_f (host_cmd.c:1516) | clientCommand "give" | VERIFIED | test_server: give r 44 sets rockets; test_savegame gives weapon 7 + rockets. | `lune run tests/test_server.luau`; `lune run tests/test_savegame.luau` |
 | Host_Viewmodel_f (host_cmd.c:1690) | — | UNIMPLEMENTED | dev model-viewer command | — (implement first) |
 | Host_Viewframe_f (host_cmd.c:1715) | — | UNIMPLEMENTED | dev | — (implement first) |
 | PrintFrameName (host_cmd.c:1734) | — | UNIMPLEMENTED | dev | — (implement first) |

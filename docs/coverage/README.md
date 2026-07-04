@@ -56,6 +56,18 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (nq-server sweep 2: host commands, cvars, SZ overflow fix)
+- test_server gains the host_cmd.c battery (god/notarget/noclip/fly/
+  give/say/color/pause/map) + the COM_CheckRegistered probe; test_com
+  gains the cvar.c battery; test_msg gains SZ_GetSpace overflow checks.
+- Bug found+fixed: msg.clear reset the overflowed flag, but C SZ_Clear
+  only zeroes cursize — SZ_GetSpace sets the flag then clears, so every
+  overflow was silently swallowed and the sv.luau/qwsv overflow checks
+  were dead code. Flag now survives; suite green.
+- 20 nq-server rows earned (SZ_GetSpace, CheckRegistered, cvar family,
+  StartParticle, CheckBottom/movestep via the builtin battery, the
+  Host_* command layer, BroadcastPrintf, ClientCommands).
+
 ### 2026-07-04 (qw-server user commands + physics battery)
 - test_qw_loopback (+6 checks, 43): say broadcasts at PRINT_CHAT, pause
   toggles both ways, setinfo updates server-side userinfo, pings

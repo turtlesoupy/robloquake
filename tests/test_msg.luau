@@ -64,4 +64,18 @@ local qraw = msg.snapshot(q)
 t.eq(buffer.readi16(qraw, 0), 15, "WriteCoord truncates toward zero")
 t.eq(buffer.readu8(qraw, 2), 0, "WriteAngle truncates toward zero")
 
+-- SZ_GetSpace: overflow errors without allowoverflow; with it, the
+-- buffer clears and sets overflowed (C semantics)
+local tiny = msg.newBuf(2)
+msg.writeByte(tiny, 1)
+msg.writeByte(tiny, 2)
+t.check(not pcall(function()
+	msg.writeByte(tiny, 3)
+end), "overflow without allowoverflow errors")
+local ov = msg.newBuf(2, true)
+msg.writeByte(ov, 1)
+msg.writeByte(ov, 2)
+msg.writeByte(ov, 3)
+t.check(ov.overflowed and ov.cursize == 1, "allowoverflow clears the buffer and flags overflowed")
+
 t.finish("test_msg")
