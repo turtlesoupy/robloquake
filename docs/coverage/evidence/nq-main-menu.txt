@@ -1,0 +1,13 @@
+Evidence: nq-main-menu.jpg — M_Main_Draw via togglemenu
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), console "togglemenu" via the
+  RQDBG_Console harness; recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the main menu renders at the C layout — qplaque.lmp +
+id plate on the left, ttl_main banner, mainmenu.lmp entries, and the
+animated menudot cursor on the Single Player row. Deltas recorded on
+the rows: Escape is reserved by Roblox (M key/togglemenu instead);
+key navigation not exercised in this capture.
+Also recorded in-session (numeric, same boot): 16 looping ambient
+Sounds playing at the vantage (S_StaticSound), and a forced shotgun
+burst raised the playing-Sound census (S_StartSound one-shots).

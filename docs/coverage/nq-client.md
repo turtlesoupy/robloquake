@@ -204,8 +204,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | M_DrawTransPic / M_DrawPic | menu.addPic → ImageLabel | SUBSTITUTED | blit → ImageLabel | — (substitution; verify justification still holds) |
 | M_BuildTranslationTable / M_DrawTransPicTranslate | — | UNIMPLEMENTED | player setup menu absent (textures.translatePixels exists for in-game skins) | — (implement first) |
 | M_DrawTextBox | — | UNIMPLEMENTED | | — (implement first) |
-| M_ToggleMenu_f | `togglemenu` / M key | PENDING | recorded divergence: Escape reserved by Roblox | TBD: write test or tools/verify script + evidence capture |
-| M_Menu_Main_f / M_Main_Draw / M_Main_Key | menu.create/update/handleKey | PENDING | qplaque(16,4) + ttl_main centered + mainmenu(72,32) + menudot anim (time*10)%6 at (54,32+cursor*20) match | TBD: write test or tools/verify script + evidence capture |
+| M_ToggleMenu_f | `togglemenu` / M key | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg) + .txt: togglemenu raises the menu. Delta: Escape reserved by Roblox (M key/togglemenu). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
+| M_Menu_Main_f / M_Main_Draw / M_Main_Key | menu.create/update/handleKey | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg): qplaque + ttl_main + mainmenu entries + animated menudot at the C coordinates. Delta: key navigation not exercised in the capture (needs real key events). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
 | M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | Enter on item 0 → `map start` | UNIMPLEMENTED | submenu absent; direct new-game action instead | — (implement first) |
 | M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | — | UNIMPLEMENTED | F6/F9 quicksave/quickload binds work end to end (FIDELITY save/load record) | — (implement first) |
 | M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | stub print | UNIMPLEMENTED | Roblox players join the server automatically | — (implement first) |
@@ -253,11 +253,11 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | S_FindName / S_TouchSound / S_PrecacheSound | soundmap regions (offline tools/build_soundbank.py) | SUBSTITUTED | per-sample time slices replace sfx_t cache | — (substitution; verify justification still holds) |
 | SND_PickChannel | channels[entnum*8+channel] map | PENDING | entity-channel override in place; delta: CHAN_AUTO fire-and-forget never steals the oldest channel | TBD: write test or tools/verify script + evidence capture |
 | SND_Spatialize | Roblox RollOffMode.Linear, max = 1000/atten scaled | SUBSTITUTED | FIDELITY: Roblox rolloff approximating the linear curve; no stereo pan math | — (substitution; verify justification still holds) |
-| S_StartSound | sound.start | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: channel override semantics on entity sounds record | TBD: write test or tools/verify script + evidence capture |
+| S_StartSound | sound.start | VERIFIED | Numeric census (procedure in evidence/nq-main-menu.txt): a forced shotgun burst raises the playing-Sound instance count; wire delivery separately proven by the loopback sound checks. | Census chunk per evidence/nq-main-menu.txt |
 | S_StopSound | sound.stop exists but is never called | UNIMPLEMENTED | svc_stopsound is parsed and discarded in cl.luau — looped entity sounds can't be stopped | — (implement first) |
 | S_StopAllSounds | sound.clear on serverinfo | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | S_ClearBuffer | — | SUBSTITUTED | no mix buffer | — (substitution; verify justification still holds) |
-| S_StaticSound | sound.static (looped, vol/255, atten/64) | PENDING | event delivery proven (see CL_ParseStaticSound); playback itself unproven | TBD: write test or tools/verify script + evidence capture |
+| S_StaticSound | sound.static (looped, vol/255, atten/64) | VERIFIED | Numeric census: 16 looping ambient Sounds playing at the e1m1 vantage (statics started from the signon); event delivery proven by test_loopback "ambient sounds spawned". | Census chunk per evidence/nq-main-menu.txt; `lune run tests/test_loopback.luau` |
 | S_UpdateAmbientSounds | sound.updateAmbients | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: water1/wind2 from view-leaf levels, ambient_level 0.3 / fade 100 | TBD: write test or tools/verify script + evidence capture |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Roblox engine mixes and paints | — (substitution; verify justification still holds) |
 | S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities | — (implement first) |
