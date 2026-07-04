@@ -371,8 +371,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| R_InitSky | writeSkyFrame layer split (left=front masked on 0, right=back) | PENDING | 256x128 two-half layout honoured | TBD: write test or tools/verify script + evidence capture |
-| R_MakeSky | textures.writeSkyFrame per 10Hz tick | PENDING | delta: scroll speeds time*16 front / time*8 back; drawn on world sky polys via UVs, not screen-space projection | TBD: write test or tools/verify script + evidence capture |
+| R_InitSky | skyFramePixels layer split (left=front masked on 0, right=back) | VERIFIED | test_render_misc sky battery: left-half cloud layer with palette-0 transparency over the right-half background — exactly C's bottomsky/bottommask vs topsky split (r_sky.c R_InitSky; note the famous C comment saying "right side" is wrong, the code reads the left). | `lune run tests/test_render_misc.luau` |
+| R_MakeSky | textures.writeSkyFrame per 10Hz tick (pure half: skyFramePixels) | VERIFIED | test_render_misc: front scrolls 16 px/s and back 8 px/s — the NET C rates (R_MakeSky's skyspeed shift on the front layer plus D_Sky_uv_To_st's whole-composite skyspeed offset, skyspeed=8). Deltas stand: horizontal-only vs C's diagonal drift, drawn on world polys via UVs not the screen-space projection. Live pump: qw-dm3-sky evidence. | `lune run tests/test_render_misc.luau` |
 | R_GenSkyTile / R_GenSkyTile16 | — | SUBSTITUTED | tile compositing into the surface cache; EditableImage rewrite replaces it | — (substitution; verify justification still holds) |
 | R_SetSkyFrame | time captured per rewrite | SUBSTITUTED | | — (substitution; verify justification still holds) |
 
@@ -392,7 +392,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_BuildLightMap | lightatlas.writeRegion | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the atlas region rewrites under the flash and restores after decay (static lava tiles unchanged in both frames). | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | R_TextureAnimation | init.client wall-anim tick + worldmesh "wall" TextureAnims | PENDING | tests/test_texanim.luau proves the +N/+a chain data and the anim_min/anim_max walk math on e1m2/start; base chain only (world frame 0), swaps chunk TextureContent between prebuilt frame images — visual confirmation pending | TBD: write test or tools/verify script + evidence capture |
 | R_DrawSurface / R_DrawSurfaceBlock8_mip0-3 / R_DrawSurfaceBlock16 | — | SUBSTITUTED | surface-cache block drawing; GPU samples texture × lightmap overlay instead | — (substitution; verify justification still holds) |
-| R_GenTurbTile / R_GenTurbTile16 | textures.writeTurbFrame | PENDING | 8px sine displacement both axes, period 32, speed time*2 — software look approximated in texture space | TBD: write test or tools/verify script + evidence capture |
+| R_GenTurbTile / R_GenTurbTile16 | textures.writeTurbFrame (pure half: turbFramePixels) | SUBSTITUTED | Texture-space approximation of the C tile warp, pinned by test_render_misc: perpendicular sine displacement with tiling wrap, but period 32 px / 2 rad/s / amp ±8 centered vs C's CYCLE=128 / SPEED=20 / AMP 8±8 (r_surf.c R_GenTurbTile + r_main.c sintable). Expiry: adopt the C constants if playtesting reports the water warp looking too busy/fast. | `lune run tests/test_render_misc.luau` |
 | R_GenTile | — | SUBSTITUTED | | — (substitution; verify justification still holds) |
 
 ## r_aclip.c
@@ -456,10 +456,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 113
-- PENDING: 21
+- VERIFIED: 115
+- PENDING: 18
 - UNIMPLEMENTED: 62
-- SUBSTITUTED: 68
+- SUBSTITUTED: 69
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

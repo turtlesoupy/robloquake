@@ -154,7 +154,8 @@ end
 
 -- Turbulent water/lava warp (D_DrawTurbulent look): the texture scrolls
 -- through a sine displacement on both axes.
-function textures.writeTurbFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+-- pure pixel half (lune-testable); writeTurbFrame uploads it
+function textures.turbFramePixels(pixels: buffer, w: number, h: number, pal: Palette, time: number): buffer
 	local out = buffer.create(w * h * 4)
 	local pr, pg, pb = pal.r, pal.g, pal.b
 	local sinx = table.create(w)
@@ -178,17 +179,22 @@ function textures.writeTurbFrame(img: EditableImage, pixels: buffer, w: number, 
 			buffer.writeu8(out, o + 3, 255)
 		end
 	end
-	img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), out)
+	return out
+end
+
+function textures.writeTurbFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+	img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), textures.turbFramePixels(pixels, w, h, pal, time))
 end
 
 -- Scrolling sky: quake sky textures are 256x128 with the front (masked)
 -- cloud layer on the left half and the solid background on the right.
 -- Both halves of the image are rewritten with the composited scroll so any
 -- UV mapping shows moving clouds.
-function textures.writeSkyFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+-- pure pixel half (lune-testable); writeSkyFrame uploads it
+function textures.skyFramePixels(pixels: buffer, w: number, h: number, pal: Palette, time: number): buffer?
 	local half = math.floor(w / 2)
 	if half < 1 then
-		return
+		return nil
 	end
 	local out = buffer.create(w * h * 4)
 	local pr, pg, pb = pal.r, pal.g, pal.b
@@ -212,7 +218,14 @@ function textures.writeSkyFrame(img: EditableImage, pixels: buffer, w: number, h
 			buffer.writeu8(out, o + 3, 255)
 		end
 	end
-	img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), out)
+	return out
+end
+
+function textures.writeSkyFrame(img: EditableImage, pixels: buffer, w: number, h: number, pal: Palette, time: number)
+	local out = textures.skyFramePixels(pixels, w, h, pal, time)
+	if out then
+		img:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), out)
+	end
 end
 
 -- Average color of a palettized image (fallback tint when images are
