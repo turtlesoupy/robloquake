@@ -567,6 +567,73 @@ function hud.updateOverlays(h: Hud, c: cllib.Client)
 	h.interFrame.Visible = mode ~= ""
 end
 
+-- Sbar_DeathmatchOverlay (QW sbar.c): ping/pl/time/frags/name columns,
+-- x=16 base, color fill at +104, frags at +112, name at +152
+local function buildQWRankings(h: Hud, c: any)
+	interLmp(h, "gfx/ranking.lmp", 0, 0, true)
+	local x, y = 16, 24
+	interText(h, x, y, "ping pl time frags name")
+	y += 8
+	interText(h, x, y, "\29\30\30\31 \29\31 \29\30\30\31 \29\30\30\30\31 \29\30\30\30\30\30\30\30\30\30\30\30\30\30\31")
+	y += 8
+
+	local order = {}
+	for i, sc in c.scores do
+		if sc.name ~= "" then
+			table.insert(order, i)
+		end
+	end
+	table.sort(order, function(a, b)
+		return c.scores[a].frags > c.scores[b].frags
+	end)
+
+	for _, k in order do
+		if y > 200 - 10 then
+			break
+		end
+		local sc = c.scores[k]
+		local ping = math.clamp(sc.ping or 0, 0, 999)
+		interText(h, x, y, ("%4i"):format(ping))
+		interText(h, x + 32, y, ("%3i"):format(sc.pl or 0))
+		if sc.spectator then
+			interText(h, x + 40, y, "(spectator)")
+			interText(h, x + 152, y, sc.name)
+		else
+			local total = (if c.intermission ~= 0 then c.completed_time else c.time) - (sc.entertime or 0)
+			interText(h, x + 64, y, ("%4i"):format(math.max(total // 60, 0)))
+			interFill(h, x + 104, y + 1, 40, 4, bit32.band(sc.colors, 0xf0) + 8)
+			interFill(h, x + 104, y + 5, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+			interText(h, x + 112, y, ("%3i"):format(sc.frags))
+			interText(h, x + 152, y, sc.name)
+		end
+		y += 10
+	end
+end
+
+-- QW overlay driver: the DM overlay doubles as the intermission screen
+function hud.updateOverlaysQW(h: Hud, c: any)
+	local mode = ""
+	if c.intermission ~= 0 or h.showScores then
+		mode = "qwdm"
+	end
+	local sig = mode
+	if mode ~= "" then
+		for _, sc in c.scores do
+			if sc.name ~= "" then
+				sig ..= ("|%s:%d:%d:%d:%d"):format(sc.name, sc.frags, sc.colors, sc.ping or 0, (sc.entertime or 0) // 60)
+			end
+		end
+	end
+	if sig ~= h.interSig then
+		h.interSig = sig
+		h.interFrame:ClearAllChildren()
+		if mode ~= "" then
+			buildQWRankings(h, c)
+		end
+	end
+	h.interFrame.Visible = mode ~= ""
+end
+
 local WEAPON_NAMES = { "shotgun", "sshotgun", "nailgun", "snailgun", "rlaunch", "srlaunch", "lightng" }
 local ITEM_NAMES = { "sb_key1", "sb_key2", "sb_invis", "sb_invuln", "sb_suit", "sb_quad" }
 

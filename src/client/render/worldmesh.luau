@@ -139,14 +139,21 @@ function worldmesh.updateDlights(data: bsp.BspData, dlights: { lightatlaslib.Dli
 	end
 end
 
--- Animated textures (water/sky) registered during builds; the client takes
--- and owns them (worldmesh.takeTextureAnims) and rewrites the images.
+-- Animated textures registered during builds; the client takes and owns
+-- them (worldmesh.takeTextureAnims). turb/sky rewrite their image every
+-- tick; "wall" (+N miptex chains, R_TextureAnimation) swaps the chunk
+-- MeshParts' TextureContent between prebuilt per-frame images.
 export type TextureAnim = {
-	kind: string, -- "turb" | "sky"
+	kind: string, -- "turb" | "sky" | "wall"
 	img: EditableImage,
 	pixels: buffer,
 	w: number,
 	h: number,
+	-- "wall" only:
+	base: bsp.Texture?, -- chain entry the surfaces were compiled with
+	frames: { [string]: EditableImage }?, -- texture name -> image (base + alt chains)
+	parts: { MeshPart }?, -- chunks textured by this miptex
+	current: string?, -- name of the frame currently applied
 }
 worldmesh.textureAnims = {} :: { TextureAnim }
 
@@ -216,7 +223,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh cap
 
 	-- generic chunked mesh builder: positions+uvs -> MeshParts in container
-	local function buildChunks(faces: { FaceData }, partName: string, img: EditableImage?, fallbackColor: Color3?, translucentMap: boolean)
+	local function buildChunks(faces: { FaceData }, partName: string, img: EditableImage?, fallbackColor: Color3?, translucentMap: boolean, partsOut: { MeshPart }?)
 		local chunk: { FaceData } = {}
 		local chunkVerts = 0
 

@@ -19,6 +19,7 @@ local qcoords = require(engine.client.qcoords)
 local qwcl = require(engine.qw.qwcl)
 local qwp = require(engine.qw.qwprotocol)
 
+local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
 
 local entrender = require(script.Parent.render.entrender)
@@ -100,6 +101,31 @@ return function()
 	}
 	local lastDamageCount = 0
 
+	-- view blends (view.c): CSHIFT_CONTENTS/DAMAGE/BONUS/POWERUP
+	local cshifts = {
+		{ r = 130, g = 80, b = 50, percent = 0 }, -- contents
+		{ r = 255, g = 0, b = 0, percent = 0 }, -- damage
+		{ r = 215, g = 186, b = 69, percent = 0 }, -- bonus
+		{ r = 0, g = 0, b = 255, percent = 0 }, -- powerup
+	}
+	local v_dmg_time, v_dmg_roll, v_dmg_pitch = 0, 0, 0
+	local V_KICKTIME, V_KICKROLL, V_KICKPITCH = 0.5, 0.6, 0.6
+
+	local cshiftGui = Instance.new("ScreenGui")
+	cshiftGui.Name = "QuakeCshift"
+	cshiftGui.IgnoreGuiInset = true
+	cshiftGui.DisplayOrder = 5
+	local cshiftFrame = Instance.new("Frame")
+	cshiftFrame.BorderSizePixel = 0
+	cshiftFrame.Size = UDim2.fromScale(1, 1)
+	cshiftFrame.BackgroundTransparency = 1
+	cshiftFrame.Parent = cshiftGui
+	cshiftGui.Parent = player:WaitForChild("PlayerGui")
+
+	-- CL_AllocExplosion ring: s_explod.spr animated at 10 Hz
+	local explosions: { { origin: vector, start: number } } = {}
+	local explosionIndex: number? = nil
+
 	local function updateHudAdapter()
 		hudC.time = cl.time
 		hudC.intermission = cl.intermission
@@ -120,10 +146,46 @@ return function()
 			hudC.items = newItems
 		end
 
-		-- V_ParseDamage: pain face for 0.2s after a damage message
+		-- V_ParseDamage: pain face, damage cshift, view-angle kick
 		if (cl.damageCount or 0) ~= lastDamageCount then
 			lastDamageCount = cl.damageCount or 0
 			hudC.faceanimtime = cl.time + 0.2
+			local dmg = cl.damage
+			if dmg then
+				local count = dmg.take * 0.5 + dmg.save * 0.5
+				if count < 10 then
+					count = 10
+				end
+				cshifts[2].percent = math.clamp(cshifts[2].percent + 3 * count, 0, 150)
+				if dmg.save > dmg.take then
+					cshifts[2].r, cshifts[2].g, cshifts[2].b = 200, 100, 100
+				elseif dmg.save > 0 then
+					cshifts[2].r, cshifts[2].g, cshifts[2].b = 220, 50, 50
+				else
+					cshifts[2].r, cshifts[2].g, cshifts[2].b = 255, 0, 0
+				end
+				local from = dmg.from - cl.simorg
+				local flen = vector.magnitude(from)
+				if flen > 0 then
+					from = from / flen
+				end
+				local fwd, right, _up = mathlib.angleVectors(cl.simangles)
+				v_dmg_roll = count * vector.dot(from, right) * V_KICKROLL
+				v_dmg_pitch = count * vector.dot(from, fwd) * V_KICKPITCH
+				v_dmg_time = V_KICKTIME
+			end
+		end
+
+		-- V_BonusFlash_f: the server stuffs "bf" on item pickup
+		local raw = cl.rawStufftext
+		if raw and raw ~= "" then
+			cl.rawStufftext = ""
+			for line in raw:gmatch("[^\n]+") do
+				if line == "bf" then
+					cshifts[3].r, cshifts[3].g, cshifts[3].b = 215, 186, 69
+					cshifts[3].percent = 50
+				end
+			end
 		end
 
 		-- Sbar_SortFrags source: scoreboard slots from player infos
@@ -137,6 +199,10 @@ return function()
 			if info then
 				slot.name = info.name
 				slot.frags = info.frags
+				slot.ping = info.ping
+				slot.pl = info.pl
+				slot.entertime = info.entertime
+				slot.spectator = info.spectator
 				local top = tonumber(info.userinfo.topcolor) or 0
 				local bottom = tonumber(info.userinfo.bottomcolor) or 0
 				slot.colors = top * 16 + bottom
@@ -444,6 +510,26 @@ return function()
 		elseif t == qwp.TE_EXPLOSION or t == qwp.TE_TAREXPLOSION then
 			particleslib.explosion(psys, te.pos, cl.time)
 			if t == qwp.TE_EXPLOSION then
+				-- CL_AllocExplosion: reuse a free slot, else the oldest
+				local slot = nil
+				for i = 1, 8 do
+					if not explosions[i] then
+						slot = i
+						break
+					end
+				end
+				if not slot then
+					local oldest = math.huge
+					for i = 1, 8 do
+						if explosions[i].start < oldest then
+							oldest = explosions[i].start
+							slot = i
+						end
+					end
+				end
+				explosions[slot :: number] = { origin = te.pos, start = cl.time }
+			end
+			if t == qwp.TE_EXPLOSION then
 				local dl = allocDlight(0, cl.time)
 				dl.origin = te.pos
 				dl.radius = 350
@@ -479,7 +565,7 @@ return function()
 	local gunEnt: entrender.RenderEnt? = nil
 	local gunModelIndex = 0
 
-	local function linkEnt(key: string, modelindex: number, origin: vector, angles: vector, frame: number, skinnum: number, time: number)
+	local function linkEnt(key: string, modelindex: number, origin: vector, angles: vector, frame: number, skinnum: number, time: number, colors: number?)
 		local def = getModelDef(modelindex)
 		if not def or def.kind == "none" then
 			return
@@ -503,7 +589,7 @@ return function()
 				-- items spin: autorotate = anglemod(100*cl.time)
 				angles = vector.create(0, (100 * time) % 360, 0)
 			end
-			entrender.updateAlias(re, def, origin, angles, frame, skinnum, 0, time)
+			entrender.updateAlias(re, def, origin, angles, frame, skinnum, 0, time, colors)
 		elseif def.kind == "sprite" then
 			entrender.updateSprite(re, def, origin, frame)
 		elseif def.kind == "brush" then
@@ -573,7 +659,61 @@ return function()
 			side = math.abs(side)
 			local roll = (if side < 200 then side * 2.0 / 200 else 2.0) * sign * 4
 			angles = vector.create(angles.x, angles.y, roll)
-			linkEnt(`p{num}`, ps.modelindex, predicted[num] or ps.origin, angles, ps.frame, ps.skinnum, time)
+			local porigin = predicted[num] or ps.origin
+			-- CL_NewTranslation: shirt/pants byte for the player skin
+			local colors: number? = nil
+			local info = cl.players[num]
+			if info and ps.modelindex == cl.playerindex then
+				local top = tonumber(info.userinfo.topcolor) or 0
+				local bottom = tonumber(info.userinfo.bottomcolor) or 0
+				colors = top * 16 + bottom
+			end
+			linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+
+			-- CL_AddFlagModels: CTF flag riding on the carrier's back
+			local efFlag = bit32.band(ps.effects, 16 + 32) -- EF_FLAG1|EF_FLAG2
+			if efFlag ~= 0 and cl.flagindex then
+				local f = 14
+				local pf = ps.frame
+				if pf >= 29 and pf <= 34 then
+					f += ({ [29] = 2, [30] = 8, [31] = 12, [32] = 11, [33] = 10, [34] = 4 })[pf] or 0
+				elseif pf >= 35 and pf <= 40 then
+					f += ({ [35] = 2, [36] = 10, [37] = 10, [38] = 8, [39] = 4, [40] = 2 })[pf] or 0
+				elseif pf >= 103 and pf <= 106 then
+					f += 6
+				elseif pf >= 107 and pf <= 118 then
+					f += 7
+				end
+				local ff, fr, _fu = mathlib.angleVectors(angles)
+				ff = vector.create(ff.x, ff.y, -ff.z) -- reverse z component
+				local forg = porigin - ff * f + fr * 22 + vector.create(0, 0, -16)
+				local fang = vector.create(angles.x, angles.y, angles.z - 45)
+				linkEnt(`pf{num}`, cl.flagindex, forg, fang, 0, if bit32.band(ps.effects, 32) ~= 0 then 1 else 0, time)
+			end
+		end
+
+		-- CL_UpdateExplosions: s_explod.spr at 10 Hz until frames run out
+		if not explosionIndex then
+			for i, name in cl.model_name do
+				if name == "progs/s_explod.spr" then
+					explosionIndex = i
+				end
+			end
+		end
+		if explosionIndex then
+			local def = getModelDef(explosionIndex)
+			local numframes = if def and def.sprite then #(def.sprite :: any).frames else 6
+			for i = 1, 8 do
+				local ex = explosions[i]
+				if ex then
+					local f = math.floor(10 * (time - ex.start))
+					if f >= numframes then
+						explosions[i] = nil
+					else
+						linkEnt(`x{i}`, explosionIndex, ex.origin, vector.zero, f, 0, time)
+					end
+				end
+			end
 		end
 
 		-- nails ride their own compact message
@@ -647,6 +787,7 @@ return function()
 		[Enum.KeyCode.LeftShift] = "speed",
 	}
 	local showScoresDown = false
+	local lastPingRequest = 0
 	local function onKey(io: InputObject, down: boolean)
 		if io.UserInputType == Enum.UserInputType.MouseButton1 then
 			input.setButton("attack", down)
@@ -774,6 +915,63 @@ return function()
 		if not viewheight or viewheight == 0 then
 			viewheight = 22
 		end
+		-- V_SetContentsColor from the view leaf + V_CalcPowerupCshift
+		do
+			local contents = -1
+			if cl.worldmodel then
+				local leaf = bsplib.pointInLeaf(cl.simorg + vector.create(0, 0, 22), cl.worldmodel)
+				contents = leaf.contents
+			end
+			local cs = cshifts[1]
+			if contents == -5 then -- CONTENTS_LAVA
+				cs.r, cs.g, cs.b, cs.percent = 255, 80, 0, 150
+			elseif contents == -4 or contents == -2 then -- SLIME / SOLID
+				cs.r, cs.g, cs.b, cs.percent = 0, 25, 5, 150
+			elseif contents == -3 then -- WATER
+				cs.r, cs.g, cs.b, cs.percent = 130, 80, 50, 128
+			else
+				cs.percent = 0
+			end
+
+			local itbits = cl.stats[qwp.STAT_ITEMS] or 0
+			local pw = cshifts[4]
+			if bit32.band(itbits, 4194304) ~= 0 then -- IT_QUAD
+				pw.r, pw.g, pw.b, pw.percent = 0, 0, 255, 30
+			elseif bit32.band(itbits, 2097152) ~= 0 then -- IT_SUIT
+				pw.r, pw.g, pw.b, pw.percent = 0, 255, 0, 20
+			elseif bit32.band(itbits, 524288) ~= 0 then -- IT_INVISIBILITY
+				pw.r, pw.g, pw.b, pw.percent = 100, 100, 100, 100
+			elseif bit32.band(itbits, 1048576) ~= 0 then -- IT_INVULNERABILITY
+				pw.r, pw.g, pw.b, pw.percent = 255, 255, 0, 30
+			else
+				pw.percent = 0
+			end
+
+			-- drop the damage and bonus values
+			cshifts[2].percent = math.max(cshifts[2].percent - dt * 150, 0)
+			cshifts[3].percent = math.max(cshifts[3].percent - dt * 100, 0)
+
+			-- V_CalcBlend
+			local r, g, b, a = 0, 0, 0, 0
+			for _, csh in cshifts do
+				local a2 = csh.percent / 255
+				if a2 > 0 then
+					a = a + a2 * (1 - a)
+					a2 = a2 / a
+					r = r * (1 - a2) + csh.r * a2
+					g = g * (1 - a2) + csh.g * a2
+					b = b * (1 - a2) + csh.b * a2
+				end
+			end
+			a = math.clamp(a, 0, 1)
+			if a > 0 then
+				cshiftFrame.BackgroundColor3 = Color3.fromRGB(r, g, b)
+				cshiftFrame.BackgroundTransparency = 1 - a
+			else
+				cshiftFrame.BackgroundTransparency = 1
+			end
+		end
+
 		-- V_CalcRefdef: bob, roll, kicks, death/gib view, intermission
 		-- DropPunchAngle, verbatim: punchangle -= 10*dt, clamped at 0 from
 		-- below — since kicks arrive negative, a kick lasts one frame
@@ -814,8 +1012,15 @@ return function()
 			if bit32.band(ownState.flags, qwp.PF_GIB) ~= 0 then
 				viewheight += 8 -- gibbed: view from the head
 			end
+			-- V_CalcViewRoll damage kick
+			local kroll, kpitch = 0, 0
+			if v_dmg_time > 0 then
+				kroll = v_dmg_time / V_KICKTIME * v_dmg_roll
+				kpitch = v_dmg_time / V_KICKTIME * v_dmg_pitch
+				v_dmg_time -= dt
+			end
 			eye = cl.simorg + vector.create(0, 0, viewheight + bob)
-			angles = vector.create(cl.simangles.x + cl.punchangle, cl.simangles.y, cl.simangles.z + roll)
+			angles = vector.create(cl.simangles.x + cl.punchangle + kpitch, cl.simangles.y, cl.simangles.z + roll + kroll)
 			gunVisible = true
 		end
 		local fwd, right, up = mathlib.angleVectors(angles)
@@ -932,7 +1137,12 @@ return function()
 		hudlib.setLoading(hud, false)
 		hudlib.setPaused(hud, cl.paused == true)
 		updateHudAdapter()
-		hudlib.updateOverlays(hud, hudC)
+		-- request new ping times every two seconds while the board shows
+		if (showScoresDown or cl.intermission ~= 0) and cl.realtime - (lastPingRequest or 0) > 2 then
+			lastPingRequest = cl.realtime
+			qwcl.sendStringCmd(cl, "pings")
+		end
+		hudlib.updateOverlaysQW(hud, hudC)
 		hudlib.update(hud, hudC)
 	end)
 end

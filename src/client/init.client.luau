@@ -943,15 +943,24 @@ c.onTempEntity = function(_c, te)
 		spikeSound(te.pos)
 	elseif te.type == proto.TE_GUNSHOT then
 		particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, c.time)
-	elseif te.type == proto.TE_EXPLOSION or te.type == proto.TE_EXPLOSION2 or te.type == proto.TE_TAREXPLOSION then
+	elseif te.type == proto.TE_EXPLOSION then -- rocket explosion
 		particleslib.explosion(psys, te.pos, c.time)
-		if te.type ~= proto.TE_TAREXPLOSION then
-			local dl = allocDlight(0, c.time)
-			dl.origin = te.pos
-			dl.radius = 350
-			dl.die = c.time + 0.5
-			dl.decay = 300
-		end
+		local dl = allocDlight(0, c.time)
+		dl.origin = te.pos
+		dl.radius = 350
+		dl.die = c.time + 0.5
+		dl.decay = 300
+		teSound("weapons/r_exp3.wav", te.pos)
+	elseif te.type == proto.TE_EXPLOSION2 then -- color mapped explosion
+		particleslib.particleExplosion2(psys, te.pos, te.colorStart or 0, te.colorLength or 1, c.time)
+		local dl = allocDlight(0, c.time)
+		dl.origin = te.pos
+		dl.radius = 350
+		dl.die = c.time + 0.5
+		dl.decay = 300
+		teSound("weapons/r_exp3.wav", te.pos)
+	elseif te.type == proto.TE_TAREXPLOSION then -- tarbaby explosion (no dlight)
+		particleslib.blobExplosion(psys, te.pos, c.time)
 		teSound("weapons/r_exp3.wav", te.pos)
 	elseif te.type == proto.TE_WIZSPIKE then
 		particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, c.time)
