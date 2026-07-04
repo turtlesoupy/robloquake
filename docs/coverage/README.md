@@ -46,11 +46,21 @@ rows.
 | # | Scenario | Status | Evidence | How to verify |
 |---|---|---|---|---|
 | S1 | QW two-client loopback: connect, duel, frag on BOTH scoreboards, death/respawn, changelevel inventory carry | VERIFIED | tests/test_scenario_qw.luau (25 checks): shotgun duel over the wire, frag rebroadcast to both clients, DEAD_DEAD→respawn at full health, SetChangeParms carry incl. the authentic shells-floor-25 | `lune run tests/test_scenario_qw.luau` |
-| S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | PENDING | — | TBD |
+| S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | VERIFIED | tests/test_scenario_nq.luau (30 checks): shells picked up by really walking over the box (SV_TouchLinks), a live grunt shoots the player (svc_damage pain flash on the client), earned inventory + damaged health carry to e1m2, then a save/load round-trip restores health/shells/origin/time and the game keeps running | `lune run tests/test_scenario_nq.luau` |
 | S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | PENDING | — | TBD |
 | S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | — | TBD |
 
 ## Changelog
+
+### 2026-07-04 (scenario S2)
+- NQ campaign loop verified offline end to end (test_scenario_nq, 30
+  checks): real walked-over pickup, real monster damage with the pain
+  flash on the client, changelevel carry of the earned inventory and
+  damaged health, save/load round-trip restoring health/shells/origin/
+  time. Staging note for future scenario tests: teleporting the player
+  must probe with world.testEntityPosition first — SV_CheckStuck
+  silently restores oldorigin from a solid spot (that is authentic
+  WinQuake behavior, not a bug).
 
 ### 2026-07-04 (playtest: harsh stairs in QW)
 - User playtest report: stair climbing "harsh and hard" in the QW boot.
