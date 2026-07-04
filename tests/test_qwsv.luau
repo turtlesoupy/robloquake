@@ -138,6 +138,84 @@ qwsv.frame(svr, 0.05)
 local flew = vector.magnitude(vmlib.edVector(spike, ent.origin) - spikeOrg)
 t.check(not spike.free and flew > 20, `SV_RunEntity flew the spike {math.floor(flew)} units in one frame`)
 
+-- SV_Impact: the spike eventually hits a wall; spike_touch removes it
+local impacted = false
+for _ = 1, 60 do
+	qwsv.frame(svr, 0.05)
+	if spike.free then
+		impacted = true
+		break
+	end
+end
+t.check(impacted, "spike impacted a wall and spike_touch removed it (SV_Impact)")
+
+-- V_CalcRoll server side: a strafing player leans (angles roll * 4).
+-- Roll reads the velocity from BEFORE the current move, so strafe twice.
+for _ = 1, 2 do
+	qwsv.executeCmd(svr, client, {
+		angles = vector.create(0, spawnYaw, 0),
+		forwardmove = 0,
+		sidemove = 350,
+		upmove = 0,
+		buttons = 0,
+		msec = 50,
+	})
+end
+t.check(math.abs(vmlib.edVector(player, ent.angles).z) > 0.1, "V_CalcRoll leaned the strafing player")
+
+-- SV_Physics_Pusher / SV_Push: a door's use function drives a full
+-- travel-and-return cycle
+local qwworldlib = require("../src/shared/engine/qw/qwworld")
+local useDoor: vmlib.Edict? = nil
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "door" and vmlib.edInt(e, ent.use) ~= 0 then
+		useDoor = e
+		break
+	end
+end
+assert(useDoor, "door with a use function")
+local glob = svr.qdefs.glob
+local doorStart = vmlib.edVector(useDoor, ent.origin)
+buffer.writef32(vm.globals, glob.time * 4, svr.time)
+buffer.writei32(vm.globals, glob.self * 4, useDoor.num)
+buffer.writei32(vm.globals, glob.other * 4, player.num)
+vmlib.exec(vm, vmlib.edInt(useDoor, ent.use))
+local maxTravel = 0
+for _ = 1, 40 do
+	qwsv.frame(svr, 0.05)
+	maxTravel = math.max(maxTravel, vector.magnitude(vmlib.edVector(useDoor, ent.origin) - doorStart))
+end
+t.check(maxTravel > 30, `door traveled through SV_Push ({math.floor(maxTravel)} units)`)
+for _ = 1, 140 do
+	qwsv.frame(svr, 0.05)
+end
+t.check(vector.magnitude(vmlib.edVector(useDoor, ent.origin) - doorStart) < 1, "door returned home (SV_Physics_Pusher waits)")
+
+-- SV_Physics_Toss + SV_CheckVelocity: a lobbed edict with an absurd
+-- velocity component is clamped to sv_maxvelocity, then arcs and rests
+local qdl = require("../src/shared/engine/quakedef")
+local tossEd = vmlib.alloc(vm)
+vmlib.edSetFloat(tossEd, ent.movetype, qdl.MOVETYPE_TOSS)
+vmlib.edSetFloat(tossEd, ent.solid, qdl.SOLID_BBOX)
+vmlib.edSetVector(tossEd, ent.mins, vector.zero)
+vmlib.edSetVector(tossEd, ent.maxs, vector.zero)
+vmlib.edSetVector(tossEd, ent.origin, vmlib.edVector(player, ent.origin) + vector.create(0, 0, 30))
+vmlib.edSetVector(tossEd, ent.velocity, vector.create(0, 60, 99999))
+qwworldlib.linkEdict(svr.world, tossEd, false)
+qwsv.frame(svr, 0.05)
+t.check(vmlib.edVector(tossEd, ent.velocity).z <= 2000, "SV_CheckVelocity clamped to sv_maxvelocity")
+vmlib.edSetVector(tossEd, ent.velocity, vector.create(0, 60, 160))
+vmlib.edSetVector(tossEd, ent.origin, vmlib.edVector(player, ent.origin) + vector.create(0, 0, 30))
+qwworldlib.linkEdict(svr.world, tossEd, false)
+for _ = 1, 80 do
+	qwsv.frame(svr, 0.05)
+end
+t.check(
+	bit32.band(vmlib.edFloat(tossEd, ent.flags), qdl.FL_ONGROUND) ~= 0 and vmlib.edVector(tossEd, ent.velocity) == vector.zero,
+	"toss came to rest (SV_Physics_Toss / SV_PushEntity / ClipVelocity / SV_AddGravity)"
+)
+
 --------------------------------------------------------------------------
 -- frame updates: full frame, then a delta frame against the acked one
 
@@ -184,6 +262,7 @@ local function parsePlayerinfo(r: msg.Reader)
 	return info
 end
 
+local lastNailCount = 0
 local function parseFrame(r: msg.Reader, fromEnts)
 	local players = {}
 	local ents = nil
@@ -202,6 +281,7 @@ local function parseFrame(r: msg.Reader, fromEnts)
 			ents = qwents.parsePacketEntities(r, fromEnts, baselineFor)
 		elseif cmdByte == qwp.svc_nails then
 			local n = msg.readByte(r)
+			lastNailCount = n
 			for _ = 1, n * 6 do
 				msg.readByte(r)
 			end
@@ -252,5 +332,26 @@ for i = 1, #ents1 do
 	end
 end
 t.check(allMatch, "delta round-trip: every entity number and origin matches")
+
+-- SV_AddNailUpdate / SV_EmitNailUpdate: with a spike in flight the
+-- frame carries svc_nails
+for _ = 1, 12 do
+	qwsv.frame(svr, 0.05)
+end
+qwsv.executeCmd(svr, client, {
+	angles = vector.create(0, (spawnYaw + 180) % 360, 0),
+	forwardmove = 0,
+	sidemove = 0,
+	upmove = 0,
+	buttons = 1,
+	msec = 50,
+})
+lastNailCount = 0
+local nout = msg.newBuf(8000)
+client.netchan.incoming_sequence += 1
+client.delta_sequence = -1
+qwsv.writeEntitiesToClient(svr, client, nout)
+parseFrame(msg.reader(msg.snapshot(nout)), {})
+t.check(lastNailCount >= 1, `svc_nails carried the in-flight spike ({lastNailCount})`)
 
 t.finish("test_qwsv")

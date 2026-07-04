@@ -264,6 +264,41 @@ for _, pr in cl.prints do
 end
 t.check(sawSay, "conSay reached the client (PRINT_CHAT)")
 
+-- user commands over the wire: say broadcasts as chat, pause toggles,
+-- setinfo updates userinfo + rebroadcasts, pings answers
+cl.prints = {}
+qwcl.sendStringCmd(cl, "say hello all")
+qwcl.flush(cl)
+tick(0)
+tick(0)
+local sawChat = false
+for _, pr in cl.prints do
+	if pr.text:find("hello all") and pr.level == 3 then -- PRINT_CHAT
+		sawChat = true
+	end
+end
+t.check(sawChat, "SV_Say_f broadcast the chat line at PRINT_CHAT")
+
+qwcl.sendStringCmd(cl, "pause")
+qwcl.flush(cl)
+tick(0)
+t.check(svr.paused == true, "SV_TogglePause paused the server")
+qwcl.sendStringCmd(cl, "pause")
+qwcl.flush(cl)
+tick(0)
+t.check(not svr.paused, "second pause unpaused")
+
+qwcl.sendStringCmd(cl, "setinfo topcolor 4")
+qwcl.flush(cl)
+tick(0)
+t.eq(sclient.userinfo.topcolor, "4", "SV_SetInfo_f updated the server-side userinfo")
+
+qwcl.sendStringCmd(cl, "pings")
+qwcl.flush(cl)
+tick(0)
+tick(0)
+t.check(cl.players[0] ~= nil and cl.players[0].ping ~= nil, "SV_Pings_f answered with svc_updateping")
+
 t.check(qwsv.kick(svr, sclient.userid), "kick found the userid")
 t.check(not sclient.active, "kicked client dropped")
 

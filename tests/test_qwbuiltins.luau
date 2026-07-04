@@ -418,6 +418,18 @@ callStr(70, "e1m4")
 t.eq(svr.changelevelTo, "e1m3", "PF_changelevel latches once (double-issue guard as C)")
 
 --------------------------------------------------------------------------
+-- WriteDest MSG_ONE: routes onto the target client's netchan reliable
+-- stream (was a dead buffer before the 2026-07-04 fix wave)
+vmlib.setGlobalInt(vm, svr.qdefs.glob.msg_entity, svr.clients[1].edict.num)
+local nc1 = svr.clients[1].netchan.message
+local ncBefore = nc1.cursize
+vmlib.setGlobalFloat(vm, P0, 1) -- MSG_ONE
+vmlib.setGlobalFloat(vm, P1, 42)
+vm.argc = 2
+B[52](vm)
+t.check(nc1.cursize == ncBefore + 1 and buffer.readu8(nc1.data, ncBefore) == 42, "WriteDest MSG_ONE lands on the client netchan reliable stream")
+
+--------------------------------------------------------------------------
 -- VM dispatch guard: PR_ExecuteProgram null-function error
 local okNull = pcall(function()
 	vmlib.exec(vm, 0)

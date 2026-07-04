@@ -56,6 +56,17 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (qw-server user commands + physics battery)
+- test_qw_loopback (+6 checks, 43): say broadcasts at PRINT_CHAT, pause
+  toggles both ways, setinfo updates server-side userinfo, pings
+  answers with svc_updateping. test_qwsv (+7 checks, 33): spike wall
+  impact removes it (SV_Impact), strafing leans the player (server
+  V_CalcRoll — roll reads pre-move velocity, so strafe twice), door
+  use drives a full SV_Push travel/return cycle, toss battery with the
+  sv_maxvelocity clamp, svc_nails carries an in-flight spike.
+  test_qwbuiltins (+1, 55): WriteDest MSG_ONE lands on the netchan
+  reliable stream. 23 qw-server rows earned.
+
 ### 2026-07-04 (NQ builtins battery)
 - tests/test_nqbuiltins.luau (53 checks): the NQ twin of the QW
   register-level battery, plus NQ-specific coverage — wire-writing
