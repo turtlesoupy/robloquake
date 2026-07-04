@@ -1457,6 +1457,7 @@ return function()
 			qwcl.sendStringCmd(cl, pendingCmd)
 		end
 		Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
+		Workspace:SetAttribute("QW_OnGround", ownState.onground)
 		Workspace:SetAttribute("QW_State", cl.state)
 		Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
 		Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)

@@ -51,10 +51,23 @@ rows.
 |---|---|---|---|---|
 | S1 | QW two-client loopback: connect, duel, frag on BOTH scoreboards, death/respawn, changelevel inventory carry | VERIFIED | tests/test_scenario_qw.luau (25 checks): shotgun duel over the wire, frag rebroadcast to both clients, DEAD_DEAD→respawn at full health, SetChangeParms carry incl. the authentic shells-floor-25 | `lune run tests/test_scenario_qw.luau` |
 | S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | VERIFIED | tests/test_scenario_nq.luau (30 checks): shells picked up by really walking over the box (SV_TouchLinks), a live grunt shoots the player (svc_damage pain flash on the client), earned inventory + damaged health carry to e1m2, then a save/load round-trip restores health/shells/origin/time and the game keeps running | `lune run tests/test_scenario_nq.luau` |
-| S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | PENDING | — | TBD |
-| S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | — | TBD |
+| S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | PENDING | Anchor DEFINED + staged + MCP-visually confirmed (nq-e1m1-start: e1m1, deathmatch 0, pos 480,-352,88, yaw 90, viewsize 100 — start hall, shotgun, full sbar render correctly). Pixel export to disk blocked: Studio MCP returns captures inline only, and macOS screencapture needs a one-time Screen Recording grant for the shell. | tools/verify_visual_anchor.luau procedure; then commit docs/coverage/evidence/nq-e1m1-start.png + .txt |
+| S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | Anchor DEFINED + staged + MCP-visually confirmed (qw-dm3-stairs: dm3, pos -64,470,44, yaw 90 — the truth-course staircase, QW sbar + view weapon render correctly). Same pixel-export blocker as S3. | tools/verify_visual_anchor.luau procedure; then commit docs/coverage/evidence/qw-dm3-stairs.png + .txt |
 
 ## Changelog
+
+### 2026-07-04 (Studio verify pass 1)
+- Checked-in Studio verification tooling: tools/verify_visual_anchor.luau
+  (deterministic S3/S4 anchor staging through the SVDBG_SetOrigin +
+  RQ_Force* harness hooks) and tools/verify_stairsmooth_qw.luau (stair
+  smoothing measured at heartbeat rate). The QW boot gained the same
+  SVDBG_SetOrigin debug teleport the NQ boot has (stuck-probing), and a
+  QW_OnGround diagnostic attribute.
+- Stair smoothing verified live on the dm3 staircase: camera max rise
+  10.04 units/frame vs 14.6-unit player risers over 181 samples — the
+  oldz glide + 12-cap behave C-shaped. Both S3/S4 anchors stage and
+  render correctly (MCP capture confirmed); committing the .png evidence
+  awaits a pixel-export path (Screen Recording grant or manual capture).
 
 ### 2026-07-04 (nq-server sweep 2: host commands, cvars, SZ overflow fix)
 - test_server gains the host_cmd.c battery (god/notarget/noclip/fly/

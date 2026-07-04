@@ -173,6 +173,41 @@ return function(ctx: Ctx)
 				local vmlib = require(engine.progs.vm)
 				local o = vmlib.edVector(c1.edict, svr.qdefs.ent.origin)
 				ServerStorage:SetAttribute("SV_Origin", Vector3.new(o.x, o.y, o.z))
+
+				-- debug teleport (same contract as the NQ boot's
+				-- SVDBG_SetOrigin): probe the exact spot then nearby
+				-- offsets, keep the first non-solid placement
+				local tp = ServerStorage:GetAttribute("SVDBG_SetOrigin")
+				if typeof(tp) == "Vector3" then
+					ServerStorage:SetAttribute("SVDBG_SetOrigin", nil)
+					local qwworld = require(engine.qw.qwworld)
+					local ent = svr.qdefs.ent
+					local before = vmlib.edVector(c1.edict, ent.origin)
+					local candidates = { vector.create(tp.X, tp.Y, tp.Z) }
+					for _, d in { 48, 96, 144 } do
+						table.insert(candidates, vector.create(tp.X + d, tp.Y, tp.Z))
+						table.insert(candidates, vector.create(tp.X - d, tp.Y, tp.Z))
+						table.insert(candidates, vector.create(tp.X, tp.Y + d, tp.Z))
+						table.insert(candidates, vector.create(tp.X, tp.Y - d, tp.Z))
+						table.insert(candidates, vector.create(tp.X, tp.Y, tp.Z + d))
+					end
+					local placed = false
+					for _, cand in candidates do
+						vmlib.edSetVector(c1.edict, ent.origin, cand)
+						vmlib.edSetVector(c1.edict, ent.velocity, vector.zero)
+						qwworld.linkEdict(svr.world, c1.edict, false)
+						if not qwworld.testEntityPosition(svr.world, c1.edict) then
+							placed = true
+							print("[svdbg] qw teleported player to", cand)
+							break
+						end
+					end
+					if not placed then
+						vmlib.edSetVector(c1.edict, ent.origin, before)
+						qwworld.linkEdict(svr.world, c1.edict, false)
+						print("[svdbg] qw teleport failed: all candidates solid")
+					end
+				end
 			end
 		end
 	end)
