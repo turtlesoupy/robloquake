@@ -161,3 +161,14 @@ it enters here in the same commit.
   proportionally smaller HUD strip). EditableMesh/EditableImage content
   confirmed rendering inside ViewportFrames. Platform delta: Ambient-
   only shading in the frame; the gun was already flat-lit via setLight.
+
+### 2026-07-04 (evidence reset)
+- The VERIFIED status was re-audited mechanically: rows keep VERIFIED only
+  if their evidence is re-runnable (cited test/check or compiled-C truth
+  harness). 148 rows whose evidence was session prose or an unchecked-in
+  screenshot were demoted to PENDING with the prior claim preserved inline
+  (DEMOTED marker) — including several of this week's own screenshot
+  verifications, since the captures were never committed. Standard going
+  forward: VERIFIED requires a named test check or a screenshot committed
+  under docs/coverage/evidence/ with capture context. Post-reset VERIFIED
+  counts: nq-server 124, nq-client 17, qw-server 66, qw-client 45.

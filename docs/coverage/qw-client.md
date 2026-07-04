@@ -69,7 +69,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ParseStatic | `parseStatic` + qwclient `spawnPendingStatics` | PENDING | Parsed in the loopback signon stream (misparse would desync the message) but no assert; rendering path (entrender per kind) not individually screenshot-verified. |
 | CL_ParseStaticSound | `parseStaticSound` + `soundlib.static` | PENDING | Same: parsed in signon, playback not asserted (soundlib.static live-verified under the NQ boot only). |
 | CL_ParseStartSoundPacket | `parseStartSound` | VERIFIED | Loopback: "svc_sound guncock arrived through the PHS multicast" (vol/atten/ent/channel decode). |
-| CL_ParseClientdata | head of `parseServerMessage` | VERIFIED | parsecount = incoming_acknowledged, receivedtime, latency drift (drift-up 0.001 rule). Prediction convergence (<1 unit) depends on it. |
+| CL_ParseClientdata | head of `parseServerMessage` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): parsecount = incoming_acknowledged, receivedtime, latency drift (drift-up 0.001 rule). Prediction convergence (<1 unit) depends on it. |
 | CL_NewTranslation | — | UNIMPLEMENTED | Colormap skin translation for players journaled open (backlog "STILL OPEN"). |
 | CL_ProcessUserInfo | inline in `svc_updateuserinfo`/`svc_setinfo` handlers | PENDING | Re-derives name + spectator (incl. `*spectator`); no topcolor/bottomcolor/skin processing. |
 | CL_UpdateUserinfo | `svc_updateuserinfo` handler | VERIFIED | Loopback: "own player info received" (name "looper", userid parse). |
@@ -101,10 +101,10 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_AllocDlight | qwclient `allocDlight` | PENDING | Key-match → expired → pool-append (cap 32, overwrite slot 1) per C; no direct test. |
 | CL_NewDlight | inlined at call sites in `handleTempEntity`/`relinkEntities` | PENDING | Explosion/muzzleflash/EF radii and lifetimes match C values. |
 | CL_DecayLights | heartbeat dlight block | PENDING | `radius -= dt*decay`, die-time culling; feeds `worldmesh.updateDlights`. |
-| CL_ParseDelta | `qwents.parseDelta` | VERIFIED | qwents: "moved origin applied", "new entity fields", U_MOREBITS byte, all U_ field reads. |
+| CL_ParseDelta | `qwents.parseDelta` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwents: "moved origin applied", "new entity fields", U_MOREBITS byte, all U_ field reads. |
 | FlushEntityPacket | too-old branch of `qwcl` `parsePacketEntitiesMsg` | PENDING | Sets invalid+validsequence=0 and parse-discards; not reachable in the lockstep loopback (never 63 packets behind). |
 | CL_ParsePacketEntities | `qwents.parsePacketEntities` + `qwcl` `parsePacketEntitiesMsg` | VERIFIED | qwents: full update, delta update, unchanged-carry, U_REMOVE, baseline-new (7 checks); loopback: "first packetentities frame received", "validsequence tracking", "packet entities present". Delta: from-sequence mismatch only warns (C's exactness kept, message differs). |
-| CL_LinkPacketEntities | qwclient `relinkEntities` packet-ents loop | VERIFIED | Live 115a438/9ecc594: "items + ammo boxes render, 8 ents at dm3 yard spawn". EF_ROTATE autorotate, EF_BRIGHTLIGHT/DIMLIGHT dlights, model-flag trails + rocket glow ported. Delta: no colormap translation, no lerp (matches QW snap behavior), brush ents render via cached worldmesh templates. |
+| CL_LinkPacketEntities | qwclient `relinkEntities` packet-ents loop | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Live 115a438/9ecc594: "items + ammo boxes render, 8 ents at dm3 yard spawn". EF_ROTATE autorotate, EF_BRIGHTLIGHT/DIMLIGHT dlights, model-flag trails + rocket glow ported. Delta: no colormap translation, no lerp (matches QW snap behavior), brush ents render via cached worldmesh templates. |
 | CL_ClearProjectiles | `cl.nails = {}` per parsed message | PENDING | Nails live one message, per C. |
 | CL_ParseProjectiles | `qwcl` `parseNails` | PENDING | 6-byte bit-packed decode (x/y/z *2-4096, pitch 16-step, yaw byte) matches C; no nail-firing test. |
 | CL_LinkProjectiles | nails loop in `relinkEntities` (`spikeindex`) | PENDING | spike.mdl slot located from model_name like C's cl_spikeindex. |
@@ -115,7 +115,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_SetSolidEntities | `qwcl` `buildPhysents(false)` | VERIFIED | World + brush-model packet ents as physents; loopback prediction converges against them. |
 | CL_SetUpPlayerPrediction | `qwcl.predictedPlayerOrigins` | PENDING | Half-elapsed-move prediction capped 255ms, local player uses last predicted frame; single-client tests can't exercise other-player paths. |
 | CL_SetSolidPlayers | `buildPhysents(true)` player boxes | PENDING | Non-dead others at predicted origins with player mins/maxs; same single-client limit. |
-| CL_EmitEntities | `relinkEntities` orchestration in heartbeat | VERIFIED | Live: 8 ents at dm3 yard spawn render; keyed create/destroy replaces the visedict rebuild. |
+| CL_EmitEntities | `relinkEntities` orchestration in heartbeat | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Live: 8 ents at dm3 yard spawn render; keyed create/destroy replaces the visedict rebuild. |
 
 ## cl_pred.c
 
@@ -182,8 +182,8 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. |
 | V_CalcViewRoll | camera block (roll + dead branch) | PENDING | 80° death roll at viewheight -16 ported; PF_DEAD or health<=0 triggers. |
 | V_CalcIntermissionRefdef | intermission branch | PENDING | Fixed simorg/simangles from svc_intermission, no bob/height; no idle sway (see V_AddIdle). |
-| V_CalcRefdef | camera block in heartbeat | VERIFIED | Re-verified WITH the HUD present (the prior VERIFIED predated the sbar and missed the vrect occlusion): bob/roll/punch/dead/gib/intermission + vrect view-model placement, screenshot + live projection measurements 2026-07-04. Deltas: no view_ofs from server, gun bob simplified to forward push, gun lag smoothing (CalcGunAngle) still absent. |
-| DropPunchAngle | `punchangle -= 10*dt`, clamp 0 | VERIFIED | Backlog 2ee4228 note: "QW DropPunchAngle is verbatim (kicks last one frame — authentic QW)". svc_smallkick/bigkick set -2/-4. |
+| V_CalcRefdef | camera block in heartbeat | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Re-verified WITH the HUD present (the prior VERIFIED predated the sbar and missed the vrect occlusion): bob/roll/punch/dead/gib/intermission + vrect view-model placement, screenshot + live projection measurements 2026-07-04. Deltas: no view_ofs from server, gun bob simplified to forward push, gun lag smoothing (CalcGunAngle) still absent. |
+| DropPunchAngle | `punchangle -= 10*dt`, clamp 0 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Backlog 2ee4228 note: "QW DropPunchAngle is verbatim (kicks last one frame — authentic QW)". svc_smallkick/bigkick set -2/-4. |
 | V_RenderView | camera.CFrame via `qcoords.cframe` | SUBSTITUTED | Roblox camera replaces the software refresh entry; live 547df88 world renders through it. |
 | V_Init | — | SUBSTITUTED | No cvar/command registration. |
 
@@ -204,9 +204,9 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| CalcFov | `qcoords.calcFovY` | VERIFIED | Commit 2ee4228 (backlog): fov cvar horizontal at true viewport aspect (16:9 fov 90 → 58.7 vertical), viewport resize tracked, "gun placement verified exact vs v_shot.mdl authoring". |
+| CalcFov | `qcoords.calcFovY` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Commit 2ee4228 (backlog): fov cvar horizontal at true viewport aspect (16:9 fov 90 → 58.7 vertical), viewport resize tracked, "gun placement verified exact vs v_shot.mdl authoring". |
 | SCR_CenterPrint / SCR_DrawCenterString / SCR_CheckDrawCenterString / SCR_EraseCenterString | centerprints drained to `print()` | PENDING | Text reaches the Studio output only; on-screen center string is part of the console/HUD follow-up. |
-| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | fov_y from the vrect (window minus sb_lines=48 virtual px, screen.c:255-259) and the view model rotated up so the vrect bottom edge lands at the sbar top (Roblox cameras cannot shift the projection center — the world image stays window-centered, a documented sb/2 crop delta). Live-measured: muzzle 83% vs sbar top 86%, matching the C-projected 84%. |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): fov_y from the vrect (window minus sb_lines=48 virtual px, screen.c:255-259) and the view model rotated up so the vrect bottom edge lands at the sbar top (Roblox cameras cannot shift the projection center — the world image stays window-centered, a documented sb/2 crop delta). Live-measured: muzzle 83% vs sbar top 86%, matching the C-projected 84%. |
 | SCR_SizeUp_f / SCR_SizeDown_f | — | UNIMPLEMENTED | viewsize scaling (fidelity backlog). |
 | SCR_Init | — | SUBSTITUTED | |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. |
@@ -334,9 +334,9 @@ Base MSG_Read/Write* live in the shared `src/shared/engine/common/msg.luau` (cov
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| MSG_WriteDeltaUsercmd | `qwents.writeDeltaUsercmd` | VERIFIED | qwents: full round trip (CM_ bits, msec always written). |
+| MSG_WriteDeltaUsercmd | `qwents.writeDeltaUsercmd` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwents: full round trip (CM_ bits, msec always written). |
 | MSG_ReadDeltaUsercmd | `qwents.readDeltaUsercmd` | VERIFIED | qwents: forwardmove/side/buttons/impulse/msec exact; loopback replays them through the server. |
-| MSG_WriteAngle16 / MSG_ReadAngle16 | `msg.writeAngle16` / `msg.readAngle16` | VERIFIED | qwents: "cmd angle1/2 round-trips (angle16, mod 360)" — signed-short congruence semantics preserved. |
+| MSG_WriteAngle16 / MSG_ReadAngle16 | `msg.writeAngle16` / `msg.readAngle16` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwents: "cmd angle1/2 round-trips (angle16, mod 360)" — signed-short congruence semantics preserved. |
 | MSG_WriteAngle (QW byte angle) | `msg.writeAngleQW` | VERIFIED | Entity angles in qwents delta rows round-trip in the qwents suite. |
 
 ## wad.c / draw.c (2D assets & drawing — as relevant)
@@ -410,3 +410,5 @@ Highest-impact gaps (all journaled in the backlog):
 4. **V_ParseDamage consumers + cshifts** — damage parsed but no view kick or screen blends (`V_Calc*Cshift`, `V_UpdatePalette` family).
 5. **CL_NewTranslation / skin colormaps + CL_AddFlagModels** — no player color translation or CTF flag attachment (flagindex ready).
 Also noteworthy: PM_WaterMove/CheckWaterJump are ported verbatim but the C ground-truth course never enters water; S_UpdateAmbientSounds and sound clearing on level change are unwired in the QW boot.
+
+> Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 10 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

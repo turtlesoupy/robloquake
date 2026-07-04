@@ -82,7 +82,7 @@ Status legend:
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | SV_AddToFatPVS | `addToFatPVS` (qwsv.luau:1478) | VERIFIED | test_qwsv frame writes (entities appear exactly when in PVS); same 8-unit plane straddle recursion. |
-| SV_FatPVS | `qwsv.fatPVS` (qwsv.luau:1507) | VERIFIED | Same tests; allocates per call instead of static buffer (GC platform). |
+| SV_FatPVS | `qwsv.fatPVS` (qwsv.luau:1507) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same tests; allocates per call instead of static buffer (GC platform). |
 | SV_AddNailUpdate | inline in `writeEntitiesToClient` (qwsv.luau:1708) | PENDING | Nail/supernail modelindex match, MAX_NAILS=32, overflow nails dropped (not sent as packet entities) — matches C. No test spawns nails. |
 | SV_EmitNailUpdate | `emitNailUpdate` (qwsv.luau:1652) | PENDING | 48-bit xyzpy packing bit-for-bit from C; test_qwsv parser skips nails bytes but none are emitted in the fixture. |
 | SV_WriteDelta | `qwents.writeDelta` (qwents.luau:141) | VERIFIED | test_qwents: full + delta round-trips (moved/unchanged/removed/new-from-baseline); 0.1 origin epsilon, U_MOREBITS/U_REMOVE framing exact. |
@@ -113,7 +113,7 @@ Status legend:
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| SV_ModelIndex | `svr.modelIndex` hook (qwsv.luau:212) | VERIFIED | Used by baselines/stats/setmodel throughout the verified tests. Linear precache scan, 0-based like C. |
+| SV_ModelIndex | `svr.modelIndex` hook (qwsv.luau:212) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Used by baselines/stats/setmodel throughout the verified tests. Linear precache scan, 0-based like C. |
 | SV_FlushSignon | — | SUBSTITUTED | C chunks the signon into 512-byte buffers for UDP; the port keeps one signon buffer and sends it whole in prespawn (no packet size limit on the transport). |
 | SV_CreateBaseline | `qwsv.createBaseline` (qwsv.luau:368) | VERIFIED | test_qwsv "baselines created" + delta-from-baseline round trip; loopback ">20 baselines received". Player slots forced to playermodel/colormap as in C. |
 | SV_SaveSpawnparms | qw/qwsv.luau:saveSpawnparms | VERIFIED | test_qw_loopback "qw nailgun carried"/"qw nail count carried": SetChangeParms on the outgoing progs, full wire re-handshake onto e1m2, DecodeLevelParms restores items+ammo. serverflags latched. |
@@ -144,8 +144,8 @@ sv_phys port, ABI injected via qwdefs). Primary evidence: test_qwsv boots and se
 | SV_CheckWaterTransition | `checkWaterTransition` (qwphys.luau:740) | PENDING | |
 | SV_Physics_Toss | `sv_phys.physicsToss` (qwphys.luau:768) | VERIFIED | test_qwsv shotgun path spawns/moves newmis through it; bounce/backoff 1.5/1.0 as C. |
 | SV_Physics_Step | `physicsStep` (qwphys.luau:821) | PENDING | Freefall + dland2 hitsound; QW deathmatch has no monsters so only misc step ents exercise it. |
-| SV_ProgStartFrame | inlined at top of `sv_phys.physics` (qwphys.luau:854) | VERIFIED | StartFrame exec with self/other/time reset; runs every test frame. |
-| SV_RunEntity | movetype dispatch in `sv_phys.physics` (qwphys.luau:872) | VERIFIED | Client slots skipped ("QW: clients move in SV_RunCmd"), which the movement tests depend on. Delta: C's per-entity `lastruntime` throttle (entities run at most every 50 ms between client packets) is absent — entities advance once per server frame like NQ. |
+| SV_ProgStartFrame | inlined at top of `sv_phys.physics` (qwphys.luau:854) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): StartFrame exec with self/other/time reset; runs every test frame. |
+| SV_RunEntity | movetype dispatch in `sv_phys.physics` (qwphys.luau:872) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Client slots skipped ("QW: clients move in SV_RunCmd"), which the movement tests depend on. Delta: C's per-entity `lastruntime` throttle (entities run at most every 50 ms between client packets) is absent — entities advance once per server frame like NQ. |
 | SV_RunNewmis | inlined after each entity (qwphys.luau:898) + `postRunCmd` | VERIFIED | test_qwsv: missile first-0.05s move via physicsToss (guncock/shell test passes through PlayerPostThink newmis path). |
 | SV_Physics | `sv_phys.physics` (qwphys.luau:849) | VERIFIED | test_qwsv/test_qw_loopback every tick; force_retouch decrement; sv.time advanced by qwsv.frame, not here — matches C split. |
 | SV_SetMoveVars | movevars built per-cmd in `qwsv.runCmd` (qwsv.luau:674) | SUBSTITUTED | C copies cvars into a global `movevars` once per frame for pmove; port builds the table per RunCmd call from the same cvars — same values, no global. Verified transitively by loopback prediction convergence (server and client pmove use identical movevars). |
@@ -196,21 +196,21 @@ evidence is transitive through test_qwsv/test_qw_loopback movement, touch trigge
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| SV_InitBoxHull | `initBoxHull` (qwworld.luau:99) | VERIFIED | All entity-vs-bbox traces in the verified tests run through it. |
-| SV_HullForEntity (+SV_HullForBox) | `world.hullForEntity` / `hullForBox` (qwworld.luau:187,200) | VERIFIED | Hull select by size (hull 0/1/2) for SOLID_BSP; movement tests depend on hull1 selection. |
-| SV_CreateAreaNode | `createAreaNode` (qwworld.luau:138) | VERIFIED | depth 4 / AREA_NODES tree as C. |
-| SV_ClearWorld | `world.new` (qwworld.luau:167) | VERIFIED | Built per spawnServer in every test. |
-| SV_UnlinkEdict | `world.unlinkEdict` (qwworld.luau:427) | VERIFIED | Hooked into vm.unlinkEdict for ED_Free (qwbuiltins.luau:70). |
+| SV_InitBoxHull | `initBoxHull` (qwworld.luau:99) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): All entity-vs-bbox traces in the verified tests run through it. |
+| SV_HullForEntity (+SV_HullForBox) | `world.hullForEntity` / `hullForBox` (qwworld.luau:187,200) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Hull select by size (hull 0/1/2) for SOLID_BSP; movement tests depend on hull1 selection. |
+| SV_CreateAreaNode | `createAreaNode` (qwworld.luau:138) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): depth 4 / AREA_NODES tree as C. |
+| SV_ClearWorld | `world.new` (qwworld.luau:167) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Built per spawnServer in every test. |
+| SV_UnlinkEdict | `world.unlinkEdict` (qwworld.luau:427) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Hooked into vm.unlinkEdict for ED_Free (qwbuiltins.luau:70). |
 | SV_TouchLinks | `touchLinks` (qwworld.luau:438) | VERIFIED | test_qwsv item pickup implied by play; trigger touches fire during runCmd linkEdict(touch=true). |
 | SV_FindTouchedLeafs | `findTouchedLeafs` (qwworld.luau:497) | VERIFIED | PVS visibility of entities in test_qwsv frames depends on leafnums being right. |
-| SV_LinkEdict | `world.linkEdict` (qwworld.luau:528) | VERIFIED | Same tests. |
+| SV_LinkEdict | `world.linkEdict` (qwworld.luau:528) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same tests. |
 | SV_HullPointContents | `world.hullPointContents` (qwworld.luau:236) | VERIFIED | Waterlevel checks in settle test. |
-| SV_PointContents | `world.pointContents` (qwworld.luau:260) | VERIFIED | Delta: QW C has no CONTENTS_CURRENT truncation (that is NQ); port keeps `truePointContents` split like NQ — both return the same values for id1 maps. |
+| SV_PointContents | `world.pointContents` (qwworld.luau:260) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Delta: QW C has no CONTENTS_CURRENT truncation (that is NQ); port keeps `truePointContents` split like NQ — both return the same values for id1 maps. |
 | SV_RecursiveHullCheck | `world.recursiveHullCheck` (qwworld.luau:290) | VERIFIED | Same midpoint/epsilon algorithm verified against C trace ground truth on the NQ twin; QW copy exercised every test tick. |
-| SV_ClipMoveToEntity | `world.clipMoveToEntity` (qwworld.luau:395) | VERIFIED | |
-| SV_ClipToLinks | `clipToLinks` (qwworld.luau:616) | VERIFIED | Includes the pass-owner and MOVE_NOMONSTERS rules. |
-| SV_MoveBounds | `moveBounds` (qwworld.luau:710) | VERIFIED | |
-| SV_Move | `world.move` (qwworld.luau:717) | VERIFIED | QC traceline + all physics use it. |
+| SV_ClipMoveToEntity | `world.clipMoveToEntity` (qwworld.luau:395) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
+| SV_ClipToLinks | `clipToLinks` (qwworld.luau:616) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Includes the pass-owner and MOVE_NOMONSTERS rules. |
+| SV_MoveBounds | `moveBounds` (qwworld.luau:710) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
+| SV_Move | `world.move` (qwworld.luau:717) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): QC traceline + all physics use it. |
 | (world.h) SV_TestEntityPosition | `world.testEntityPosition` (qwworld.luau:757) | PENDING | Used by pushMove crush logic; untested. |
 
 ## pr_cmds.c
@@ -221,17 +221,17 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| PF_VarString | `varString` (qwbuiltins.luau:35) | VERIFIED | All print builtins go through it in the passing tests. |
+| PF_VarString | `varString` (qwbuiltins.luau:35) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): All print builtins go through it in the passing tests. |
 | PF_error (10) / PF_objerror (11) | qwbuiltins.luau:155,161 | PENDING | Luau error() instead of SV_Error/ED_Free+abort; not triggered in tests. |
 | PF_makevectors (1) | qwbuiltins.luau:75 | VERIFIED | Weapon fire aim in test_qwsv uses v_forward. |
-| PF_setorigin (2) | qwbuiltins.luau:82 | VERIFIED | Entity spawn placement in verified boot. |
-| PF_setsize (4) / SetMinMaxSize | qwbuiltins.luau:89,126 | VERIFIED | Player hull size drives verified pmove offset math. |
-| PF_setmodel (3) | qwbuiltins.luau:99 | VERIFIED | Precache index + brush model min/max; boot depends on it. |
+| PF_setorigin (2) | qwbuiltins.luau:82 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Entity spawn placement in verified boot. |
+| PF_setsize (4) / SetMinMaxSize | qwbuiltins.luau:89,126 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Player hull size drives verified pmove offset math. |
+| PF_setmodel (3) | qwbuiltins.luau:99 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Precache index + brush model min/max; boot depends on it. |
 | PF_bprint (23) | qwbuiltins.luau:386 | PENDING | QW signature (level, string) ported; broadcast receipt untested. |
 | PF_sprint (24) | qwbuiltins.luau:392 | VERIFIED | QW signature (client, level, string); loopback receives prints. |
 | PF_centerprint (73) | qwbuiltins.luau:763 | UNIMPLEMENTED (broken wiring) | Writes to `client.message`, a buffer nothing ever flushes to the wire (the QW send path only drains netchan.message + client.datagram) — centerprints never reach clients. Should route to netchan.message. |
-| PF_normalize (9) / PF_vlen (12) / PF_vectoyaw (13) / PF_vectoangles (51) | qwbuiltins.luau:149,170,174,647 | VERIFIED | Aim/movement math in verified play; trunc-toward-zero yaw as C. |
-| PF_random (7) | qwbuiltins.luau:135 | VERIFIED | Deterministic LCG (shared with NQ port) — SUBSTITUTED RNG source, same distribution shape; drives item spawns in verified boot. |
+| PF_normalize (9) / PF_vlen (12) / PF_vectoyaw (13) / PF_vectoangles (51) | qwbuiltins.luau:149,170,174,647 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Aim/movement math in verified play; trunc-toward-zero yaw as C. |
+| PF_random (7) | qwbuiltins.luau:135 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Deterministic LCG (shared with NQ port) — SUBSTITUTED RNG source, same distribution shape; drives item spawns in verified boot. |
 | PF_ambientsound (74) | qwbuiltins.luau:775 | VERIFIED | svc_spawnstaticsound into signon; loopback parses signon without error. |
 | PF_sound (8) | qwbuiltins.luau:140 | VERIFIED | test_qwsv guncock in soundLog; loopback hears it via PHS. |
 | PF_break (6) | qwbuiltins.luau:131 | PENDING | |
@@ -240,27 +240,27 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_newcheckclient / PF_checkclient (17) | qwbuiltins.luau:219,250 | UNIMPLEMENTED (broken wiring) | Logic fully ported but references `bsplib` **which is never required** in qwbuiltins.luau — dangling global, errors if qwprogs calls checkclient. |
 | PF_stuffcmd (21) | qwbuiltins.luau:352 | VERIFIED | Handshake "skins"/"cmd spawn" stufftexts drive the verified loopback flow via svr.clientCommands. |
 | PF_localcmd (46) | qwbuiltins.luau:605 | PENDING | Only changelevel/restart routed (into changelevelTo, itself unconsumed — see SV_Map_f row); others logged. |
-| PF_cvar (45) / PF_cvar_set (72) | qwbuiltins.luau:600,759 | VERIFIED | qwprogs reads deathmatch/teamplay in verified boot. |
-| PF_findradius (22) | qwbuiltins.luau:361 | VERIFIED | Explosion/pickup logic in verified play path. |
-| PF_dprint (25) | qwbuiltins.luau:404 | VERIFIED | |
-| PF_ftos (26) / PF_vtos (27) / PF_fabs (43) | qwbuiltins.luau:408,420,529 | VERIFIED | %5.1f/%d formatting as C. |
-| PF_Spawn (14) / PF_Remove (15) | qwbuiltins.luau:188,192 | VERIFIED | Entity lifecycle in verified boot/play. |
-| PF_Find (18) | qwbuiltins.luau:283 | VERIFIED | Spawn-point selection in verified spawn. |
-| PR_CheckEmptyString | `checkEmptyString` (qwbuiltins.luau:303) | VERIFIED | |
-| PF_precache_file (68/77) | qwbuiltins.luau:723 | VERIFIED | No-op returning parm, as C. |
-| PF_precache_sound (19/76) / PF_precache_model (20/75) | qwbuiltins.luau:309,328 | VERIFIED | Precache lists feed verified soundlist/modellist; ss_loading gate as C. |
+| PF_cvar (45) / PF_cvar_set (72) | qwbuiltins.luau:600,759 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwprogs reads deathmatch/teamplay in verified boot. |
+| PF_findradius (22) | qwbuiltins.luau:361 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Explosion/pickup logic in verified play path. |
+| PF_dprint (25) | qwbuiltins.luau:404 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
+| PF_ftos (26) / PF_vtos (27) / PF_fabs (43) | qwbuiltins.luau:408,420,529 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): %5.1f/%d formatting as C. |
+| PF_Spawn (14) / PF_Remove (15) | qwbuiltins.luau:188,192 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Entity lifecycle in verified boot/play. |
+| PF_Find (18) | qwbuiltins.luau:283 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Spawn-point selection in verified spawn. |
+| PR_CheckEmptyString | `checkEmptyString` (qwbuiltins.luau:303) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
+| PF_precache_file (68/77) | qwbuiltins.luau:723 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): No-op returning parm, as C. |
+| PF_precache_sound (19/76) / PF_precache_model (20/75) | qwbuiltins.luau:309,328 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Precache lists feed verified soundlist/modellist; ss_loading gate as C. |
 | PF_coredump (28) / PF_traceon (29) / PF_traceoff (30) / PF_eprint (31) | qwbuiltins.luau:426-435 | PENDING | Debug stubs (coredump prints a notice; eprint no-op). |
 | PF_walkmove (32) | qwbuiltins.luau:437 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global (no require) — see sv_move.c section. |
-| PF_droptofloor (34) | qwbuiltins.luau:461 | VERIFIED | Items settle onto floors in verified boot (item_shells present at valid origins). |
+| PF_droptofloor (34) | qwbuiltins.luau:461 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Items settle onto floors in verified boot (item_shells present at valid origins). |
 | PF_lightstyle (35) | qwbuiltins.luau:487 | PENDING (partial bug) | Registry write works (spawnF sends styles — loopback "lightstyles received"). **Bug:** the live-broadcast branch compares `svr.state ~= svr.ss_active` where `ss_active` is nil (state is 2), so it always early-returns; and it writes to unflushed `client.message` anyway — runtime style changes never reach connected clients. |
-| PF_rint (36) / PF_floor (37) / PF_ceil (38) | qwbuiltins.luau:507-517 | VERIFIED | rint rounds half away from zero as C. |
+| PF_rint (36) / PF_floor (37) / PF_ceil (38) | qwbuiltins.luau:507-517 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): rint rounds half away from zero as C. |
 | PF_checkbottom (40) | qwbuiltins.luau:519 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global. |
 | PF_pointcontents (41) | qwbuiltins.luau:524 | VERIFIED | Water checks in verified play. |
-| PF_nextent (47) | qwbuiltins.luau:619 | VERIFIED | |
+| PF_nextent (47) | qwbuiltins.luau:619 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
 | PF_aim (44) | qwbuiltins.luau:533 | PENDING | Full port incl. teamplay filter and sv_aim cvar; QW id1 sets sv_aim=2 (aim disabled: dist<bestdist never true) so play never exercises the assist branch. |
 | PF_changeyaw (49) | qwbuiltins.luau:643 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global. |
 | WriteDest / Write_GetClient | `writeDest` (qwbuiltins.luau:674) | PENDING | MSG_MULTICAST added (QW). **Gap:** MSG_ONE returns unflushed `client.message` (C uses ClientReliableWrite → netchan) and MSG_BROADCAST returns `svr.datagram` which is never copied to clients (see SV_UpdateToReliableMessages row) — both destinations are dead ends on the wire. MSG_MULTICAST (the one id1 QW QC actually uses for temp entities) is live and loopback-verified via sounds. |
-| PF_WriteByte..PF_WriteEntity (52-59) | qwbuiltins.luau:694-717 | VERIFIED | Temp-entity writes ride MSG_MULTICAST through verified svMulticast; WriteAngle uses NQ byte angle (C QW server also writes byte angles here). |
+| PF_WriteByte..PF_WriteEntity (52-59) | qwbuiltins.luau:694-717 | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Temp-entity writes ride MSG_MULTICAST through verified svMulticast; WriteAngle uses NQ byte angle (C QW server also writes byte angles here). |
 | PF_makestatic (69) | qwbuiltins.luau:728 | VERIFIED | svc_spawnstatic in signon parsed by loopback client. |
 | PF_setspawnparms (78) | qwbuiltins.luau:806 | PENDING | Copies client spawn_parms to parm globals; decoder untested. |
 | PF_changelevel (70) | qwbuiltins.luau:750 | PENDING | Sets changelevelTo once (double-issue guard as C); consumer missing in QW boot (see SV_Map_f). |
@@ -268,7 +268,7 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_infokey (80) | qwbuiltins.luau:828 | PENDING | serverinfo (ent 0) / client userinfo lookup; C's synthetic keys (ip, ping) absent. |
 | PF_stof (81) | qwbuiltins.luau:841 | PENDING | com.atof. |
 | PF_multicast (82) | qwbuiltins.luau:845 | VERIFIED | Routes to svMulticast; loopback PHS sound + temp entities. |
-| PF_Fixme | error on unknown builtin (vm dispatch) | VERIFIED | VM errors on unregistered builtin numbers. |
+| PF_Fixme | error on unknown builtin (vm dispatch) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): VM errors on unregistered builtin numbers. |
 
 ## pr_edict.c
 
@@ -277,19 +277,19 @@ evidence via test_qwsv/test_qw_loopback which run id1 qwprogs.dat through it wit
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| ED_ClearEdict | `clearEdict` (vm.luau:259) | VERIFIED | Entity churn in verified play. |
-| ED_Alloc | `vmlib.alloc` (vm.luau:265) | VERIFIED | Slot reuse after 0.5s as C. |
-| ED_Free | `vmlib.free` (vm.luau:289) | VERIFIED | Unlink hook + field reset. |
-| ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | VERIFIED | qwdefs.build resolves the whole QW ABI by name at load (qwdefs.luau) — boot fails loudly if any required def is missing. |
+| ED_ClearEdict | `clearEdict` (vm.luau:259) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Entity churn in verified play. |
+| ED_Alloc | `vmlib.alloc` (vm.luau:265) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Slot reuse after 0.5s as C. |
+| ED_Free | `vmlib.free` (vm.luau:289) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Unlink hook + field reset. |
+| ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): qwdefs.build resolves the whole QW ABI by name at load (qwdefs.luau) — boot fails loudly if any required def is missing. |
 | GetEdictFieldValue | field lookups via qwdefs `ent` table | SUBSTITUTED | Static name→offset resolution replaces per-call cached lookup. Note: the `gravity`/`maxspeed` optional-field pickup that C does with it is missing (see SV_UpdateToReliableMessages). |
 | PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | — | UNIMPLEMENTED | Debug printing (edict dumps) not ported. |
 | ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | — | UNIMPLEMENTED | Console debug + savegame globals; QW has no savegames. |
-| ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | VERIFIED | `\n` escape handling. |
-| ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | VERIFIED | anglehack/light→light_lev handling; e1m1 entities load. |
+| ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): `\n` escape handling. |
+| ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): anglehack/light→light_lev handling; e1m1 entities load. |
 | ED_LoadFromFile | `vmlib.loadFromFileQW` (vm.luau:791) | VERIFIED | test_qwsv: deathmatch inhibit flags (13 inhibited, no monsters in DM). |
-| PR_LoadProgs | `progslib.load` (progs.luau:50) | VERIFIED | CRC gate via defs.PROGHEADER_CRC_QW (qwsv.luau:263). |
+| PR_LoadProgs | `progslib.load` (progs.luau:50) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): CRC gate via defs.PROGHEADER_CRC_QW (qwsv.luau:263). |
 | PR_Init | — | SUBSTITUTED | Command/cvar registration replaced by module init. |
-| EDICT_NUM / NUM_FOR_EDICT | `vmlib.edictNum` / `ed.num` | VERIFIED | |
+| EDICT_NUM / NUM_FOR_EDICT | `vmlib.edictNum` / `ed.num` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
 
 ## pr_exec.c
 
@@ -298,10 +298,10 @@ Shared NQ port: `src/shared/engine/progs/vm.luau`.
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | PR_PrintStatement / PR_StackTrace / PR_Profile_f | — | UNIMPLEMENTED | Profiling/trace printing not ported (vm.trace flag exists but prints nothing). |
-| PR_RunError | `runError` (vm.luau:311) | VERIFIED | Errors carry the function name; surfaced through Luau error. |
-| PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | VERIFIED | Parm save/restore across recursion — id1 qwprogs runs full games in the tests. |
-| PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | VERIFIED | Whole opcode interpreter; every test exercises it, incl. OP_STATE through the QW ABI (vm.stateOffsets, qwsv.luau:274). |
-| PR_GetString / PR_SetString | `vmlib.getString`/`allocString`/`newString` (vm.luau:123-148) | VERIFIED | Dynamic string table replaces pointer arithmetic (GC platform). |
+| PR_RunError | `runError` (vm.luau:311) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Errors carry the function name; surfaced through Luau error. |
+| PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Parm save/restore across recursion — id1 qwprogs runs full games in the tests. |
+| PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Whole opcode interpreter; every test exercises it, incl. OP_STATE through the QW ABI (vm.stateOffsets, qwsv.luau:274). |
+| PR_GetString / PR_SetString | `vmlib.getString`/`allocString`/`newString` (vm.luau:123-148) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Dynamic string table replaces pointer arithmetic (GC platform). |
 
 ## model.c
 
@@ -310,8 +310,8 @@ QW's server model.c is the brush-only loader; the port loads the same lumps.
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| Mod_Init / Mod_ClearAll / Mod_FindName / Mod_LoadModel / Mod_ForName | `models.newRegistry`/`models.forName` (models.luau) | VERIFIED | e1m1 + submodels (`*i`) load in every QW test. |
-| Mod_PointInLeaf | `bsp.pointInLeaf` (bsp.luau:760) | VERIFIED | PHS multicast + checkclient paths. |
+| Mod_Init / Mod_ClearAll / Mod_FindName / Mod_LoadModel / Mod_ForName | `models.newRegistry`/`models.forName` (models.luau) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): e1m1 + submodels (`*i`) load in every QW test. |
+| Mod_PointInLeaf | `bsp.pointInLeaf` (bsp.luau:760) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): PHS multicast + checkclient paths. |
 | Mod_DecompressVis / Mod_LeafPVS | `bsp.leafPVS` (bsp.luau:779) | VERIFIED | Fat-PVS entity culling + PHS sound in loopback. |
 | Mod_LoadVertexes/Edges/Surfedges/Textures/Lighting/Visibility/Entities/Submodels/Texinfo/Faces/Nodes/Leafs/Clipnodes/Marksurfaces/Planes + CalcSurfaceExtents + Mod_SetParent + Mod_MakeHull0 + Mod_LoadBrushModel | `bsp.load` internals (bsp.luau:187-669) | VERIFIED | Hull/clipnode data is ground-truth checked transitively: test_qw_pmove runs the C pmove's own hull tracing against the port-loaded e1m1 within 0.000122 units. |
 | Mod_LoadTextures (rendering payload) | client-side gfx concern | SUBSTITUTED | Server only needs hulls/PVS/entities; texture pixels handled by the render pipeline. |
@@ -323,7 +323,7 @@ Shared NQ port: `src/shared/engine/common/mathlib.luau` + native `vector` type.
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | AngleVectors | `mathlib.angleVectors` | VERIFIED | pmove ground truth matches C within 1e-4 — angle math must agree. |
-| VectorNormalize | `mathlib.normalize` | VERIFIED | Same. |
+| VectorNormalize | `mathlib.normalize` | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same. |
 | DotProduct/VectorAdd/Sub/Copy/Scale/Length etc. | Luau `vector` builtins | SUBSTITUTED | Native SIMD vector type replaces the macro/asm set; correctness bounded by the pmove/trace ground-truth tests. |
 | BoxOnPlaneSide (math.s/mathlib.c) | axis-aligned checks in world/bsp code | SUBSTITUTED | Only used for culling paths that the port expresses directly. |
 
@@ -339,7 +339,7 @@ Shared NQ port: `src/shared/engine/common/mathlib.luau` + native `vector` type.
 |---|---|---|---|
 | Netchan_Init | `qwnetchan.new` (qwnetchan.luau:22) | VERIFIED | Loopback handshake + play. Delta: no qport (no NAT rebinding on Roblox). |
 | Netchan_OutOfBand / Netchan_OutOfBandPrint | — | SUBSTITUTED | No connectionless packets on the transport. |
-| Netchan_Setup | `qwnetchan.new` per client | VERIFIED | |
+| Netchan_Setup | `qwnetchan.new` per client | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot):  |
 | Netchan_CanPacket / Netchan_CanReliable | — | SUBSTITUTED | Rate throttling and reliable-in-flight gating meaningless on a reliable+ordered remote; senders always transmit. |
 | Netchan_Transmit | `qwnetchan.transmit` (qwnetchan.luau:34) | VERIFIED | Loopback: sequence numbers keep their exact protocol role (frames ring, delta ack). **Substitution:** reliable retransmit/fragment bits replaced by an in-band reliable block `[seq][ack][reliable][datagram]` because Roblox remotes are reliable+ordered — the reliable stream cannot be lost, so no resend state. |
 | Netchan_Process | `qwnetchan.process` (qwnetchan.luau:57) | VERIFIED | Stale/duplicate rejection, drop_count (net_drop) feeding SV_RunCmd's dropped-cmd replay — loopback runs with 1 tick latency. Delta: 32-bit sequence wrap unhandled (~2.3y at 60Hz). |
@@ -357,20 +357,20 @@ waterlevel agreeing on every tick (fixture covers 238 ground / 62 air ticks; it 
 | PM_ClipVelocity | `clipVelocity` (pmove.luau:345) | VERIFIED | test_qw_pmove ground truth (slide-along-wall phases in the script). |
 | PM_FlyMove | `flyMove` (pmove.luau:371) | VERIFIED | Ground truth incl. air ticks. |
 | PM_GroundMove | `groundMove` (pmove.luau:463) | VERIFIED | Ground truth: 238 ground ticks incl. step-up paths on e1m1. |
-| PM_Friction | `friction` (pmove.luau:538) | VERIFIED | Stop phase decelerates identically. |
+| PM_Friction | `friction` (pmove.luau:538) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Stop phase decelerates identically. |
 | PM_Accelerate / PM_AirAccelerate | pmove.luau:584,604 | VERIFIED | Ground truth accel curves. |
 | PM_WaterMove | `waterMove` (pmove.luau:628) | PENDING | Ported; fixture never enters water (waterlevel 0 for all 300 ticks) — no ground-truth coverage. |
 | PM_AirMove | `airMove` (pmove.luau:661) | VERIFIED | Ground truth. |
-| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | VERIFIED | onground agrees every tick; water branches only trivially covered (always empty). |
-| JumpButton | `jumpButton` (pmove.luau:745) | VERIFIED | Jump phases (ticks 121-160, 201-240) match; oldbuttons latching. |
+| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): onground agrees every tick; water branches only trivially covered (always empty). |
+| JumpButton | `jumpButton` (pmove.luau:745) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Jump phases (ticks 121-160, 201-240) match; oldbuttons latching. |
 | CheckWaterJump | `checkWaterJump` (pmove.luau:788) | PENDING | Ported; unreachable in the fixture (no water). |
-| NudgePosition | `nudgePosition` (pmove.luau:818) | VERIFIED | Runs every tick in both C and port (positions stay equal through it). |
+| NudgePosition | `nudgePosition` (pmove.luau:818) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Runs every tick in both C and port (positions stay equal through it). |
 | SpectatorMove | `spectatorMove` (pmove.luau:842) | PENDING | Ported; no spectator test anywhere. |
 | PlayerMove | `pmove.playerMove` (pmove.luau:894) | VERIFIED | The top-level function the ground-truth test calls 300 times. |
 | PM_HullPointContents | `hullPointContents` (pmove.luau:145) | VERIFIED | Ground truth (contents drive categorize). |
-| PM_PointContents | `pointContents` (pmove.luau:278) | VERIFIED | Same. |
-| PM_RecursiveHullCheck | `recursiveHullCheck` (pmove.luau:165) | VERIFIED | Every trace of every tick matches C to 1e-4. |
-| PM_TestPlayerPosition | `testPlayerPosition` (pmove.luau:266) | VERIFIED | NudgePosition calls it each tick. |
+| PM_PointContents | `pointContents` (pmove.luau:278) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same. |
+| PM_RecursiveHullCheck | `recursiveHullCheck` (pmove.luau:165) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Every trace of every tick matches C to 1e-4. |
+| PM_TestPlayerPosition | `testPlayerPosition` (pmove.luau:266) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): NudgePosition calls it each tick. |
 | PM_PlayerMove (pmovetst trace) | `playerTrace` (pmove.luau:285) | VERIFIED | Same ground truth. |
 
 ## Totals
@@ -422,3 +422,5 @@ and pusher physics that run in tests but are never asserted.
 4. PF_lightstyle's live-broadcast branch is dead (`svr.ss_active` is nil) — runtime lightstyle
    changes are invisible until a client respawns.
 5. changelevel is latched but never consumed in the QW boot — fraglimit/timelimit end-of-map stalls.
+
+> Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 58 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

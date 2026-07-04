@@ -18,11 +18,11 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_NextDemo | — | UNIMPLEMENTED | no startdemos attract-loop cycling; playdemo is manual |
 | CL_PrintEntities_f | — | UNIMPLEMENTED | RQ_VisEnts workspace attribute is the debug substitute |
 | SetPal | — | SUBSTITUTED | no hardware palette; cshift Frame tint covers the visible effect |
-| CL_AllocDlight | init.client allocDlight | VERIFIED | FIDELITY.md "cl_dlights ported" (fixed-during-audit record); delta: grows table to 32 then overwrites slot 1 vs C fixed-array scan |
-| CL_DecayLights | heartbeat decay pass | VERIFIED | FIDELITY.md dlights record; radius -= dt*decay, die-gated, same as C |
+| CL_AllocDlight | init.client allocDlight | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md "cl_dlights ported" (fixed-during-audit record); delta: grows table to 32 then overwrites slot 1 vs C fixed-array scan |
+| CL_DecayLights | heartbeat decay pass | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md dlights record; radius -= dt*decay, die-gated, same as C |
 | CL_RelinkEntities | cl.luau relinkEntities + init.client effects/trails dispatch | VERIFIED | tests/test_loopback.luau: forward motion interpolated, visible-entity counts; FIDELITY.md trail record; delta: visedict list → per-entity visible flag on persistent instances |
 | CL_ReadFromServer | inbound queue pump in heartbeat | VERIFIED | tests/test_loopback.luau drives the same parse path end to end |
-| CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | VERIFIED | FIDELITY.md: "W→forwardmove 200 over the wire" |
+| CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "W→forwardmove 200 over the wire" |
 | CL_Init | init.client boot sequence | PENDING | cvars are hardcoded constants; no cvar registration layer |
 
 ## cl_parse.c
@@ -36,7 +36,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) |
 | CL_ParseClientdata | cl.luau parseClientdata | VERIFIED | tests/test_loopback.luau: health 100, shells 25, velocity, onground |
 | CL_NewTranslation | textures.translatePixels + entrender translatedSkins cache | PENDING | shirt/pants rows 16-31/96-111 incl. reversed ranges; applied as whole-skin image, not colormap |
-| CL_ParseStatic | cl.luau parseStatic + statics spawn pass | VERIFIED | FIDELITY.md: static framegroup animation fix (torches) live-confirmed |
+| CL_ParseStatic | cl.luau parseStatic + statics spawn pass | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: static framegroup animation fix (torches) live-confirmed |
 | CL_ParseStaticSound | cl.luau + sound.static | VERIFIED | tests/test_loopback.luau: "ambient sounds spawned" (>=4) |
 | CL_ParseServerMessage | cl.luau parseServerMessage | VERIFIED | tests/test_loopback.luau full protocol path; FIDELITY.md byte-exact protocol 15 layer; delta: svc_stopsound read but discarded, svc_cdtrack stored but unused |
 
@@ -49,7 +49,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | IN_Impulse | `impulse` command → input.setImpulse | PENDING | |
 | CL_KeyState | boolean btn() | PENDING | delta: no 0.25/0.5/0.75 partial-frame press fractions — taps register a full frame |
 | CL_AdjustAngles | input.updateTurn | PENDING | cl_yawspeed 140 / cl_pitchspeed 150 / cl_anglespeedkey 1.5 match; FIDELITY.md records the port, no cited proof |
-| CL_BaseMove | input.sample | VERIFIED | FIDELITY.md: "W→forwardmove 200 over the wire"; speeds 200/200/350/200, movespeedkey 2 |
+| CL_BaseMove | input.sample | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "W→forwardmove 200 over the wire"; speeds 200/200/350/200, movespeedkey 2 |
 | CL_SendMove | cl.luau buildMove | VERIFIED | tests/test_loopback.luau (movement observed server-side); first-2-message drop kept |
 | CL_InitInput | bind table + BUTTON_CMDS wiring | PENDING | |
 
@@ -57,12 +57,12 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| CL_StopPlayback | init.client stopDemo | VERIFIED | FIDELITY.md demo record (fixed during audit) |
-| CL_WriteDemoMessage | record branch in heartbeat pump | VERIFIED | FIDELITY.md: length/viewangles/payload block format, replayable |
-| CL_GetMessage (demo path) | init.client demoFrame with mtime pacing | VERIFIED | FIDELITY.md: demo1.dem plays e1m3 end to end |
-| CL_Stop_f | `stop` command | VERIFIED | FIDELITY.md demo record; delta: demo stored in memory, not a file |
-| CL_Record_f | `record` command | VERIFIED | FIDELITY.md; delta: name-only (no map/cdtrack args), forced "-1\n" track line |
-| CL_PlayDemo_f | `playdemo` command | VERIFIED | FIDELITY.md; assets stream via rq_need |
+| CL_StopPlayback | init.client stopDemo | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md demo record (fixed during audit) |
+| CL_WriteDemoMessage | record branch in heartbeat pump | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: length/viewangles/payload block format, replayable |
+| CL_GetMessage (demo path) | init.client demoFrame with mtime pacing | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: demo1.dem plays e1m3 end to end |
+| CL_Stop_f | `stop` command | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md demo record; delta: demo stored in memory, not a file |
+| CL_Record_f | `record` command | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md; delta: name-only (no map/cdtrack args), forced "-1\n" track line |
+| CL_PlayDemo_f | `playdemo` command | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md; assets stream via rq_need |
 | CL_FinishTimeDemo | — | UNIMPLEMENTED | no timedemo benchmarking |
 | CL_TimeDemo_f | — | UNIMPLEMENTED | no timedemo benchmarking |
 
@@ -71,10 +71,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | CL_InitTEnts | lazy beamModelDef + soundbank regions | PENDING | delta: bolt models/sfx loaded on first use instead of precached |
-| CL_ParseBeam | init.client parseBeam (via cl.luau TE event) | VERIFIED | FIDELITY.md lightning beams record; entity-override + free-slot scan kept, MAX_BEAMS 24 |
+| CL_ParseBeam | init.client parseBeam (via cl.luau TE event) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md lightning beams record; entity-override + free-slot scan kept, MAX_BEAMS 24 |
 | CL_ParseTEnt | cl.luau parseTEnt + init.client onTempEntity | VERIFIED | FIDELITY.md impact sounds (fd28443); TE_TAREXPLOSION → blobExplosion (no dlight) and TE_EXPLOSION2 → particleExplosion2(colorStart/Length) + dlight now match cl_tent.c; spawners proven in tests/test_particles2.luau (routing itself unexercised by tests) |
 | CL_NewTempEntity | beamPool pooled render entities | PENDING | delta: pooled per model name, capped 40 segments/beam |
-| CL_UpdateTEnts | init.client updateBeams | VERIFIED | FIDELITY.md: 30-unit segments, random roll, player-tracked start, 0.2s life; delta: C int-truncates yaw/pitch, port keeps float |
+| CL_UpdateTEnts | init.client updateBeams | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: 30-unit segments, random roll, player-tracked start, 0.2s life; delta: C int-truncates yaw/pitch, port keeps float |
 
 ## chase.c
 
@@ -83,7 +83,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Chase_Init | chase_active console command | PENDING | cvar-only; chase_back/up/right hardcoded 100/16/0 |
 | Chase_Reset | — | UNIMPLEMENTED | C stub is an empty TODO too |
 | TraceLine | worldlib.recursiveHullCheck against hull 0 | VERIFIED | FIDELITY.md: hull collision bit-exact vs trace_truth (1503 checks) |
-| Chase_Update | init.client chase branch | VERIFIED | FIDELITY.md: "chase.c verbatim ... no camera wall clip — authentic quirk" |
+| Chase_Update | init.client chase branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: "chase.c verbatim ... no camera wall clip — authentic quirk" |
 
 ## view.c
 
@@ -100,7 +100,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | V_cshift_f | — | UNIMPLEMENTED | debug command |
 | V_BonusFlash_f | "bf" stufftext → cshift_bonus_percent 50 | PENDING | bonus color 215/186/69 matches |
 | V_SetContentsColor | init.client view-leaf contents shifts | PENDING | water/slime/lava values match; delta: no CONTENTS_SOLID case, empty clears implicitly |
-| V_CalcPowerupCshift | init.client powerup shifts | VERIFIED | FIDELITY.md: priority quad > suit > ring > pent matches |
+| V_CalcPowerupCshift | init.client powerup shifts | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: priority quad > suit > ring > pent matches |
 | V_CalcBlend | init.client shift compositor | PENDING | same a2/(1-a) accumulation; delta: final alpha capped at 0.85 |
 | V_UpdatePalette | cshift Frame tint + decay | SUBSTITUTED | palette blend → fullscreen GUI tint; damage/bonus decay 150/100 per second ported |
 | angledelta / CalcGunAngle | gunangles = (-pitch, yaw, 0) | PENDING | delta: no yaw/pitch damped-lag smoothing — gun locked to view |
@@ -116,7 +116,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| Sbar_ShowScores / Sbar_DontShowScores | +/-showscores → hud.setShowScores | VERIFIED | FIDELITY.md: TAB +showscores record |
+| Sbar_ShowScores / Sbar_DontShowScores | +/-showscores → hud.setShowScores | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: TAB +showscores record |
 | Sbar_Changed | — | SUBSTITUTED | retained GUI; no dirty-region repaint needed |
 | Sbar_Init | hud.create (wad pics cached lazily) | PENDING | |
 | Sbar_DrawPic / Sbar_DrawTransPic | setPic → ImageLabel | SUBSTITUTED | framebuffer blit → ImageLabel; index 255 transparent |
@@ -125,34 +125,34 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawNum | hud drawNum | PENDING | right-justified 24px slots, anum_ red variant, last-3-digit clip match |
 | Sbar_SortFrags | buildRankings sort | PENDING | delta: skips empty names then sorts by frags (C insertion sort, same order) |
 | Sbar_UpdateScoreboard | sig-string rebuild in updateOverlays | SUBSTITUTED | rebuild-on-change replaces per-frame scratch build |
-| Sbar_SoloScoreboard | hud soloRows | VERIFIED | FIDELITY.md: monsters/secrets/time/level over status row, shown when dead, scorebar.lmp backdrop |
+| Sbar_SoloScoreboard | hud soloRows | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: monsters/secrets/time/level over status row, shown when dead, scorebar.lmp backdrop |
 | Sbar_DrawScoreboard | updateOverlays dispatch | PENDING | |
 | Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | PENDING | flashon formula ((time-gettime)*10, %5+2, inv2_ active) matches; counts as conchars 18+digit |
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn |
 | Sbar_DrawFace | hud face branch | PENDING | invis+invuln/quad/invis/invuln specials + 5 health bands + pain via faceanimtime match |
 | Sbar_Draw | hud.update | PENDING | delta: no viewsize/lineadj interaction — sbar always drawn |
-| Sbar_IntermissionNumber | interBigNum | VERIFIED | FIDELITY.md: big digits at exact C coordinates |
-| Sbar_DeathmatchOverlay | buildRankings | VERIFIED | FIDELITY.md: ranking.lmp, colour bars, frags, self marker char 12 |
+| Sbar_IntermissionNumber | interBigNum | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: big digits at exact C coordinates |
+| Sbar_DeathmatchOverlay | buildRankings | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: ranking.lmp, colour bars, frags, self marker char 12 |
 | Sbar_MiniDeathmatchOverlay | — | UNIMPLEMENTED | small mid-game DM list absent |
-| Sbar_IntermissionOverlay | buildIntermission | VERIFIED | FIDELITY.md: complete.lmp/inter.lmp, time/secrets/monsters at C coords |
-| Sbar_FinaleOverlay | finale.lmp branch | VERIFIED | FIDELITY.md finale record |
+| Sbar_IntermissionOverlay | buildIntermission | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: complete.lmp/inter.lmp, time/secrets/monsters at C coords |
+| Sbar_FinaleOverlay | finale.lmp branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md finale record |
 
 ## screen.c
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| SCR_CenterPrint | hud.centerPrint | VERIFIED | FIDELITY.md: centerprints in conchars with faithful metrics (0.35h block, per-line centering) |
+| SCR_CenterPrint | hud.centerPrint | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: centerprints in conchars with faithful metrics (0.35h block, per-line centering) |
 | SCR_EraseCenterString | retained GUI | SUBSTITUTED | no framebuffer erase needed |
-| SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | VERIFIED | FIDELITY.md: finale typewriter at scr_printspeed |
+| SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: finale typewriter at scr_printspeed |
 | SCR_CheckDrawCenterString | centerTime gate in hud.update | PENDING | scr_centertime 2s; stays up during intermission like C |
 | CalcFov | qcoords.calcFovY | PENDING | delta: horizontal fov converted to vertical at the real viewport aspect (Roblox FOV is vertical) |
-| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Same vrect implementation as QW (see qw-client.md): fov from window-minus-sbar, view model rotated to the vrect bottom anchor. Live-measured muzzle 83% vs sbar 86% + screenshot (dm3, gun visible above HUD). |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Same vrect implementation as QW (see qw-client.md): fov from window-minus-sbar, view model rotated to the vrect bottom anchor. Live-measured muzzle 83% vs sbar 86% + screenshot (dm3, gun visible above HUD). |
 | SCR_SizeUp_f / SCR_SizeDown_f | accepted no-op commands | UNIMPLEMENTED | viewsize fixed |
 | SCR_Init | init.client GUI setup | PENDING | |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent |
-| SCR_DrawPause | hud pausePlaque | VERIFIED | FIDELITY.md pause plaque record |
-| SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | VERIFIED | FIDELITY.md: notify/centerprint clear, plaque holds until first rendered frame |
-| SCR_SetUpToDrawConsole | console.update slide | VERIFIED | FIDELITY.md: console slide animation (scr_conspeed 300 ≙ 1.5 heights/s) |
+| SCR_DrawPause | hud pausePlaque | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md pause plaque record |
+| SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify/centerprint clear, plaque holds until first rendered frame |
+| SCR_SetUpToDrawConsole | console.update slide | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: console slide animation (scr_conspeed 300 ≙ 1.5 heights/s) |
 | SCR_DrawConsole | console.update rows | PENDING | |
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | UNIMPLEMENTED | no writable filesystem |
 | SCR_ModalMessage | — | UNIMPLEMENTED | no modal quit/confirm flow (Roblox owns quit) |
@@ -178,7 +178,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate |
 | Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed |
 | Con_DrawInput | input row + blinking char-11 cursor | PENDING | ] prompt kept; delta: no horizontal scroll of long input |
-| Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | FIDELITY.md: notify in conchars, faithful metrics; recorded divergence: sits below Roblox topbar inset |
+| Con_DrawNotify | hud notifyRows (4 lines, 3s) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify in conchars, faithful metrics; recorded divergence: sits below Roblox topbar inset |
 | Con_DrawConsole | console.update | PENDING | delta: no scrollback paging, no version string |
 | Con_NotifyBox | — | UNIMPLEMENTED | |
 
@@ -189,11 +189,11 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Key_Console | console.handleKey/handleText | PENDING | enter/backspace/up/down history; delta: no tab completion, no pgup/pgdn scrollback, no clipboard paste |
 | Key_Message | — | UNIMPLEMENTED | chat via Roblox |
 | Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | PENDING | delta: Roblox KeyCodes; Escape reserved by platform (menu on M), mouse1-3 mapped |
-| Key_SetBinding | bindings table | VERIFIED | FIDELITY.md keys.c record + "F11 zoom chain" |
-| Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | FIDELITY.md: full bind system record |
+| Key_SetBinding | bindings table | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md keys.c record + "F11 zoom chain" |
+| Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: full bind system record |
 | Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) |
-| Key_Init | default.cfg exec at boot + autoexec layer | VERIFIED | FIDELITY.md: shipped default.cfg execs at boot, quake.rc ordering |
-| Key_Event | init.client keyEvent via UserInputService | VERIFIED | FIDELITY.md: keyups fire the -command; W→forwardmove chain |
+| Key_Init | default.cfg exec at boot + autoexec layer | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: shipped default.cfg execs at boot, quake.rc ordering |
+| Key_Event | init.client keyEvent via UserInputService | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: keyups fire the -command; W→forwardmove chain |
 | Key_ClearStates | input.setEnabled(false) clears buttons | PENDING | cleared when console/menu opens |
 
 ## menu.c
@@ -232,7 +232,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | Draw_Init | confont/textures lazy init | PENDING | |
-| Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | VERIFIED | FIDELITY.md: conchars with faithful metrics; high-bit bronze glyphs pass through |
+| Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: conchars with faithful metrics; high-bit bronze glyphs pass through |
 | Draw_DebugChar | — | UNIMPLEMENTED | |
 | Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | PENDING | used by hud/menu/plaques |
 | Draw_TransPicTranslate | — | UNIMPLEMENTED | only the setup menu used it |
@@ -253,12 +253,12 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | S_FindName / S_TouchSound / S_PrecacheSound | soundmap regions (offline tools/build_soundbank.py) | SUBSTITUTED | per-sample time slices replace sfx_t cache |
 | SND_PickChannel | channels[entnum*8+channel] map | PENDING | entity-channel override in place; delta: CHAN_AUTO fire-and-forget never steals the oldest channel |
 | SND_Spatialize | Roblox RollOffMode.Linear, max = 1000/atten scaled | SUBSTITUTED | FIDELITY: Roblox rolloff approximating the linear curve; no stereo pan math |
-| S_StartSound | sound.start | VERIFIED | FIDELITY.md: channel override semantics on entity sounds record |
+| S_StartSound | sound.start | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: channel override semantics on entity sounds record |
 | S_StopSound | sound.stop exists but is never called | UNIMPLEMENTED | svc_stopsound is parsed and discarded in cl.luau — looped entity sounds can't be stopped |
 | S_StopAllSounds | sound.clear on serverinfo | PENDING | |
 | S_ClearBuffer | — | SUBSTITUTED | no mix buffer |
 | S_StaticSound | sound.static (looped, vol/255, atten/64) | PENDING | event delivery proven (see CL_ParseStaticSound); playback itself unproven |
-| S_UpdateAmbientSounds | sound.updateAmbients | VERIFIED | FIDELITY.md: water1/wind2 from view-leaf levels, ambient_level 0.3 / fade 100 |
+| S_UpdateAmbientSounds | sound.updateAmbients | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: water1/wind2 from view-leaf levels, ambient_level 0.3 / fade 100 |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Roblox engine mixes and paints |
 | S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities |
 | S_LocalSound | — | UNIMPLEMENTED | menu/console beeps absent |
@@ -287,7 +287,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport |
 | R_MarkLeaves | — | UNIMPLEMENTED | no PVS culling — whole map stays resident; GPU frustum-culls (perf, not correctness) |
 | R_DrawEntitiesOnList | heartbeat entity update loop | PENDING | statics re-posed every frame like C (FIDELITY torch record covers the static case) |
-| R_DrawViewModel | gun entity branch | VERIFIED | FIDELITY.md: light floor 24; hidden when dead/intermission/chase like C |
+| R_DrawViewModel | gun entity branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: light floor 24; hidden when dead/intermission/chase like C |
 | R_BmodelCheckBBox | — | SUBSTITUTED | no per-frame brush accept/reject needed |
 | R_DrawBEntitiesOnList | entrender.updateBrush | SUBSTITUTED | brush ents are cloned Models moved by CFrame; delta: no rotation support (id1 unused) |
 | R_EdgeDrawing / R_RenderView_ / R_RenderView | camera CFrame + Roblox render | SUBSTITUTED | rasterization replaced wholesale |
@@ -299,8 +299,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_AliasCheckBBox | — | SUBSTITUTED | GPU culls |
 | R_AliasTransformVector / R_AliasPreparePoints / R_AliasSetUpTransform / R_AliasTransformFinalVert / R_AliasTransformAndProjectFinalVerts / R_AliasProjectFinalVert / R_AliasPrepareUnclippedPoints | EditableMesh verts + part CFrame | SUBSTITUTED | per-vertex transform/project replaced by mesh + CFrame (pitch negated like C entity-angle convention) |
 | R_AliasSetupSkin | updateAlias skin select + player translation | PENDING | delta: skingroup intervals not timed (first group frame used) |
-| R_AliasSetupLighting | lightpoint sample + dlight falloff add | VERIFIED | FIDELITY.md: entity lighting picks up dlight falloff like R_AliasSetupLighting |
-| R_AliasSetupFrame | entrender aliasFrame (framegroup by time+syncbase) | VERIFIED | FIDELITY.md: static framegroup animation (flame.mdl) live-confirmed |
+| R_AliasSetupLighting | lightpoint sample + dlight falloff add | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: entity lighting picks up dlight falloff like R_AliasSetupLighting |
+| R_AliasSetupFrame | entrender aliasFrame (framegroup by time+syncbase) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: static framegroup animation (flame.mdl) live-confirmed |
 | R_AliasDrawModel | entrender.updateAlias | PENDING | delta: fullbright-skin models render unlit (per-pixel colormap fullbrights inexpressible — FIDELITY substitution) |
 
 ## r_bsp.c
@@ -334,8 +334,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | R_AnimateLight | 10Hz styleFrame tick in init.client | PENDING | (c-'a')*22 exactly; empty style = 256 ("m"=264 base) |
-| R_MarkLights | lightatlas markLights | VERIFIED | FIDELITY.md per-texel lightmaps record; same node recursion + dlightbits |
-| R_PushDlights | lightatlas.updateDlights | VERIFIED | FIDELITY.md; delta: also rebakes last-frame-lit regions so dead lights clear |
+| R_MarkLights | lightatlas markLights | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md per-texel lightmaps record; same node recursion + dlightbits |
+| R_PushDlights | lightatlas.updateDlights | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md; delta: also rebakes last-frame-lit regions so dead lights clear |
 | RecursiveLightPoint | lightpoint.luau recursiveLightPoint | PENDING | faithful structure incl. mid-plane split and style-layer sum >>8 |
 | R_LightPoint | lightpoint.at | PENDING | -2048 downward trace, fullbright when no lightdata; dlight add lives in caller like C |
 
@@ -354,7 +354,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|
 | R_InitParticles | particles.new pool | PENDING | delta: pool 1024 vs C default 2048 (-particles switch absent); pooled neon Parts |
 | R_DarkFieldParticles | — | UNIMPLEMENTED | dead code in WinQuake (QUAKE2 #ifdef) — justified omission |
-| R_EntityParticles | particles.entityParticles | VERIFIED | FIDELITY.md: EF_BRIGHTFIELD with the real anorms.h table (162 normals present) |
+| R_EntityParticles | particles.entityParticles | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: EF_BRIGHTFIELD with the real anorms.h table (162 normals present) |
 | R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) |
 | R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool |
 | R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | PENDING | dir/16, count 255→1024 explosion escape kept |
@@ -363,8 +363,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_BlobExplosion | particlesim.blobExplosion | VERIFIED | tests/test_particles2.luau: 1024 particles, 512 pt_blob (66+rand%6) / 512 pt_blob2 (150+rand%6), die 1+(rand&8)*0.05, pt_blob/pt_blob2 update physics checked |
 | R_RunParticleEffect | particles.runEffect | PENDING | color &~7 + rand&7, die 0.1*(rand%5), vel dir*15 match |
 | R_LavaSplash | particles.lavaSplash | PENDING | 32x32 grid, color 224+&7, z 256 dir match |
-| R_TeleportSplash | particles.teleportSplash | VERIFIED | FIDELITY.md teleport splash implied by TE record; loops -16..12/-24..28 step 4 match |
-| R_RocketTrail | particles.rocketTrail | VERIFIED | FIDELITY.md: rocket/grenade/gib/tracer/voor trails record; all 7 types + tracercount parity |
+| R_TeleportSplash | particles.teleportSplash | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md teleport splash implied by TE record; loops -16..12/-24..28 step 4 match |
+| R_RocketTrail | particles.rocketTrail | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: rocket/grenade/gib/tracer/voor trails record; all 7 types + tracercount parity |
 | R_DrawParticles | particles.update | PENDING | physics (time1/2/3, grav, dvel, ramps) match; rendering delta: 0.25-stud neon cubes vs 1px span dots; z-buffer test free from GPU |
 
 ## r_sky.c
@@ -388,8 +388,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| R_AddDynamicLights | lightatlas addDynamicLights | VERIFIED | FIDELITY.md per-texel lightmaps record; sd/td falloff formula exact |
-| R_BuildLightMap | lightatlas.writeRegion | VERIFIED | FIDELITY.md; 16-unit texels, style layers, blocklights sum; delta: alpha-overlay multiply + overbright x2 + gamma 0.7 instead of colormap |
+| R_AddDynamicLights | lightatlas addDynamicLights | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md per-texel lightmaps record; sd/td falloff formula exact |
+| R_BuildLightMap | lightatlas.writeRegion | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md; 16-unit texels, style layers, blocklights sum; delta: alpha-overlay multiply + overbright x2 + gamma 0.7 instead of colormap |
 | R_TextureAnimation | init.client wall-anim tick + worldmesh "wall" TextureAnims | PENDING | tests/test_texanim.luau proves the +N/+a chain data and the anim_min/anim_max walk math on e1m2/start; base chain only (world frame 0), swaps chunk TextureContent between prebuilt frame images — visual confirmation pending |
 | R_DrawSurface / R_DrawSurfaceBlock8_mip0-3 / R_DrawSurfaceBlock16 | — | SUBSTITUTED | surface-cache block drawing; GPU samples texture × lightmap overlay instead |
 | R_GenTurbTile / R_GenTurbTile16 | textures.writeTurbFrame | PENDING | 8px sine displacement both axes, period 32, speed time*2 — software look approximated in texture space |
@@ -459,3 +459,5 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 - UNIMPLEMENTED: 65
 - SUBSTITUTED: 67
 - Port-side additions: 16 (all justified; RQ_LightTick has only a weak/implied justification)
+
+> Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

@@ -20,8 +20,8 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | ClearLink (common.c:104) | shared/engine/server/world.luau:newSentinel | VERIFIED | transliteration compared; exercised by every linkEdict in test_server/test_loopback (entity visibility asserted) |
-| RemoveLink (common.c:109) | world.luau:removeLink | VERIFIED | same as above |
-| InsertLinkBefore (common.c:115) | world.luau:insertLinkBefore | VERIFIED | same as above |
+| RemoveLink (common.c:109) | world.luau:removeLink | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): same as above |
+| InsertLinkBefore (common.c:115) | world.luau:insertLinkBefore | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): same as above |
 | InsertLinkAfter (common.c:122) | — | UNIMPLEMENTED | unused by the C server paths in scope |
 | Q_memset (common.c:138) | — | SUBSTITUTED | Luau `buffer.fill` / table ops; no raw memory on Roblox |
 | Q_memcpy (common.c:154) | — | SUBSTITUTED | `buffer.copy` |
@@ -48,18 +48,18 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | MSG_WriteString (common.c:576) | msg.luau:writeString | VERIFIED | loopback levelname/precache strings asserted |
 | MSG_WriteCoord (common.c:584) | msg.luau:writeCoord | VERIFIED | loopback: player origin via entity updates near (480,-352,88); coord = short of f*8 |
 | MSG_WriteAngle (common.c:589) | msg.luau:writeAngle | VERIFIED | test_server: angle 90 in clc_move → northward motion asserted |
-| MSG_BeginReading (common.c:600) | msg.luau:reader | VERIFIED | reader object replaces global read state; all message tests |
-| MSG_ReadChar (common.c:607) | msg.luau:readChar | VERIFIED | host readClientMessage cmd loop (all E2E tests); -1 on end-of-message preserved |
-| MSG_ReadByte (common.c:623) | msg.luau:readByte | VERIFIED | clc parsing in all E2E tests |
-| MSG_ReadShort (common.c:639) | msg.luau:readShort | VERIFIED | clc_move fields drive asserted movement |
+| MSG_BeginReading (common.c:600) | msg.luau:reader | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): reader object replaces global read state; all message tests |
+| MSG_ReadChar (common.c:607) | msg.luau:readChar | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): host readClientMessage cmd loop (all E2E tests); -1 on end-of-message preserved |
+| MSG_ReadByte (common.c:623) | msg.luau:readByte | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): clc parsing in all E2E tests |
+| MSG_ReadShort (common.c:639) | msg.luau:readShort | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): clc_move fields drive asserted movement |
 | MSG_ReadLong (common.c:657) | msg.luau:readLong | VERIFIED | protocol version in serverinfo (loopback signon completes) |
-| MSG_ReadFloat (common.c:677) | msg.luau:readFloat | VERIFIED | clc_move ping time consumed; svc_time |
-| MSG_ReadString (common.c:697) | msg.luau:readString | VERIFIED | clc_stringcmd dispatch in every E2E test |
+| MSG_ReadFloat (common.c:677) | msg.luau:readFloat | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): clc_move ping time consumed; svc_time |
+| MSG_ReadString (common.c:697) | msg.luau:readString | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): clc_stringcmd dispatch in every E2E test |
 | MSG_ReadCoord (common.c:717) | msg.luau:readCoord | VERIFIED | client entity origins asserted in loopback |
-| MSG_ReadAngle (common.c:722) | msg.luau:readAngle | VERIFIED | v_angle from clc_move → movement matches |
-| SZ_Alloc (common.c:731) | msg.luau:newBuf | VERIFIED | all server buffers (datagram/reliable/signon) built on it |
+| MSG_ReadAngle (common.c:722) | msg.luau:readAngle | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): v_angle from clc_move → movement matches |
+| SZ_Alloc (common.c:731) | msg.luau:newBuf | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): all server buffers (datagram/reliable/signon) built on it |
 | SZ_Free (common.c:741) | — | SUBSTITUTED | GC |
-| SZ_Clear (common.c:749) | msg.luau:clear | VERIFIED | per-frame datagram clear; signon reset in spawnServer (tests assert fresh state per level) |
+| SZ_Clear (common.c:749) | msg.luau:clear | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): per-frame datagram clear; signon reset in spawnServer (tests assert fresh state per level) |
 | SZ_GetSpace (common.c:754) | msg.luau:getSpace | PENDING | overflow/allowoverflow branch never asserted by a test |
 | SZ_Write (common.c:777) | msg.luau:writeBuf | VERIFIED | signon copy into prespawn reply → baselines received in loopback |
 | SZ_Print (common.c:782) | — | UNIMPLEMENTED | NUL-splicing string append not needed; strings built in Luau |
@@ -171,8 +171,8 @@ F11 zoom chain) but there is no offline test.
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
 | CRC_Init (crc.c:68) | common/com.luau:crcBuffer | VERIFIED | folded into one function; test_vm: progs.dat CRC16 == 46133 vs independent Python parse |
-| CRC_ProcessByte (crc.c:73) | com.luau:crcBuffer | VERIFIED | same |
-| CRC_Value (crc.c:78) | com.luau:crcBuffer | VERIFIED | same |
+| CRC_ProcessByte (crc.c:73) | com.luau:crcBuffer | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): same |
+| CRC_Value (crc.c:78) | com.luau:crcBuffer | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): same |
 
 ## wad.c
 
@@ -218,7 +218,7 @@ parses (test_bsp/test_models headers).
 | Mod_LoadClipnodes (model.c:944) | bsp.luau:loadClipnodes | VERIFIED | test_bsp: clipnode300 exact + hull1/hull2 heads, clip_mins/maxs |
 | Mod_MakeHull0 (model.c:998) | bsp.luau:makeHull0 | VERIFIED | test_bsp: full hull0 child-range sweep; test_trace hull 0 traces vs C |
 | Mod_LoadMarksurfaces (model.c:1035) | bsp.luau:loadMarksurfaces | PENDING | loaded; consumed by client renderer, no offline assertion |
-| Mod_LoadSurfedges (model.c:1064) | bsp.luau:loadSurfedges | VERIFIED | face extents math depends on it (asserted) |
+| Mod_LoadSurfedges (model.c:1064) | bsp.luau:loadSurfedges | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): face extents math depends on it (asserted) |
 | Mod_LoadPlanes (model.c:1087) | bsp.luau:loadPlanes | VERIFIED | test_bsp: plane100 normal/dist/type/signbits exact |
 | RadiusFromBounds (model.c:1125) | bsp.luau:radiusFromBounds | PENDING | no assertion on radius |
 | Mod_LoadBrushModel (model.c:1143) | bsp.luau:load | VERIFIED | test_bsp: 58 models, world mins/maxs (incl. the ±1 spread quirk), every map in pak0 loads |
@@ -243,14 +243,14 @@ parses (test_bsp/test_models headers).
 | SV_UnlinkEdict (world.c:263) | world.luau:unlinkEdict | PENDING | called from ED_Free/linkEdict; unasserted |
 | SV_TouchLinks (world.c:277) | world.luau:touchLinks | PENDING | trigger touch dispatch (self/other/time swap preserved); test_changelevel fires the trigger manually, so this path lacks assertions |
 | SV_FindTouchedLeafs (world.c:328) | world.luau:findTouchedLeafs | VERIFIED | leafnums feed SV_WriteEntitiesToClient PVS culling → test_loopback entity-visibility assertions (player visible, ≥4 after moving) |
-| SV_LinkEdict (world.c:372) | world.luau:linkEdict | VERIFIED | absmin/absmax incl. FL_ITEM ±15 expansion compared side-by-side; drives verified movement + visibility tests |
+| SV_LinkEdict (world.c:372) | world.luau:linkEdict | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): absmin/absmax incl. FL_ITEM ±15 expansion compared side-by-side; drives verified movement + visibility tests |
 | SV_HullPointContents (world.c:491) | world.luau:hullPointContents | VERIFIED | test_trace: 200 points x 3 hulls exact vs tools/trace_truth.c |
 | SV_PointContents (world.c:527) | world.luau:pointContents | VERIFIED | in the matched movement chain (checkWater per tick, test_movement); CONTENTS_CURRENT clamp path untested (no current brushes exercised) |
 | SV_TruePointContents (world.c:537) | world.luau:truePointContents | PENDING | thin wrapper; untested |
 | SV_RecursiveHullCheck (world.c:581) | world.luau:recursiveHullCheck | VERIFIED | test_trace: 300 segments x 3 hulls — allsolid/startsolid/inopen/inwater/fraction/endpos/plane exact vs compiled C (1503 checks total incl. points) |
 | SV_ClipMoveToEntity (world.c:722) | world.luau:clipMoveToEntity | VERIFIED | world-entity clipping matched over 300 ticks (test_movement) |
 | SV_ClipToLinks (world.c:814) | world.luau:clipToLinks | PENDING | side-by-side compared (incl. startsolid-merge quirk, owner skips, MONSTER mins2/maxs2); only indirect E2E coverage, no assertions on entity-vs-entity traces |
-| SV_MoveBounds (world.c:893) | world.luau:moveBounds | VERIFIED | part of matched move chain (±1 expansion) |
+| SV_MoveBounds (world.c:893) | world.luau:moveBounds | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): part of matched move chain (±1 expansion) |
 | SV_Move (world.c:923) | world.luau:move | VERIFIED | test_movement: 300-tick origin/velocity match vs compiled C (world clip); MOVE_MISSILE ±15 preserved, entity clip via E2E only |
 | SV_TestEntityPosition (world.c:551) | world.luau:testEntityPosition | VERIFIED | called by checkStuck every tick of the matched chain |
 
@@ -285,8 +285,8 @@ parses (test_bsp/test_models headers).
 | ED_LoadFromFile (pr_edict.c:905) | vm.luau:loadFromFile | VERIFIED | test_server census: 1 worldspawn, 18 grunts, 5 dogs, 21 doors; skill/deathmatch spawnflag inhibit logic ported |
 | PR_LoadProgs (pr_edict.c:985) | progs/progs.luau:load | VERIFIED | test_vm: header CRC 5927, file CRC16 46133, all table counts vs Python parse |
 | PR_Init (pr_edict.c:1068) | cvar.luau DEFAULTS (nomonsters/scratch*/saved*) | SUBSTITUTED | no console commands to register; cvars pre-seeded |
-| EDICT_NUM (pr_edict.c:1089) | vm.luau:edictNum | VERIFIED | range-checked; used by every test |
-| NUM_FOR_EDICT (pr_edict.c:1096) | Edict.num field | VERIFIED | identity kept on the edict record |
+| EDICT_NUM (pr_edict.c:1089) | vm.luau:edictNum | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): range-checked; used by every test |
+| NUM_FOR_EDICT (pr_edict.c:1096) | Edict.num field | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): identity kept on the edict record |
 
 ## pr_exec.c
 
@@ -312,7 +312,7 @@ parses (test_bsp/test_models headers).
 | SV_CheckForNewClients (sv_main.c:302) | src/server/init.server.luau:onInbound/connectPlayer | SUBSTITUTED | polling sockets → event-driven Roblox remotes; clients announce with a first message |
 | SV_ClearDatagram (sv_main.c:348) | host.luau:frame (msg.clear) | VERIFIED | per-frame clear; datagram flow asserted in test_server |
 | SV_AddToFatPVS (sv_main.c:367) | sv.luau:addToFatPVS | VERIFIED | loopback: spawn-area PVS entity set matches an independent PVS decode (test comment) + visibility assertions; delta: fat buffer zero-padded instead of C's stale static bytes |
-| SV_FatPVS (sv_main.c:410) | sv.luau:fatPVS | VERIFIED | same |
+| SV_FatPVS (sv_main.c:410) | sv.luau:fatPVS | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): same |
 | SV_WriteEntitiesToClient (sv_main.c:427) | sv.luau:writeEntitiesToClient | VERIFIED | loopback: baselines + delta bits reproduce entity origins/motion client-side; U_* bit logic side-by-side compared |
 | SV_CleanupEnts (sv_main.c:557) | sv.luau:cleanupEnts | PENDING | EF_MUZZLEFLASH cleared per frame; unasserted |
 | SV_WriteClientdataToMessage (sv_main.c:576) | sv.luau:writeClientdataToMessage | VERIFIED | loopback: health 100, shells 25, items IT_SHOTGUN, onground, velocity, damage message path in E2E |
@@ -346,18 +346,18 @@ parses (test_bsp/test_models headers).
 | SV_CheckVelocity (sv_phys.c:90) | server/sv_phys.luau:checkVelocity | VERIFIED | test_movement: in the 300-tick chain matched vs tools/move_truth.c (max err 0.0002 units) |
 | SV_RunThink (sv_phys.c:126) | sv_phys.luau:runThink | VERIFIED | test_server: grunt animation frames advance (QC think chain); sub-frametime nextthink clamp ported |
 | SV_Impact (sv_phys.c:153) | sv_phys.luau:impact | PENDING | touch/touch dispatch with self/other/time save-restore; pickups/damage not asserted |
-| ClipVelocity (sv_phys.c:190) | sv_phys.luau:clipVelocity | VERIFIED | in matched movement chain (wall slides during yaw-135 phase) |
-| SV_FlyMove (sv_phys.c:229) | sv_phys.luau:flyMove | VERIFIED | matched chain incl. bumps/planes/steptrace |
-| SV_AddGravity (sv_phys.c:371) | sv_phys.luau:addGravity | VERIFIED | matched chain (jump arcs land identically) |
+| ClipVelocity (sv_phys.c:190) | sv_phys.luau:clipVelocity | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): in matched movement chain (wall slides during yaw-135 phase) |
+| SV_FlyMove (sv_phys.c:229) | sv_phys.luau:flyMove | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain incl. bumps/planes/steptrace |
+| SV_AddGravity (sv_phys.c:371) | sv_phys.luau:addGravity | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain (jump arcs land identically) |
 | SV_PushEntity (sv_phys.c:408) | sv_phys.luau:pushEntity | PENDING | movers/missiles path; E2E only |
 | SV_PushMove (sv_phys.c:439) | sv_phys.luau:pushMove | PENDING | door/plat pushing with rider move-back and blocked callback; not asserted offline |
 | SV_PushRotate (sv_phys.c:566) | — | UNIMPLEMENTED | dead: QUAKE2-only ifdef in WinQuake |
 | SV_Physics_Pusher (sv_phys.c:704) | sv_phys.luau:physicsPusher | PENDING | ltime-based think scheduling ported; doors open in E2E runs, unasserted |
-| SV_CheckStuck (sv_phys.c:762) | sv_phys.luau:checkStuck | VERIFIED | called every tick of the matched chain |
-| SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | VERIFIED | matched chain (dry-land path); waterlevel 2/3 branches never entered by the fixture script |
-| SV_WallFriction (sv_phys.c:867) | sv_phys.luau:wallFriction | VERIFIED | inside walkMove path of the matched chain |
+| SV_CheckStuck (sv_phys.c:762) | sv_phys.luau:checkStuck | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): called every tick of the matched chain |
+| SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain (dry-land path); waterlevel 2/3 branches never entered by the fixture script |
+| SV_WallFriction (sv_phys.c:867) | sv_phys.luau:wallFriction | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): inside walkMove path of the matched chain |
 | SV_TryUnstick (sv_phys.c:901) | sv_phys.luau:tryUnstick | PENDING | transliterated 8-direction unstick; unlikely to be hit by the fixture, unasserted |
-| SV_WalkMove (sv_phys.c:958) | sv_phys.luau:walkMove | VERIFIED | matched chain incl. step-up/down and oldonground handling |
+| SV_WalkMove (sv_phys.c:958) | sv_phys.luau:walkMove | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain incl. step-up/down and oldonground handling |
 | SV_Physics_Client (sv_phys.c:1059) | sv_phys.luau:physicsClient | VERIFIED | test_server: player walks/falls/fires (PlayerPreThink/PostThink run); WALK branch replicated tick-exact in test_movement |
 | SV_Physics_None (sv_phys.c:1142) | sv_phys.luau:physicsNone | PENDING | runThink only; trigger entities in E2E |
 | SV_Physics_Follow (sv_phys.c:1156) | — | UNIMPLEMENTED | dead: QUAKE2-only |
@@ -375,16 +375,16 @@ parses (test_bsp/test_models headers).
 | SV_SetIdealPitch (sv_user.c:53) | server/sv_user.luau:setIdealPitch | PENDING | 6-step floor sampling transliterated; runs per datagram in E2E, idealpitch value never asserted |
 | SV_UserFriction (sv_user.c:122) | sv_user.luau:userFriction | VERIFIED | matched chain (test_movement) incl. edgefriction leading-edge trace |
 | SV_Accelerate (#if 0 variant, sv_user.c:170) | — | UNIMPLEMENTED | dead: disabled by `#if 0` in WinQuake |
-| SV_Accelerate (sv_user.c:190) | sv_user.luau:accelerate | VERIFIED | matched chain |
-| SV_AirAccelerate (sv_user.c:207) | sv_user.luau:airAccelerate | VERIFIED | matched chain (wishspd 30 clamp) |
+| SV_Accelerate (sv_user.c:190) | sv_user.luau:accelerate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain |
+| SV_AirAccelerate (sv_user.c:207) | sv_user.luau:airAccelerate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain (wishspd 30 clamp) |
 | DropPunchAngle (sv_user.c:229) | sv_user.luau:dropPunchAngle | PENDING | in the chain but fixture punchangle stays zero; decay math untested |
 | SV_WaterMove (sv_user.c:247) | sv_user.luau:waterMove | PENDING | ported (copied verbatim into tools/move_truth.c but the scripted route never enters water) |
 | SV_WaterJump (sv_user.c:307) | sv_user.luau:waterJump | PENDING | FL_WATERJUMP path unexercised by fixture |
-| SV_AirMove (sv_user.c:326) | sv_user.luau:airMove | VERIFIED | matched chain (fwd/side/up wishvel, onground dispatch) |
-| SV_ClientThink (sv_user.c:380) | sv_user.luau:clientThink | VERIFIED | matched chain; includes V_CalcRoll (view.c) for angles roll |
+| SV_AirMove (sv_user.c:326) | sv_user.luau:airMove | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain (fwd/side/up wishvel, onground dispatch) |
+| SV_ClientThink (sv_user.c:380) | sv_user.luau:clientThink | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): matched chain; includes V_CalcRoll (view.c) for angles roll |
 | SV_ReadClientMove (sv_user.c:438) | sv_user.luau:readClientMove | VERIFIED | test_server: clc_move angles/moves/buttons/impulse drive asserted movement + shotgun fire; delta: ping_times[] not tracked (no ping report) |
-| SV_ReadClientMessage (sv_user.c:482) | server/host.luau:readClientMessage | VERIFIED | all E2E tests: stringcmd/move/disconnect/nop dispatch, badread drop; delta: C's per-command whitelist + Cmd_ExecuteString hop replaced by direct dispatch into host.clientCommand |
-| SV_RunClients (sv_user.c:600) | host.luau:runClients | VERIFIED | drop on misbehave, cmd cleared while unspawned, paused gate; exercised in every E2E test |
+| SV_ReadClientMessage (sv_user.c:482) | server/host.luau:readClientMessage | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): all E2E tests: stringcmd/move/disconnect/nop dispatch, badread drop; delta: C's per-command whitelist + Cmd_ExecuteString hop replaced by direct dispatch into host.clientCommand |
+| SV_RunClients (sv_user.c:600) | host.luau:runClients | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): drop on misbehave, cmd cleared while unspawned, paused gate; exercised in every E2E test |
 
 ## host.c
 
@@ -405,7 +405,7 @@ parses (test_bsp/test_models headers).
 | Host_GetConsoleCommands (host.c:532) | — | SUBSTITUTED | no dedicated-server console; Studio attributes serve as the debug channel |
 | _Host_ServerFrame (host.c:554, FPS_20) | — | UNIMPLEMENTED | dead: FPS_20 ifdef not compiled in WinQuake |
 | Host_ServerFrame (host.c:600) | host.luau:frame | VERIFIED | test_server/test_loopback: clear datagram → run clients → physics → send messages, in C order; new-client polling is event-driven (substitution noted above) |
-| _Host_Frame / Host_Frame (host.c:633,729) | host.luau:frame + init.server.luau Heartbeat | VERIFIED | server half only; client half (input/render/sound/cd) lives in the client port; rate limiting substituted per Host_FilterTime row |
+| _Host_Frame / Host_Frame (host.c:633,729) | host.luau:frame + init.server.luau Heartbeat | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): server half only; client half (input/render/sound/cd) lives in the client port; rate limiting substituted per Host_FilterTime row |
 | Host_InitVCR (host.c:772) | — | UNIMPLEMENTED | VCR record/playback dev harness |
 | Host_Init (host.c:835) | init.server.luau bootstrap | SUBSTITUTED | pak assembly from asset chunks, remotes, host.newGame |
 | Host_Shutdown (host.c:932) | — | SUBSTITUTED | Roblox tears the server down |
@@ -472,7 +472,7 @@ build are absent and hit the VM's bad-builtin error).
 | PF_setorigin #2 (pr_cmds.c:120) | def(2) | VERIFIED | player spawn origin asserted client-side in loopback (setorigin + relink) |
 | SetMinMaxSize (pr_cmds.c:132) | pr_cmds.luau:setMinMaxSize | PENDING | delta: C's unused rotate parameter dropped (always false in NQ callers) |
 | PF_setsize #4 (pr_cmds.c:215) | def(4) | VERIFIED | player hull from PutClientInServer → onground/walk movement asserted (test_server) |
-| PF_setmodel #3 (pr_cmds.c:234) | def(3) | VERIFIED | precache index lookup + brush model min/max; census + client precache lists asserted |
+| PF_setmodel #3 (pr_cmds.c:234) | def(3) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): precache index lookup + brush model min/max; census + client precache lists asserted |
 | PF_bprint #23 (pr_cmds.c:273) | def(23) | PENDING | |
 | PF_sprint #24 (pr_cmds.c:290) | def(24) | PENDING | svc_print to one client |
 | PF_centerprint #73 (pr_cmds.c:321) | def(73) | PENDING | svc_centerprint |
@@ -536,7 +536,7 @@ build are absent and hit the VM's bad-builtin error).
 | PF_WaterMove (pr_cmds.c:~1684) | — | UNIMPLEMENTED | dead: QUAKE2-only |
 | PF_sin/PF_cos/PF_sqrt (pr_cmds.c:~1809+) | — | UNIMPLEMENTED | dead: QUAKE2-only slots |
 | PF_Fixme (pr_cmds.c:~1825) | vm.luau exec bad-builtin error | PENDING | missing builtin number → runError, equivalent to Fixme's abort |
-| precache_model2/sound2/file2 #75-77 | pr_cmds.luau B[75..77] aliases | VERIFIED | aliased to the verified #19/#20/#68 implementations, same as C's table |
+| precache_model2/sound2/file2 #75-77 | pr_cmds.luau B[75..77] aliases | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): aliased to the verified #19/#20/#68 implementations, same as C's table |
 
 ## zone.c
 
@@ -636,3 +636,5 @@ Notes on the UNIMPLEMENTED bucket: 13 of the 49 are dead code in the WinQuake NQ
 (QUAKE2/FPS_20/#if 0 ifdefs or PF_Fixme slots); most of the rest are console/debug
 printing (ED_Print*, PR_Profile, viewmodel dev commands). The gameplay-relevant gaps are
 SV_SaveSpawnparms (inventory/rune carry across levels), Host_Tell_f, and Host_Kick_f.
+
+> Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 35 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.
