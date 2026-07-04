@@ -900,7 +900,8 @@ function sv_phys.physics(svr: any)
 		vmlib.setGlobalFloat(vm, glob.force_retouch, vmlib.globalFloat(vm, glob.force_retouch) - 1)
 	end
 
-	svr.time += svr.frametime
+	-- sv.time advances in SV_Frame (qwsv.frame), not here: QW's
+	-- SV_Physics never touches sv.time (sv_phys.c)
 	vm.time = svr.time
 end
 

@@ -80,6 +80,9 @@ return function()
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
 	local worldBuilt = false
+	local seenLevelResets = 0
+	local staticsSpawned = 0
+	local staticSoundsSpawned = 0
 
 	-- model defs come straight from qwcl's loaded models (modellist)
 	local function getModelDef(modelindex: number): entrender.ModelDef?
@@ -87,8 +90,9 @@ return function()
 		if def then
 			return def
 		end
-		local m = cl.models[modelindex + 1]
-		local name = cl.model_name[modelindex + 1]
+		-- wire model indices are 1-based precache slots, like C
+		local m = cl.models[modelindex]
+		local name = cl.model_name[modelindex]
 		if not m or not name then
 			return nil
 		end
@@ -126,8 +130,15 @@ return function()
 		for _, e in anim do
 			table.insert(lightAnim, e)
 		end
-		-- statics (svc_spawnstatic)
-		for _, es in cl.static_entities do
+		print(`[robloquake] qw world built: {cl.levelname}`)
+	end
+
+	-- statics arrive in the prespawn signon, after the world builds:
+	-- spawn whatever is new each frame
+	local function spawnPendingStatics()
+		while staticsSpawned < #cl.static_entities do
+			staticsSpawned += 1
+			local es = cl.static_entities[staticsSpawned]
 			local def = getModelDef(es.modelindex)
 			if def and def.kind ~= "none" then
 				local re = entrender.create(def, entFolder)
@@ -142,13 +153,15 @@ return function()
 				end
 			end
 		end
-		for _, ss in cl.static_sounds do
+		while staticSoundsSpawned < #cl.static_sounds do
+			staticSoundsSpawned += 1
+			local ss = cl.static_sounds[staticSoundsSpawned]
 			local name = cl.sound_name[ss.num]
 			if name then
-				soundlib.static(sndsys, ss.pos, name, ss.vol / 255, ss.atten)
+				-- volume byte passes through raw; soundlib scales by 255
+				soundlib.static(sndsys, ss.pos, name, ss.vol, ss.atten)
 			end
 		end
-		print(`[robloquake] qw world built: {cl.levelname}`)
 	end
 
 	----------------------------------------------------------------------
@@ -303,16 +316,41 @@ return function()
 		if cl.state == "disconnected" then
 			return
 		end
+
+		-- level change: rebuild the render world from scratch
+		if (cl.levelResets or 0) ~= seenLevelResets then
+			seenLevelResets = cl.levelResets or 0
+			worldBuilt = false
+			staticsSpawned = 0
+			staticSoundsSpawned = 0
+			table.clear(modelDefs)
+			table.clear(brushTemplates)
+			table.clear(lightAnim)
+			for key, re in renderEnts do
+				entrender.destroy(re)
+				renderEnts[key] = nil
+				renderDefs[key] = nil
+			end
+			worldFolder:ClearAllChildren()
+		end
+
 		buildWorld()
 		if not worldBuilt then
 			return
+		end
+		spawnPendingStatics()
+
+		-- server-forced view angles (spawn/teleport fixangle)
+		if cl.setangle then
+			cl.setangle = false
+			input.setAngles(cl.viewangles)
 		end
 
 		-- find the spike model index once for nail rendering
 		if not cl.spikeindex then
 			for i, name in cl.model_name do
-				if name == "progs/spike.mdl" then
-					cl.spikeindex = i - 1
+					if name == "progs/spike.mdl" then
+					cl.spikeindex = i -- precache slot, 1-based
 				end
 			end
 		end
@@ -330,7 +368,11 @@ return function()
 			buttons += 2
 		end
 		accum += dt
-		local msec = math.clamp(math.floor(accum * 1000), 0, 250)
+		local msec = math.floor(accum * 1000)
+		if msec > 250 then
+			msec = 100 -- CL_FinishMove's hitch substitution
+			accum = 0
+		end
 		if msec >= 1 and cl.state ~= "connected" then
 			accum -= msec / 1000
 			qwcl.sendCmd(cl, {
@@ -355,8 +397,13 @@ return function()
 		if not viewheight or viewheight == 0 then
 			viewheight = 22
 		end
+		-- weapon kicks: punchangle on pitch, decaying like V_DropPunchAngle
+		if cl.punchangle ~= 0 then
+			cl.punchangle = math.min(cl.punchangle + 10 * dt, 0)
+		end
 		local eye = cl.simorg + vector.create(0, 0, viewheight)
-		local fwd, right, up = mathlib.angleVectors(cl.simangles)
+		local angles = vector.create(cl.simangles.x + cl.punchangle, cl.simangles.y, cl.simangles.z)
+		local fwd, right, up = mathlib.angleVectors(angles)
 		camera.CFrame = qcoords.cframe(eye, fwd, right, up)
 
 		relinkEntities(cl.time)
@@ -377,15 +424,31 @@ return function()
 		-- sounds
 		for i = sndDrained + 1, #cl.sounds do
 			local snd = cl.sounds[i]
-			local name = cl.sound_name[snd.num]
-			if name and snd.num >= 0 then
-				soundlib.start(sndsys, snd.ent, snd.channel, name, snd.pos, snd.vol / 255, snd.atten)
+			if snd.num < 0 then
+				soundlib.stop(sndsys, snd.ent, snd.channel) -- svc_stopsound
+			else
+				local name = cl.sound_name[snd.num]
+				if name then
+					soundlib.start(sndsys, snd.ent, snd.channel, name, snd.pos, snd.vol / 255, snd.atten)
+				end
 			end
 		end
 		sndDrained = #cl.sounds
 		if sndDrained > 512 then
 			table.clear(cl.sounds)
 			sndDrained = 0
+		end
+
+		-- drain unrendered event sinks so they don't grow unboundedly
+		-- (temp entity effects + centerprint overlay are follow-up work)
+		if #cl.tempEntities > 0 then
+			table.clear(cl.tempEntities)
+		end
+		while #cl.centerprints > 0 do
+			local cp = table.remove(cl.centerprints, 1)
+			if cp then
+				print("[qw center] " .. cp:gsub("\n", " "))
+			end
 		end
 
 		-- chat/print lines to the output for now (QW console follow-up)

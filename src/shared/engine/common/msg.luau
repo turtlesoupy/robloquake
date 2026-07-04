@@ -83,6 +83,15 @@ function msg.writeString(sb: SizeBuf, s: string?)
 end
 
 -- MSG_WriteCoord: 13.3 fixed point via C truncation
+-- QW's MSG_WriteAngle: scale first, then C-truncate ((int)(f*256/360)).
+-- NetQuake truncates f first — one angle-step difference for fractional
+-- inputs, so the QW wire paths use this variant.
+function msg.writeAngleQW(sb: SizeBuf, f: number)
+	local v = f * 256 / 360
+	v = if v >= 0 then math.floor(v) else -math.floor(-v)
+	buffer.writeu8(sb.data, getSpace(sb, 1), bit32.band(v, 255))
+end
+
 function msg.writeCoord(sb: SizeBuf, f: number)
 	local v = f * 8
 	msg.writeShort(sb, if v >= 0 then math.floor(v) else -math.floor(-v))

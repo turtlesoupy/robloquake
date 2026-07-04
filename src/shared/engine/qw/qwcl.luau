@@ -180,7 +180,31 @@ end
 --------------------------------------------------------------------------
 -- server message parsing (cl_parse.c)
 
+-- CL_ClearState: wipe per-level state before a new serverdata
+local function clearState(cl: any)
+	cl.baselines = {}
+	cl.lightstyles = {}
+	cl.static_entities = {}
+	cl.static_sounds = {}
+	cl.sound_name = {}
+	cl.model_name = {}
+	cl.models = {}
+	cl.worldmodel = nil
+	cl.playerindex = nil
+	cl.spikeindex = nil
+	cl.validsequence = 0
+	cl.nails = {}
+	for i = 0, UPDATE_BACKUP - 1 do
+		local f: Frame = cl.frames[i]
+		f.packet_entities = {}
+		f.delta_sequence = -1
+		f.invalid = false
+	end
+	cl.levelResets = (cl.levelResets or 0) + 1 -- renderer watches this
+end
+
 local function parseServerData(cl: any, r: msg.Reader)
+	clearState(cl)
 	local protover = msg.readLong(r)
 	if protover ~= qwp.PROTOCOL_VERSION then
 		error(`Server returned version {protover}, not {qwp.PROTOCOL_VERSION}`)
@@ -388,8 +412,9 @@ local function parsePacketEntitiesMsg(cl: any, r: msg.Reader, delta: boolean)
 	local oldEnts: { qwents.EntityState }
 	if oldpacket ~= -1 then
 		if cl.netchan.outgoing_sequence - oldpacket >= UPDATE_BACKUP - 1 then
-			-- we can't use this, it is too old
+			-- we can't use this, it is too old (FlushEntityPacket)
 			newframe.invalid = true
+			cl.validsequence = 0
 			-- (FlushEntityPacket: read and discard, keep old data)
 			qwents.parsePacketEntities(r, {}, function(n)
 				return cl.baselines[n] or qwents.nullState(n)
@@ -479,10 +504,12 @@ end
 
 -- CL_ParseServerMessage
 function qwcl.parseServerMessage(cl: any, r: msg.Reader)
-	cl.parsecount = cl.netchan.incoming_sequence
+	-- CL_ParseClientdata: the frame this message acks is OUR cmd frame
+	cl.parsecount = cl.netchan.incoming_acknowledged
 	local frame: Frame = cl.frames[bit32.band(cl.parsecount, UPDATE_MASK)]
 	frame.receivedtime = cl.realtime
 	cl.parsecounttime = frame.senttime
+	cl.nails = {} -- CL_ClearProjectiles: nails live one message
 
 	while true do
 		if r.badread then
@@ -512,6 +539,7 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 			parseServerData(cl, r)
 		elseif cmd == qwp.svc_setangle then
 			cl.viewangles = vector.create(msg.readAngle(r), msg.readAngle(r), msg.readAngle(r))
+			cl.setangle = true -- presentation layer must push into input
 		elseif cmd == qwp.svc_lightstyle then
 			local i = msg.readByte(r)
 			cl.lightstyles[i] = msg.readString(r)
@@ -530,8 +558,9 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 			local i = msg.readByte(r)
 			playerInfo(cl, i).pl = msg.readByte(r)
 		elseif cmd == qwp.svc_updateentertime then
+			-- time is sent over as seconds ago
 			local i = msg.readByte(r)
-			playerInfo(cl, i).entertime = msg.readFloat(r)
+			playerInfo(cl, i).entertime = cl.realtime - msg.readFloat(r)
 		elseif cmd == qwp.svc_updateuserinfo then
 			local i = msg.readByte(r)
 			local info = playerInfo(cl, i)
@@ -582,15 +611,14 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 		elseif cmd == qwp.svc_muzzleflash then
 			local i = msg.readShort(r)
 			table.insert(cl.tempEntities, { type = -1, entity = i, pos = vector.zero })
-		elseif cmd == qwp.svc_updateentertime then
-			local i = msg.readByte(r)
-			playerInfo(cl, i).entertime = msg.readFloat(r)
 		elseif cmd == qwp.svc_setpause then
 			cl.paused = msg.readByte(r) ~= 0
 		elseif cmd == qwp.svc_temp_entity then
 			parseTempEntity(cl, r)
-		elseif cmd == qwp.svc_killedmonster or cmd == qwp.svc_foundsecret then
-			-- stat counts arrive via updatestat
+		elseif cmd == qwp.svc_killedmonster then
+			cl.stats[qwp.STAT_MONSTERS] = (cl.stats[qwp.STAT_MONSTERS] or 0) + 1
+		elseif cmd == qwp.svc_foundsecret then
+			cl.stats[qwp.STAT_SECRETS] = (cl.stats[qwp.STAT_SECRETS] or 0) + 1
 		elseif cmd == qwp.svc_playerinfo then
 			parsePlayerinfo(cl, r)
 		elseif cmd == qwp.svc_nails then
@@ -618,7 +646,7 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 	if not cl.playerindex then
 		for i, name in cl.model_name do
 			if name == "progs/player.mdl" then
-				cl.playerindex = i - 1
+				cl.playerindex = i -- precache slot, 1-based like C
 			end
 		end
 	end
@@ -693,7 +721,7 @@ local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysE
 		if es.modelindex == 0 then
 			continue
 		end
-		local m = cl.models[es.modelindex + 1]
+		local m = cl.models[es.modelindex] -- wire indices are 1-based like C's cl.model_precache
 		if m and m.kind == "brush" then
 			table.insert(physents, { model = m.brush, origin = es.origin })
 		end

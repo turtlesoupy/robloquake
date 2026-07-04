@@ -220,19 +220,19 @@ function qwents.writeDelta(sb: msg.SizeBuf, from: EntityState, to: EntityState, 
 		msg.writeCoord(sb, to.origin.x)
 	end
 	if bit32.band(bits, qwp.U_ANGLE1) ~= 0 then
-		msg.writeAngle(sb, to.angles.x)
+		msg.writeAngleQW(sb, to.angles.x)
 	end
 	if bit32.band(bits, qwp.U_ORIGIN2) ~= 0 then
 		msg.writeCoord(sb, to.origin.y)
 	end
 	if bit32.band(bits, qwp.U_ANGLE2) ~= 0 then
-		msg.writeAngle(sb, to.angles.y)
+		msg.writeAngleQW(sb, to.angles.y)
 	end
 	if bit32.band(bits, qwp.U_ORIGIN3) ~= 0 then
 		msg.writeCoord(sb, to.origin.z)
 	end
 	if bit32.band(bits, qwp.U_ANGLE3) ~= 0 then
-		msg.writeAngle(sb, to.angles.z)
+		msg.writeAngleQW(sb, to.angles.z)
 	end
 end
 
@@ -348,16 +348,25 @@ function qwents.parsePacketEntities(
 ): PacketEntities
 	local out: PacketEntities = {}
 	local oldindex = 1
+	local function capCheck()
+		if #out > qwents.MAX_PACKET_ENTITIES then
+			error("CL_ParsePacketEntities: newindex == MAX_PACKET_ENTITIES")
+		end
+	end
 
 	while true do
 		local word = msg.readShort(r)
+		if r.badread then
+			error("msg_badread in packetentities")
+		end
 		if word < 0 then
 			word += 65536 -- readShort is signed; the wire word is not
 		end
 		if word == 0 then
 			-- copy the rest of the old entities
 			while oldindex <= #from do
-				table.insert(out, from[oldindex])
+				capCheck()
+			table.insert(out, from[oldindex])
 				oldindex += 1
 			end
 			break
@@ -368,6 +377,7 @@ function qwents.parsePacketEntities(
 
 		-- copy unchanged old entities below newnum
 		while oldindex <= #from and from[oldindex].number < newnum do
+			capCheck()
 			table.insert(out, from[oldindex])
 			oldindex += 1
 		end
@@ -382,10 +392,12 @@ function qwents.parsePacketEntities(
 
 		if oldindex <= #from and from[oldindex].number == newnum then
 			-- delta from the old state
+			capCheck()
 			table.insert(out, qwents.parseDelta(r, from[oldindex], newnum, bits))
 			oldindex += 1
 		else
 			-- delta from the baseline
+			capCheck()
 			table.insert(out, qwents.parseDelta(r, baselineFor(newnum), newnum, bits))
 		end
 	end

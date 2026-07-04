@@ -133,7 +133,8 @@ t.check(cl.deltaPacketCount > 20, `delta frames dominated ({cl.deltaPacketCount}
 t.check(cl.validsequence > 30, "validsequence tracking")
 
 -- stats flowed over the reliable path
-t.eq(cl.stats[qwp.STAT_HEALTH], 100, "health stat 100")
+local svHealth = vmlib.edFloat(player, ent.health)
+t.check(cl.stats[qwp.STAT_HEALTH] == svHealth // 1 and svHealth > 0, `health stat mirrors server ({cl.stats[qwp.STAT_HEALTH]})`)
 t.check(cl.stats[qwp.STAT_SHELLS] >= 25, "shells stat present")
 
 -- lightstyles and other players' info

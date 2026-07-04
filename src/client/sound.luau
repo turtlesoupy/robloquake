@@ -189,6 +189,14 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 end
 
 -- S_StaticSound (looping ambients from the signon)
+-- S_StopSound: silence a persistent entity channel
+function sound.stop(sys: System, entnum: number, channel: number)
+	local ch = sys.channels[entnum * 8 + channel]
+	if ch and ch.sound then
+		ch.sound:Stop()
+	end
+end
+
 function sound.static(sys: System, pos: vector, sample: string, vol: number, atten: number)
 	if not sys.enabled then
 		return

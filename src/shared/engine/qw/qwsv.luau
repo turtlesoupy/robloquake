@@ -28,6 +28,11 @@ local qwsv = {}
 
 local MAX_CLIENTS = 32
 
+-- C (int) cast: truncation toward zero (// 1 floors, wrong for negatives)
+local function trunc(x: number): number
+	return if x >= 0 then math.floor(x) else math.ceil(x)
+end
+
 export type Client = {
 	active: boolean,
 	spawned: boolean,
@@ -386,11 +391,11 @@ function qwsv.createBaseline(svr: any)
 		msg.writeByte(svr.signon, base.colormap)
 		msg.writeByte(svr.signon, base.skinnum)
 		msg.writeCoord(svr.signon, base.origin.x)
-		msg.writeAngle(svr.signon, base.angles.x)
+		msg.writeAngleQW(svr.signon, base.angles.x)
 		msg.writeCoord(svr.signon, base.origin.y)
-		msg.writeAngle(svr.signon, base.angles.y)
+		msg.writeAngleQW(svr.signon, base.angles.y)
 		msg.writeCoord(svr.signon, base.origin.z)
-		msg.writeAngle(svr.signon, base.angles.z)
+		msg.writeAngleQW(svr.signon, base.angles.z)
 	end
 end
 
@@ -406,6 +411,13 @@ end
 -- connection + spawn flow (Cmd_New_f/Cmd_Spawn_f/Cmd_Begin_f compressed
 -- for the offline layer; the wire handshake arrives with netchan)
 function qwsv.connectClient(svr: any, slot: number, userinfo: { [string]: string }?)
+	local client = qwsv.allocClient(svr, slot, userinfo)
+	qwsv.spawnIntoGame(svr, client)
+	client.spawned = true
+end
+
+-- SV_DirectConnect core: slot setup + default spawn parms via SetNewParms
+function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }?): Client
 	local vm = svr.vm
 	local qdefs = svr.qdefs
 	local client: Client = svr.clients[slot]
@@ -439,17 +451,16 @@ function qwsv.connectClient(svr: any, slot: number, userinfo: { [string]: string
 	for i = 1, 16 do
 		client.spawn_parms[i] = vmlib.globalFloat(vm, qdefs.glob["parm" .. i])
 	end
-
-	qwsv.spawnIntoGame(svr, client)
+	svr.usercount = (svr.usercount or 0) + 1
+	client.userid = svr.usercount
+	return client
 end
 
 -- SV_DirectConnect equivalent for the wire path: allocates the slot
--- and spawn parms; the client drives new/prespawn/spawn/begin itself
+-- and spawn parms only — ClientConnect/PutClientInServer run exactly
+-- once, at cmd begin (SV_Begin_f), never during the handshake
 function qwsv.wireConnect(svr: any, slot: number, userinfo: { [string]: string }?, send: (packet: buffer) -> ()): Client
-	local client: Client = svr.clients[slot]
-	qwsv.connectClient(svr, slot, userinfo)
-	-- undo the offline auto-spawn: the wire client spawns via cmd begin
-	client.spawned = false
+	local client: Client = qwsv.allocClient(svr, slot, userinfo)
 	client.send = send
 	return client
 end
@@ -466,6 +477,18 @@ function qwsv.spawnIntoGame(svr: any, client: Client)
 	buffer.writei32(g, qdefs.glob.self * 4, client.edict.num)
 
 	if client.spectator then
+		-- SV_SpawnSpectator: place at the first info_player_start
+		local ed = client.edict
+		local ent = qdefs.ent
+		vmlib.edSetVector(ed, ent.origin, vector.zero)
+		vmlib.edSetVector(ed, ent.view_ofs, vector.create(0, 0, 22))
+		for i = svr.maxclients - 1, vm.num_edicts - 1 do
+			local e = vm.edicts[i + 1]
+			if not e.free and vmlib.edString(vm, e, ent.classname) == "info_player_start" then
+				vmlib.edSetVector(ed, ent.origin, vmlib.edVector(e, ent.origin))
+				break
+			end
+		end
 		if qdefs.func.SpectatorConnect then
 			vmlib.exec(vm, qdefs.func.SpectatorConnect)
 		end
@@ -473,7 +496,6 @@ function qwsv.spawnIntoGame(svr: any, client: Client)
 		vmlib.exec(vm, qdefs.func.ClientConnect)
 		vmlib.exec(vm, qdefs.func.PutClientInServer)
 	end
-	client.spawned = true
 end
 
 -- V_CalcRoll (server side, view.c)
@@ -578,6 +600,12 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 		if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
 			continue
 		end
+		if vmlib.edInt(ed, ent.owner) == player.num then
+			continue -- player's own missile
+		end
+		if #pm.physents >= 32 then -- MAX_PHYSENTS
+			continue
+		end
 		local amin = vmlib.edVector(ed, ent.absmin)
 		local amax = vmlib.edVector(ed, ent.absmax)
 		if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
@@ -638,8 +666,10 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 		-- link into place and touch triggers
 		qwworld.linkEdict(svr.world, player, true)
 
-		-- touch other objects
-		local touched: { [number]: boolean } = {}
+		-- touch other objects (playertouch: deduped across the whole
+		-- clc_move batch — chop halves and net_drop replays included)
+		local touched: { [number]: boolean } = (client :: any).playertouch or {};
+		(client :: any).playertouch = touched
 		for i = 1, pm.numtouch do
 			local pidx = pm.touchindex[i]
 			local n = physentEdicts[pidx + 1]
@@ -664,6 +694,7 @@ end
 -- chopped sub-command; lastcmd is kept (buttons cleared) for the
 -- PF_COMMAND playerinfo and for filling dropped packets
 function qwsv.executeCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
+	(client :: any).playertouch = {} -- SV_PreRunCmd
 	client.localtime = svr.time
 	qwsv.runCmd(svr, client, ucmd)
 	qwsv.postRunCmd(svr, client)
@@ -808,6 +839,10 @@ local function writeList(client: Client, svc: number, list: { string }, n: numbe
 end
 
 function qwsv.soundlistF(svr: any, client: Client, args: { string })
+	if client.spawned then
+		svr.print("soundlist not valid -- allready spawned")
+		return
+	end
 	if tonumber(args[2]) ~= svr.spawncount then
 		svr.print("SV_Soundlist_f from different level")
 		qwsv.newF(svr, client)
@@ -817,6 +852,10 @@ function qwsv.soundlistF(svr: any, client: Client, args: { string })
 end
 
 function qwsv.modellistF(svr: any, client: Client, args: { string })
+	if client.spawned then
+		svr.print("modellist not valid -- allready spawned")
+		return
+	end
 	if tonumber(args[2]) ~= svr.spawncount then
 		svr.print("SV_Modellist_f from different level")
 		qwsv.newF(svr, client)
@@ -827,6 +866,10 @@ end
 
 -- SV_PreSpawn_f: signon (baselines + statics), then stuff "cmd spawn"
 function qwsv.prespawnF(svr: any, client: Client, args: { string })
+	if client.spawned then
+		svr.print("prespawn not valid -- allready spawned")
+		return
+	end
 	if tonumber(args[2]) ~= svr.spawncount then
 		svr.print("SV_PreSpawn_f from different level")
 		qwsv.newF(svr, client)
@@ -843,9 +886,10 @@ end
 -- SV_FullClientUpdate
 function qwsv.fullClientUpdate(svr: any, cl: Client, buf: msg.SizeBuf)
 	local i = cl.num - 1
+	local frags = if cl.active and cl.edict then trunc(vmlib.edFloat(cl.edict, svr.qdefs.ent.frags)) else 0
 	msg.writeByte(buf, qwp.svc_updatefrags)
 	msg.writeByte(buf, i)
-	msg.writeShort(buf, vmlib.edFloat(cl.edict, svr.qdefs.ent.frags))
+	msg.writeShort(buf, frags)
 	msg.writeByte(buf, qwp.svc_updateping)
 	msg.writeByte(buf, i)
 	msg.writeShort(buf, 0)
@@ -858,32 +902,48 @@ function qwsv.fullClientUpdate(svr: any, cl: Client, buf: msg.SizeBuf)
 	msg.writeByte(buf, qwp.svc_updateuserinfo)
 	msg.writeByte(buf, i)
 	msg.writeLong(buf, cl.userid)
-	msg.writeString(buf, infoString(cl.userinfo))
+	-- Info_RemovePrefixedKeys: _-prefixed keys are server-private
+	local pub: { [string]: string } = {}
+	if cl.active then
+		for k, v in cl.userinfo do
+			if k:sub(1, 1) ~= "_" then
+				pub[k] = v
+			end
+		end
+	end
+	msg.writeString(buf, infoString(pub))
 end
 
 -- SV_Spawn_f: other players' state, lightstyles, forced stats
 function qwsv.spawnF(svr: any, client: Client, args: { string })
+	if client.spawned then
+		svr.print("Spawn not valid -- allready spawned")
+		return
+	end
 	if tonumber(args[2]) ~= svr.spawncount then
 		svr.print("SV_Spawn_f from different level")
 		qwsv.newF(svr, client)
 		return
 	end
-	local out = client.netchan.message
 	local n = tonumber(args[3]) or 0
+	if n < 0 or n > svr.maxclients then
+		svr.print("SV_Spawn_f invalid client start")
+		qwsv.newF(svr, client)
+		return
+	end
+	local out = client.netchan.message
+	msg.clear(out) -- C SZ_Clears the reliable stream here
 
+	-- current status of every slot from n on, inactive ones included
+	-- (clears stale scoreboard entries client-side)
 	for i = n + 1, svr.maxclients do
-		local other = svr.clients[i]
-		if other.active then
-			qwsv.fullClientUpdate(svr, other, out)
-		end
+		qwsv.fullClientUpdate(svr, svr.clients[i], out)
 	end
 
 	for i = 0, 63 do
-		if svr.lightstyles[i] then
-			msg.writeByte(out, qwp.svc_lightstyle)
-			msg.writeByte(out, i)
-			msg.writeString(out, svr.lightstyles[i])
-		end
+		msg.writeByte(out, qwp.svc_lightstyle)
+		msg.writeByte(out, i)
+		msg.writeString(out, svr.lightstyles[i] or "")
 	end
 
 	-- set up the edict
@@ -972,15 +1032,40 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		vmlib.edSetInt(client.edict, ent.goalentity, target.edict.num)
 	end,
 	say = function(svr, client, _args, raw)
-		local text = raw:match("^say%s+(.*)$") or ""
-		text = text:gsub('^"(.*)"$', "%1")
+		local text = (raw:match("^say%s+(.*)$") or ""):gsub('^"(.*)"$', "%1")
 		svr.broadcastPrint(svr, qwp.PRINT_CHAT, `{client.name}: {text}\n`)
 	end,
-	setinfo = function(svr, client, args)
-		if args[2] and args[3] then
-			client.userinfo[args[2]] = args[3]
-			extractUserinfo(client)
+	say_team = function(svr, client, _args, raw)
+		local text = (raw:match("^say_team%s+(.*)$") or ""):gsub('^"(.*)"$', "%1")
+		local team = client.userinfo.team or ""
+		local line = `({client.name}): {text}\n`
+		table.insert(svr.printLog, { level = qwp.PRINT_CHAT, text = line })
+		for i = 1, svr.maxclients do
+			local cl: Client = svr.clients[i]
+			if cl.active and cl.spawned and (cl.userinfo.team or "") == team then
+				svr.clientPrint(svr, cl, qwp.PRINT_CHAT, line)
+			end
 		end
+	end,
+	setinfo = function(svr, client, args)
+		local key, value = args[2], args[3]
+		if not key or not value then
+			return
+		end
+		if key:sub(1, 1) == "*" then
+			return -- star keys are server-controlled
+		end
+		if client.userinfo[key] == value then
+			return
+		end
+		client.userinfo[key] = value
+		extractUserinfo(client)
+		-- process the change and tell everyone over the reliable stream
+		local rd = svr.reliable_datagram
+		msg.writeByte(rd, qwp.svc_setinfo)
+		msg.writeByte(rd, client.num - 1)
+		msg.writeString(rd, key)
+		msg.writeString(rd, value)
 	end,
 	kill = function(svr, client)
 		local vm = svr.vm
@@ -1004,16 +1089,32 @@ function qwsv.executeUserCommand(svr: any, client: Client, raw: string)
 end
 
 function qwsv.dropClient(svr: any, client: Client)
-	if client.spawned and not client.spectator then
+	-- add the disconnect message (the transport may still flush it)
+	msg.writeByte(client.netchan.message, qwp.svc_disconnect)
+
+	if client.spawned then
 		local vm = svr.vm
 		buffer.writei32(vm.globals, svr.qdefs.glob.self * 4, client.edict.num)
 		buffer.writef32(vm.globals, svr.qdefs.glob.time * 4, svr.time)
-		vmlib.exec(vm, svr.qdefs.func.ClientDisconnect)
+		if client.spectator then
+			if svr.qdefs.func.SpectatorDisconnect then
+				vmlib.exec(vm, svr.qdefs.func.SpectatorDisconnect)
+			end
+		else
+			vmlib.exec(vm, svr.qdefs.func.ClientDisconnect)
+		end
 	end
+	qwsv.replyToClient(svr, client)
+
 	client.active = false
 	client.spawned = false
 	client.send = nil
-	client.edict.free = true
+	client.name = ""
+	client.userinfo = {}
+	-- C never frees client edicts; the slot is reused on reconnect
+
+	-- tell everyone the slot is gone
+	qwsv.fullClientUpdate(svr, client, svr.reliable_datagram)
 end
 
 -- SV_ExecuteClientMessage
@@ -1051,7 +1152,8 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 			if moveIssued then
 				return -- someone is trying to cheat
 			end
-			moveIssued = true
+			moveIssued = true;
+			(client :: any).playertouch = {} -- SV_PreRunCmd
 			local _checksum = msg.readByte(r) -- authenticated transport; not validated
 			client.lossage = msg.readByte(r)
 			local oldest = qwents.readDeltaUsercmd(r, qwents.nullCmd())
@@ -1074,8 +1176,17 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 				qwsv.runCmd(svr, client, newcmd :: any)
 				qwsv.postRunCmd(svr, client)
 			end
-			client.lastcmd = newcmd
-			client.lastcmd.buttons = 0 -- avoid multiple fires on lag
+			if client.spawned then
+				client.lastcmd = newcmd
+				client.lastcmd.buttons = 0 -- avoid multiple fires on lag
+			end
+		elseif c == qwp.clc_tmove then
+			local o = vector.create(msg.readCoord(r), msg.readCoord(r), msg.readCoord(r))
+			-- only allowed by spectators
+			if client.spectator then
+				vmlib.edSetVector(client.edict, svr.qdefs.ent.origin, o)
+				qwworld.linkEdict(svr.world, client.edict, false)
+			end
 		elseif c == qwp.clc_stringcmd then
 			qwsv.executeUserCommand(svr, client, msg.readString(r))
 		else
@@ -1096,21 +1207,21 @@ function qwsv.updateClientStats(svr: any, client: Client)
 	end
 
 	local stats = table.create(32, 0)
-	stats[qwp.STAT_HEALTH] = vmlib.edFloat(ed, ent.health) // 1
+	stats[qwp.STAT_HEALTH] = trunc(vmlib.edFloat(ed, ent.health))
 	stats[qwp.STAT_WEAPON] = svr.modelIndex(svr, vmlib.edString(vm, ed, ent.weaponmodel)) or 0
-	stats[qwp.STAT_AMMO] = vmlib.edFloat(ed, ent.currentammo) // 1
-	stats[qwp.STAT_ARMOR] = vmlib.edFloat(ed, ent.armorvalue) // 1
-	stats[qwp.STAT_SHELLS] = vmlib.edFloat(ed, ent.ammo_shells) // 1
-	stats[qwp.STAT_NAILS] = vmlib.edFloat(ed, ent.ammo_nails) // 1
-	stats[qwp.STAT_ROCKETS] = vmlib.edFloat(ed, ent.ammo_rockets) // 1
-	stats[qwp.STAT_CELLS] = vmlib.edFloat(ed, ent.ammo_cells) // 1
+	stats[qwp.STAT_AMMO] = trunc(vmlib.edFloat(ed, ent.currentammo))
+	stats[qwp.STAT_ARMOR] = trunc(vmlib.edFloat(ed, ent.armorvalue))
+	stats[qwp.STAT_SHELLS] = trunc(vmlib.edFloat(ed, ent.ammo_shells))
+	stats[qwp.STAT_NAILS] = trunc(vmlib.edFloat(ed, ent.ammo_nails))
+	stats[qwp.STAT_ROCKETS] = trunc(vmlib.edFloat(ed, ent.ammo_rockets))
+	stats[qwp.STAT_CELLS] = trunc(vmlib.edFloat(ed, ent.ammo_cells))
 	if not client.spectator then
-		stats[qwp.STAT_ACTIVEWEAPON] = vmlib.edFloat(ed, ent.weapon) // 1
+		stats[qwp.STAT_ACTIVEWEAPON] = trunc(vmlib.edFloat(ed, ent.weapon))
 	end
 	-- stuff the sigil bits into the high bits of items for sbar
 	stats[qwp.STAT_ITEMS] = bit32.bor(
-		bit32.band(vmlib.edFloat(ed, ent.items) // 1, 0x0fffffff),
-		bit32.lshift(bit32.band(svr.serverflags, 15), 28)
+		bit32.band(trunc(vmlib.edFloat(ed, ent.items)), 0xffffffff),
+		bit32.lshift(trunc(vmlib.globalFloat(vm, svr.qdefs.glob.serverflags)), 28) -- live rune bits
 	)
 
 	local out = client.netchan.message
@@ -1163,9 +1274,9 @@ function qwsv.writeClientdataToMessage(svr: any, client: Client, out: msg.SizeBu
 	if vmlib.edFloat(ed, ent.fixangle) ~= 0 then
 		msg.writeByte(out, qwp.svc_setangle)
 		local ang = vmlib.edVector(ed, ent.angles)
-		msg.writeAngle(out, ang.x)
-		msg.writeAngle(out, ang.y)
-		msg.writeAngle(out, ang.z)
+		msg.writeAngleQW(out, ang.x)
+		msg.writeAngleQW(out, ang.y)
+		msg.writeAngleQW(out, ang.z)
 		vmlib.edSetFloat(ed, ent.fixangle, 0)
 	end
 end
@@ -1384,13 +1495,13 @@ function qwsv.writePlayersToClient(svr: any, client: Client, pvs: buffer, out: m
 		end
 
 		if bit32.band(pflags, qwp.PF_VELOCITY1) ~= 0 then
-			msg.writeShort(out, velocity.x // 1)
+			msg.writeShort(out, trunc(velocity.x))
 		end
 		if bit32.band(pflags, qwp.PF_VELOCITY2) ~= 0 then
-			msg.writeShort(out, velocity.y // 1)
+			msg.writeShort(out, trunc(velocity.y))
 		end
 		if bit32.band(pflags, qwp.PF_VELOCITY3) ~= 0 then
-			msg.writeShort(out, velocity.z // 1)
+			msg.writeShort(out, trunc(velocity.z))
 		end
 		if bit32.band(pflags, qwp.PF_MODEL) ~= 0 then
 			msg.writeByte(out, modelindex)
@@ -1422,11 +1533,11 @@ local function emitNailUpdate(svr: any, nails: { vmlib.Edict }, out: msg.SizeBuf
 		local org = vmlib.edVector(ed, ent.origin)
 		local ang = vmlib.edVector(ed, ent.angles)
 		-- [48 bits] xyzpy 12 12 12 4 8
-		local x = bit32.arshift((org.x + 4096) // 1, 1)
-		local y = bit32.arshift((org.y + 4096) // 1, 1)
-		local z = bit32.arshift((org.z + 4096) // 1, 1)
-		local p = bit32.band((16 * ang.x / 360) // 1, 15)
-		local yaw = bit32.band((256 * ang.y / 360) // 1, 255)
+		local x = bit32.arshift(trunc(org.x + 4096), 1)
+		local y = bit32.arshift(trunc(org.y + 4096), 1)
+		local z = bit32.arshift(trunc(org.z + 4096), 1)
+		local p = bit32.band(trunc(16 * ang.x / 360), 15)
+		local yaw = bit32.band(trunc(256 * ang.y / 360), 255)
 		msg.writeByte(out, bit32.band(x, 255))
 		msg.writeByte(out, bit32.band(bit32.bor(bit32.rshift(x, 8), bit32.lshift(y, 4)), 255))
 		msg.writeByte(out, bit32.band(bit32.rshift(y, 4), 255))
@@ -1467,8 +1578,12 @@ function qwsv.writeEntitiesToClient(svr: any, client: Client, out: msg.SizeBuf)
 		if not edictInPVS(ed, pvs) then
 			continue
 		end
-		if (modelindex == svr.sv_nailmodel or modelindex == svr.sv_supernailmodel) and #nails < MAX_NAILS then
-			table.insert(nails, ed)
+		if modelindex == svr.sv_nailmodel or modelindex == svr.sv_supernailmodel then
+			-- SV_AddNailUpdate swallows overflow nails too (returns true
+			-- when full): they are dropped, not sent as packet entities
+			if #nails < MAX_NAILS then
+				table.insert(nails, ed)
+			end
 			continue
 		end
 		if #pack == qwents.MAX_PACKET_ENTITIES then
@@ -1696,6 +1811,24 @@ function qwsv.frame(svr: any, dt: number)
 	svr.time += svr.frametime
 	svr.vm.time = svr.time
 	qwphys.physics(svr)
+
+	-- append sv.reliable_datagram to every client's reliable stream
+	-- (userinfo/frag/disconnect broadcasts), then clear — C does this
+	-- once per frame in SV_SendClientMessages
+	local rd = svr.reliable_datagram
+	if rd.cursize > 0 then
+		for i = 1, svr.maxclients do
+			local cl: Client = svr.clients[i]
+			if cl.active and cl.send then
+				local out = cl.netchan.message
+				if out.cursize + rd.cursize <= out.maxsize then
+					buffer.copy(out.data, out.cursize, rd.data, 0, rd.cursize)
+					out.cursize += rd.cursize
+				end
+			end
+		end
+		msg.clear(rd)
+	end
 end
 
 return qwsv
