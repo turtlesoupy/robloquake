@@ -145,3 +145,19 @@ it enters here in the same commit.
   strip. Needs: gun MeshPart in a WorldModel, manual light via setLight
   (already flat-lit), Ambient-only shading accepted as the platform
   delta. This closes the projection-center gap exactly for the gun.
+
+### 2026-07-04 (view model: ViewportFrame gun pipeline — RESOLVED)
+- The gun now renders through a real second projection: viewmodel.luau
+  puts the view weapon in a ViewportFrame sized to the vrect (window
+  minus sbar strip) with its own camera at fov*0.82 vertical (WebQuake
+  R.js R_DrawViewModel truth), mirroring the world camera CFrame per
+  frame. This is the actual GL gun architecture: own projection center
+  (above the bar), drawn over the world (depthRange equivalent),
+  clipped at the strip. Supersedes both the vrect gun rotation and the
+  reverted vertex squash.
+- VERIFIED by screenshots in BOTH engines: QW axe fills bottom-right to
+  mid-screen (classic look); NQ shotgun spans bottom edge to ~68%% of
+  the window vs the netquake.io reference's ~62%% (residual = their
+  proportionally smaller HUD strip). EditableMesh/EditableImage content
+  confirmed rendering inside ViewportFrames. Platform delta: Ambient-
+  only shading in the frame; the gun was already flat-lit via setLight.

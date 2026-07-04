@@ -30,6 +30,7 @@ local menulib = require(script.menu)
 local soundlib = require(script.sound)
 local input = require(script.input)
 local viewlib = require(script.view)
+local viewmodellib = require(script.render.viewmodel)
 
 --------------------------------------------------------------------------
 -- filesystem from the server-published client bundle (gfx + precached
@@ -117,6 +118,7 @@ entFolder.Parent = Workspace
 
 local playerGui = player:WaitForChild("PlayerGui")
 local hud = hudlib.create(fs, pal, playerGui)
+local vmgun = viewmodellib.new(playerGui)
 local psys = particleslib.new(pal, Workspace)
 local snd = soundlib.new(Workspace)
 
@@ -1005,9 +1007,10 @@ currentFov = 90
 applyFov = function()
 	-- CalcFov over the vrect (window minus sbar), per SCR_CalcRefdef
 	local vp = camera.ViewportSize
-	local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
+	local fovY = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
 	camera.FieldOfView = fovY
-	gunVrectPitch = gp
+	gunVrectPitch = 0 -- superseded by the viewmodel ViewportFrame
+	viewmodellib.setLayout(vmgun, currentFov, hudlib.sbarLinesPx(currentViewsize))
 end
 applyFov()
 camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
@@ -1520,6 +1523,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		forward, right, up = mathlib.angleVectors(refdef.viewangles)
 	end
 	camera.CFrame = qcoords.cframe(refdef.vieworg, forward, right, up)
+	viewmodellib.update(vmgun, camera)
 
 	-- view weapon
 	if refdef.gunmodel ~= 0 and c.stats[cllib.STAT_HEALTH] > 0 and c.intermission == 0 and not chase_active then
@@ -1531,17 +1535,14 @@ RunService.Heartbeat:Connect(function(dt: number)
 			gunModelIndex = refdef.gunmodel
 			local def = getModelDef(refdef.gunmodel)
 			if def and def.kind == "alias" then
-				gunEnt = entrender.create(def, entFolder)
+				-- the gun renders through its own projection (viewmodel.luau)
+			gunEnt = entrender.create(def, vmgun.world)
 			end
 		end
 		local ge = gunEnt
 		if ge then
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
-			-- vrect: rotate the view model up by the projection-center
-			-- offset so the sbar doesn't cover it (see qcoords.vrect);
-			-- gunangles.x is pre-negated, so up = add
-			local vrectAngles = vector.create(refdef.gunangles.x + gunVrectPitch, refdef.gunangles.y, refdef.gunangles.z)
-			entrender.updateAlias(ge, def, refdef.gunorg, vrectAngles, refdef.gunframe, 0, 0, c.time)
+			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
 			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)
 			for _, dl in dlights do

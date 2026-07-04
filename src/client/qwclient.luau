@@ -35,6 +35,7 @@ local consolelib = require(script.Parent.console)
 local hudlib = require(script.Parent.hud)
 local input = require(script.Parent.input)
 local soundlib = require(script.Parent.sound)
+local viewmodellib = require(script.Parent.render.viewmodel)
 
 return function()
 	----------------------------------------------------------------------
@@ -88,6 +89,7 @@ return function()
 	-- cllib.Client shape, so a thin adapter view of qwcl state feeds it.
 	-- (QW's ping-column deathmatch overlay is a journaled refinement.)
 	local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
+	local vmgun = viewmodellib.new(player:WaitForChild("PlayerGui"))
 	hudlib.setLoading(hud, true)
 	local hudC: any = {
 		stats = cl.stats,
@@ -921,9 +923,10 @@ return function()
 	local gunVrectPitch = 0
 	local function applyFov()
 		local vp = camera.ViewportSize
-		local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
+		local fovY = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
 		camera.FieldOfView = fovY
-		gunVrectPitch = gp
+		gunVrectPitch = 0 -- superseded by the viewmodel ViewportFrame
+		viewmodellib.setLayout(vmgun, currentFov, hudlib.sbarLinesPx(currentViewsize))
 	end
 	applyFov()
 	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
@@ -1387,6 +1390,7 @@ return function()
 		end
 		local fwd, right, up = mathlib.angleVectors(angles)
 		camera.CFrame = qcoords.cframe(eye, fwd, right, up)
+		viewmodellib.update(vmgun, camera)
 
 		-- view weapon: STAT_WEAPON model at the eye, weaponframe animated
 		local gunModel = cl.stats[qwp.STAT_WEAPON] or 0
@@ -1399,7 +1403,8 @@ return function()
 				gunModelIndex = gunModel
 				local def = getModelDef(gunModel)
 				if def and def.kind == "alias" then
-					gunEnt = entrender.create(def, entFolder)
+					-- the gun renders through its own projection (viewmodel.luau)
+					gunEnt = entrender.create(def, vmgun.world)
 				end
 			end
 			local ge = gunEnt
@@ -1409,7 +1414,7 @@ return function()
 				-- vrect: in C the gun hugs the 3D view bottom, which ends
 				-- ABOVE the sbar; rotate it up by the vrect center offset
 				-- so the HUD doesn't cover it (see qcoords.vrect)
-				entrender.updateAlias(ge, def, gunorg, vector.create(-(angles.x - gunVrectPitch), angles.y, angles.z), gunFrame, 0, 0, cl.time)
+				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), gunFrame, 0, 0, cl.time)
 				-- R_DrawViewModel: always give some light on the gun
 				local glight = if cl.worldmodel then lightpoint.at(cl.worldmodel, eye, styleValueFor) else 255
 				for _, dl in dlights do
