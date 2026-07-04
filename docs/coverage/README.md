@@ -56,6 +56,21 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (demo pipeline: offline round-trip + CL_Record_f fidelity fix)
+- tests/test_demo.luau (10 checks): record a live loopback stream in
+  the exact .dem block format, play it back through the mirrored
+  demoFrame reader — fresh client AND reused client with a stale clock
+  both replay the recorded run (>100 units of view-entity motion),
+  signon replays, pacing holds, zero parse errors.
+- Fidelity fix found by re-verification: bare `record` while connected
+  was allowed (C refuses — the demo misses the signon and plays back
+  frozen); now refuses with C's message, and `record <name> <map>`
+  runs the map first like C so the fresh signon is captured.
+- OPEN bug journaled: in Studio, self-recorded demos still play back
+  with a frozen view entity even though the engine pipeline is proven
+  offline and demo1.dem plays fine live — the fault is isolated to
+  init.client glue; next session instruments demoFrame directly.
+
 ### 2026-07-04 (NQ console/keys/cmd evidence pass)
 - Three committed captures drive 22 rows: nq-console-open.jpg (console
   + the full keys.c/cmd.c battery through the checked-in RQDBG_Console

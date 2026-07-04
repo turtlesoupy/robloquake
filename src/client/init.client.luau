@@ -644,13 +644,24 @@ execCommand = function(line: string)
 		stopDemo("demo stopped")
 		return
 	elseif cmd == "record" then
-		local name = args:match("%S+")
+		-- CL_Record_f: record <demoname> [<map>]. C refuses a bare
+		-- record while connected — the demo would miss the signon
+		-- (serverinfo/baselines) and play back frozen. With a map
+		-- argument the map command runs first and the fresh signon is
+		-- captured, like C.
+		local name, mapArg = args:match("(%S+)%s*(%S*)")
 		if not name then
-			consolelib.print(con, "record <demoname>")
+			consolelib.print(con, "record <demoname> [<map>]")
+		elseif mapArg == "" and c.signon == cllib.SIGNONS then
+			consolelib.print(con, "Can not record - already connected to server")
+			consolelib.print(con, "Client demo recording must be started before connecting")
 		else
 			demoName = name .. ".dem"
 			demoRecording = { "-1\n" } -- forced cd track line
 			consolelib.print(con, `recording to {demoName}.`)
+			if mapArg ~= "" then
+				sendStringCmd("map " .. mapArg)
+			end
 		end
 		return
 	elseif cmd == "stop" then
