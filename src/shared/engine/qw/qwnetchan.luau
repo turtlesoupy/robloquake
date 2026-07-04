@@ -54,9 +54,12 @@ end
 
 -- Netchan_Process: updates sequences, returns a reader over the
 -- payload (reliable content followed by the datagram, in order)
-function qwnetchan.process(chan: Netchan, packet: buffer): msg.Reader
+function qwnetchan.process(chan: Netchan, packet: buffer): msg.Reader?
 	local seq = buffer.readu32(packet, 0)
 	local ack = buffer.readu32(packet, 4)
+	if seq <= chan.incoming_sequence and chan.incoming_sequence > 0 then
+		return nil -- out of order / duplicated packet, discard
+	end
 	chan.drop_count = seq - (chan.incoming_sequence + 1)
 	chan.incoming_sequence = seq
 	chan.incoming_acknowledged = ack

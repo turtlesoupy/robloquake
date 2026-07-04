@@ -627,6 +627,9 @@ end
 -- process one wire packet from the server
 function qwcl.processPacket(cl: any, packet: buffer)
 	local r = qwnetchan.process(cl.netchan, packet)
+	if not r then
+		return -- stale packet
+	end
 	qwcl.parseServerMessage(cl, r)
 	-- during the handshake, reply immediately with any queued cmds
 	if cl.state ~= "active" then

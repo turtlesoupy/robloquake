@@ -11,7 +11,6 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
-local base64 = require(engine.common.base64)
 local pak = require(engine.common.pak)
 local vfs = require(engine.common.vfs)
 local host = require(engine.server.host)
@@ -21,35 +20,14 @@ local svlib = require(engine.server.sv)
 
 -- reassemble pak files from base64 chunk StringValues; decode chunk-wise
 -- with yields so the live-server script watchdog never triggers
+local assetchunks = require(script.assetchunks)
+
 local function loadPak(gameFolder: Instance, pakName: string): pak.Pack?
 	local pakFolder = gameFolder:FindFirstChild(pakName)
 	if not pakFolder then
 		return nil
 	end
-	local chunks = {}
-	for _, child in pakFolder:GetChildren() do
-		table.insert(chunks, child)
-	end
-	table.sort(chunks, function(a, b)
-		return a.Name < b.Name
-	end)
-	local total = 0
-	local lens = table.create(#chunks)
-	for i, chunk in chunks do
-		local n = base64.decodedLen((chunk :: StringValue).Value)
-		lens[i] = n
-		total += n
-	end
-	local data = buffer.create(total)
-	local pos = 0
-	for i, chunk in chunks do
-		base64.decodeInto((chunk :: StringValue).Value, data, pos)
-		pos += lens[i]
-		if i % 16 == 0 then
-			task.wait()
-		end
-	end
-	return pak.load(`{gameFolder.Name}/{pakName}.pak`, data)
+	return pak.load(`{gameFolder.Name}/{pakName}.pak`, assetchunks.loadRaw(pakFolder))
 end
 
 -- the full pak chunks live in ServerStorage so 200MB of pak data is never
@@ -85,7 +63,23 @@ unreliable.Name = "Unreliable"
 unreliable.Parent = net
 net.Parent = ReplicatedStorage
 
--- server
+-- engine selection: campaign/coop places run NetQuake (default),
+-- competitive places set engine="qw" on QuakeAssets for QuakeWorld
+local engineAttr = assets:GetAttribute("engine")
+if engineAttr == "qw" then
+	require(script.qwserver)({
+		fsys = fsys,
+		assets = assets,
+		gameFolder = gameFolder,
+		gameDir = gameDir,
+		startMap = START_MAP,
+		reliable = reliable,
+		unreliable = unreliable,
+	})
+	return
+end
+
+-- server (NetQuake)
 local svr = host.newGame(fsys, 16)
 svr.print = function(s: string)
 	print("[sv] " .. s)
@@ -106,78 +100,12 @@ host.spawnServer(svr, START_MAP)
 assert(svr.active, "server failed to spawn")
 _G.RQ_SERVER = svr -- studio debugging access
 
--- client asset bundle: publish only what the renderer needs (gfx, the
--- precached models/sprites, and the current map) instead of whole paks
-local clientFS = Instance.new("Folder")
-clientFS.Name = "QuakeClientFS"
-clientFS:SetAttribute("game", gameDir)
-clientFS.Parent = ReplicatedStorage
-
-local publishedFiles: { [string]: boolean } = {}
-local publishCount = 0
-
-local function publishFile(path: string)
-	if publishedFiles[path] then
-		return
-	end
-	publishedFiles[path] = true
-	local fbuf = vfs.loadFile(fsys, path)
-	if not fbuf then
-		return
-	end
-	local b64 = base64.encode(fbuf)
-	local fileFolder = Instance.new("Folder")
-	fileFolder.Name = path
-	local n = 0
-	for i = 1, #b64, 147000 do
-		n += 1
-		local sv = Instance.new("StringValue")
-		sv.Name = string.format("%04d", n)
-		sv.Value = b64:sub(i, i + 146999)
-		sv.Parent = fileFolder
-	end
-	fileFolder:SetAttribute("chunks", n)
-	fileFolder:SetAttribute("len", buffer.len(fbuf))
-	fileFolder.Parent = clientFS
-	publishCount += 1
-	if publishCount % 24 == 0 then
-		task.wait()
-	end
-end
-
-local function publishClientAssets()
-	publishFile("gfx.wad")
-	-- config scripts for the client's exec command
-	publishFile("default.cfg")
-	publishFile("quake.rc")
-	publishFile("autoexec.cfg")
-	publishFile("config.cfg")
-	for _, sp in fsys.searchpaths do
-		local pack = sp.pack
-		if pack then
-			for _, entry in pack.entries do
-				if entry.name:sub(1, 4) == "gfx/" then
-					publishFile(entry.name)
-				end
-			end
-		end
-	end
-	for i = 2, #svr.model_precache do
-		local name = svr.model_precache[i]
-		if name:sub(1, 1) ~= "*" then
-			publishFile(name)
-		end
-	end
-	-- soundmap (bank asset id + regions) is a plain StringValue, mirrored as-is
-	local soundmap = gameFolder:FindFirstChild("soundmap") or assets:FindFirstChild("soundmap")
-	if soundmap and not clientFS:FindFirstChild("soundmap") then
-		soundmap:Clone().Parent = clientFS
-	end
-	clientFS:SetAttribute("ready", true)
-end
-
-publishClientAssets()
-print(`[robloquake] client bundle: {publishCount} files published`);
+-- client asset bundle (shared with the QW boot)
+local clientbundle = require(script.clientbundle)
+local bundle = clientbundle.new(fsys, gameDir, gameFolder)
+bundle.clientFS:SetAttribute("engine", "nq")
+bundle.publishAll(svr)
+local publishFile = bundle.publishFile;
 
 (svr :: any).onFileRequest = function(path: string)
 	publishFile(path) -- no-ops when the pak doesn't have it
@@ -443,7 +371,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			savegamelib.load(svr, text, function(m: string)
 				host.spawnServer(svr, m)
 			end)
-			publishClientAssets()
+			bundle.publishAll(svr)
 			for _, slot in slotByPlayer do
 				host.connectClient(svr, slot)
 			end
@@ -474,7 +402,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		svr.changelevelTo = nil
 		print(`[robloquake] changelevel to {nextLevel}`)
 		host.spawnServer(svr, nextLevel)
-		publishClientAssets() -- new map + newly precached models
+		bundle.publishAll(svr) -- new map + newly precached models
 		for _, slot in slotByPlayer do
 			host.connectClient(svr, slot)
 		end

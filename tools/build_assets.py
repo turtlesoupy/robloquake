@@ -37,6 +37,25 @@ def build(source: pathlib.Path, game: str) -> None:
         print(f"{pakpath} -> {pak_dir} ({len(data)} bytes, {nchunks} chunks)")
 
 
+def build_file(path: pathlib.Path, game: str) -> None:
+    """Chunk a single loose file (e.g. qwprogs.dat) under assets/<game>/<stem>/.
+
+    Additive: only replaces that file's own chunk dir, so it can run after
+    the pak build without wiping it. The runtime reassembles it with
+    assetchunks.loadRaw (server) — used for engine=qw's qwprogs.dat, which
+    ships outside the paks."""
+    data = path.read_bytes()
+    out_dir = ROOT / "assets" / game / path.stem
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+    nchunks = (len(data) + CHUNK - 1) // CHUNK
+    for i in range(nchunks):
+        chunk = data[i * CHUNK : (i + 1) * CHUNK]
+        (out_dir / f"c{i:03d}.txt").write_text(base64.b64encode(chunk).decode())
+    print(f"{path} -> {out_dir} ({len(data)} bytes, {nchunks} chunks)")
+
+
 # per-game default pak source (mirrors tools/build_soundbank.py)
 DEFAULT_SOURCES = {
     "id1": ROOT / "external_assets/quake106/extracted/id1",
@@ -52,7 +71,16 @@ if __name__ == "__main__":
         help="directory with pak0.pak, pak1.pak, ... (default: per --game)",
     )
     ap.add_argument("--game", default="id1", help="game directory name (id1 or lq1)")
+    ap.add_argument(
+        "--file",
+        type=pathlib.Path,
+        default=None,
+        help="chunk one loose file (e.g. qwprogs.dat) instead of the paks",
+    )
     args = ap.parse_args()
+    if args.file is not None:
+        build_file(args.file, args.game)
+        raise SystemExit(0)
     source = args.source
     if source is None:
         source = DEFAULT_SOURCES.get(args.game)

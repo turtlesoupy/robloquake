@@ -949,6 +949,28 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		qwsv.dropClient(svr, client)
 	end,
 	pings = function() end,
+	-- ZOID: spectator autocam target
+	ptrack = function(svr, client, args)
+		if not client.spectator then
+			return
+		end
+		local ent = svr.qdefs.ent
+		if not args[2] then
+			client.spec_track = 0
+			vmlib.edSetInt(client.edict, ent.goalentity, 0)
+			return
+		end
+		local i = tonumber(args[2]) or -1
+		local target = svr.clients[i + 1]
+		if i < 0 or i >= svr.maxclients or not (target.active and target.spawned) or target.spectator then
+			svr.clientPrint(svr, client, qwp.PRINT_HIGH, "Invalid client to track\n")
+			client.spec_track = 0
+			vmlib.edSetInt(client.edict, ent.goalentity, 0)
+			return
+		end
+		client.spec_track = i + 1 -- now tracking
+		vmlib.edSetInt(client.edict, ent.goalentity, target.edict.num)
+	end,
 	say = function(svr, client, _args, raw)
 		local text = raw:match("^say%s+(.*)$") or ""
 		text = text:gsub('^"(.*)"$', "%1")
@@ -998,6 +1020,9 @@ end
 function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 	local chan = client.netchan
 	local r = qwnetchan.process(chan, packet)
+	if not r then
+		return -- stale packet
+	end
 	local netDrop = math.max(chan.drop_count, 0)
 	local moveIssued = false
 

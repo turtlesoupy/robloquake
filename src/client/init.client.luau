@@ -39,6 +39,14 @@ local clientAssets = ReplicatedStorage:WaitForChild("QuakeClientFS")
 while clientAssets:GetAttribute("ready") ~= true do
 	clientAssets.AttributeChanged:Wait()
 end
+
+-- engine selection mirrors the server: campaign/coop places boot the
+-- NetQuake client below; competitive places (engine="qw") boot QuakeWorld
+if clientAssets:GetAttribute("engine") == "qw" then
+	require(script.qwclient)()
+	return
+end
+
 local fs = vfslib.new()
 vfslib.addFolderSource(fs, clientAssets)
 
