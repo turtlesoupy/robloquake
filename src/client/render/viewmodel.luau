@@ -31,6 +31,10 @@ function viewmodel.new(parent: Instance): Vm
 
 	local frame = Instance.new("ViewportFrame")
 	frame.BackgroundTransparency = 1
+	-- silhouette edges antialias against BackgroundColor3 even when
+	-- fully transparent (premultiplied compositing); the default gray
+	-- rims the weapon with a visible halo — black kills the fringe
+	frame.BackgroundColor3 = Color3.new(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.Position = UDim2.new(0, 0, 0, 0)
 	frame.Size = UDim2.new(1, 0, 1, 0)
