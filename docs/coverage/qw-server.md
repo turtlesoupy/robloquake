@@ -385,11 +385,12 @@ ClientReliableWrite_* variants, the 7 IP-filter commands, the 19 Mod_Load* lump 
 underlying C function count is higher than the row count in the SUBSTITUTED/VERIFIED buckets):
 
 | Status | Rows |
-|---|---|---|
-| VERIFIED | 120 |
-| PENDING | 51 |
+|---|---|
+| VERIFIED | 172 |
+| PENDING | 0 |
 | SUBSTITUTED | 41 |
-| UNIMPLEMENTED | 24 |
+| UNIMPLEMENTED | 20 |
+| N/A | 3 |
 | Total rows | 236 |
 
 Headline: the whole gameplay core (pmove vs verbatim-C ground truth, SV_RunCmd, sv_phys frame loop,
