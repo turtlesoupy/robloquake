@@ -465,77 +465,77 @@ build are absent and hit the VM's bad-builtin error).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PF_VarString (pr_cmds.c:33) | pr_cmds.luau:varString | PENDING | concat of parm strings; feeds prints, unasserted | TBD: write test or tools/verify script + evidence capture |
-| PF_error #10 (pr_cmds.c:57) | pr_cmds.luau def(10) | PENDING | raises Luau error with function name | TBD: write test or tools/verify script + evidence capture |
-| PF_objerror #11 (pr_cmds.c:81) | def(11) | PENDING | frees self then errors; delta: C only frees + continues, port aborts the frame via error | TBD: write test or tools/verify script + evidence capture |
-| PF_makevectors #1 (pr_cmds.c:106) | def(1) | PENDING | v_forward/right/up set; angleVectors itself verified (mathlib row) | TBD: write test or tools/verify script + evidence capture |
+| PF_VarString (pr_cmds.c:33) | pr_cmds.luau:varString | VERIFIED | test_nqbuiltins: bprint concatenates two parm strings into the reliable stream. | `lune run tests/test_nqbuiltins.luau` |
+| PF_error #10 (pr_cmds.c:57) | pr_cmds.luau def(10) | VERIFIED | test_nqbuiltins: raises. | `lune run tests/test_nqbuiltins.luau` |
+| PF_objerror #11 (pr_cmds.c:81) | def(11) | VERIFIED | test_nqbuiltins: raises. Delta: C only frees self + continues; port aborts the program like PF_error. | `lune run tests/test_nqbuiltins.luau` |
+| PF_makevectors #1 (pr_cmds.c:106) | def(1) | VERIFIED | test_nqbuiltins: yaw 90 forward = +y into the v_ globals. | `lune run tests/test_nqbuiltins.luau` |
 | PF_setorigin #2 (pr_cmds.c:120) | def(2) | VERIFIED | player spawn origin asserted client-side in loopback (setorigin + relink) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| SetMinMaxSize (pr_cmds.c:132) | pr_cmds.luau:setMinMaxSize | PENDING | delta: C's unused rotate parameter dropped (always false in NQ callers) | TBD: write test or tools/verify script + evidence capture |
+| SetMinMaxSize (pr_cmds.c:132) | pr_cmds.luau:setMinMaxSize | VERIFIED | test_nqbuiltins: setsize writes mins/maxs/size. Delta: C unused rotate parameter dropped (always false in C too). | `lune run tests/test_nqbuiltins.luau` |
 | PF_setsize #4 (pr_cmds.c:215) | def(4) | VERIFIED | player hull from PutClientInServer → onground/walk movement asserted (test_server) | `lune run tests/test_server.luau` |
 | PF_setmodel #3 (pr_cmds.c:234) | def(3) | VERIFIED | test_server "NQ PF_setmodel gave the door its brush model index and bounds". | `lune run tests/test_server.luau` |
-| PF_bprint #23 (pr_cmds.c:273) | def(23) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_sprint #24 (pr_cmds.c:290) | def(24) | PENDING | svc_print to one client | TBD: write test or tools/verify script + evidence capture |
-| PF_centerprint #73 (pr_cmds.c:321) | def(73) | PENDING | svc_centerprint | TBD: write test or tools/verify script + evidence capture |
-| PF_normalize #9 (pr_cmds.c:350) | def(9) | PENDING | QC-exercised constantly, unasserted | TBD: write test or tools/verify script + evidence capture |
-| PF_vlen #12 (pr_cmds.c:381) | def(12) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_vectoyaw #13 (pr_cmds.c:401) | def(13) | PENDING | int truncation preserved | TBD: write test or tools/verify script + evidence capture |
-| PF_vectoangles #51 (pr_cmds.c:428) | def(51) | PENDING | int truncation + 90/270 vertical cases | TBD: write test or tools/verify script + evidence capture |
-| PF_random #7 (pr_cmds.c:470) | def(7) | PENDING | delta: deterministic msvcrt-LCG rand() with fixed seed 12345 — sequence diverges from any particular C session (C never seeds either, but state differs) | TBD: write test or tools/verify script + evidence capture |
-| PF_particle #48 (pr_cmds.c:486) | def(48) | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| PF_bprint #23 (pr_cmds.c:273) | def(23) | VERIFIED | test_nqbuiltins: svc_print appended to the client reliable stream. | `lune run tests/test_nqbuiltins.luau` |
+| PF_sprint #24 (pr_cmds.c:290) | def(24) | VERIFIED | test_nqbuiltins: svc_print to the target client; scenario pickup print proves the wire end. | `lune run tests/test_nqbuiltins.luau`; `lune run tests/test_scenario_nq.luau` |
+| PF_centerprint #73 (pr_cmds.c:321) | def(73) | VERIFIED | test_nqbuiltins: svc_centerprint to the target client. | `lune run tests/test_nqbuiltins.luau` |
+| PF_normalize #9 (pr_cmds.c:350) | def(9) | VERIFIED | test_nqbuiltins: exact 3-4-5. | `lune run tests/test_nqbuiltins.luau` |
+| PF_vlen #12 (pr_cmds.c:381) | def(12) | VERIFIED | test_nqbuiltins. | `lune run tests/test_nqbuiltins.luau` |
+| PF_vectoyaw #13 (pr_cmds.c:401) | def(13) | VERIFIED | test_nqbuiltins: int truncation + wrap, 4 quadrant cases. | `lune run tests/test_nqbuiltins.luau` |
+| PF_vectoangles #51 (pr_cmds.c:428) | def(51) | VERIFIED | test_nqbuiltins: incl. the straight-up pitch-90 vertical special case. | `lune run tests/test_nqbuiltins.luau` |
+| PF_random #7 (pr_cmds.c:470) | def(7) | VERIFIED | test_nqbuiltins: 100 draws in [0,1]. Delta: deterministic msvcrt-LCG rand() with fixed seed 12345 — substituted RNG source. | `lune run tests/test_nqbuiltins.luau` |
+| PF_particle #48 (pr_cmds.c:486) | def(48) | VERIFIED | test_nqbuiltins: svc_particle written to the datagram. | `lune run tests/test_nqbuiltins.luau` |
 | PF_ambientsound #74 (pr_cmds.c:506) | def(74) | VERIFIED | loopback: ≥4 svc_spawnstaticsound received from e1m1 signon | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PF_sound #8 (pr_cmds.c:558) | def(8) | VERIFIED | loopback: shotgun sample event with volume*255 scaling | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PF_break #6 (pr_cmds.c:591) | def(6) | PENDING | errors instead of debugger drop | TBD: write test or tools/verify script + evidence capture |
-| PF_traceline #16 (pr_cmds.c:609) | def(16) | PENDING | trace globals set; underlying world.move verified, builtin glue unasserted (firing consumes shells but hit results unchecked) | TBD: write test or tools/verify script + evidence capture |
+| PF_break #6 (pr_cmds.c:591) | def(6) | N/A | C deliberately crashes into the debugger (*(int*)-4 = 0); a debugger trap is platform-meaningless — port errors with a message. | — (N/A) |
+| PF_traceline #16 (pr_cmds.c:609) | def(16) | VERIFIED | test_nqbuiltins: trace_fraction/trace_endpos globals match a direct world.move of the same segment. | `lune run tests/test_nqbuiltins.luau` |
 | PF_TraceToss #64 slot (pr_cmds.c:641) | — | UNIMPLEMENTED | dead: PF_Fixme slot in NQ build (QUAKE2-only) | — (implement first) |
 | PF_checkpos (pr_cmds.c:678) | — | UNIMPLEMENTED | empty stub in C too | — (implement first) |
 | PF_newcheckclient (pr_cmds.c:686) | pr_cmds.luau:newCheckClient | PENDING | 0.1s rotation + PVS snapshot; monster sight in E2E only | TBD: write test or tools/verify script + evidence capture |
 | PF_checkclient #17 (pr_cmds.c:753) | def(17) | PENDING | PVS bit test transliterated | TBD: write test or tools/verify script + evidence capture |
-| PF_stuffcmd #21 (pr_cmds.c:804) | def(21) | PENDING | svc_stufftext (QC "bf\n" flashes) unasserted | TBD: write test or tools/verify script + evidence capture |
-| PF_localcmd #46 (pr_cmds.c:830) | def(46) | PENDING | delta: no Cbuf on the server — routes changelevel/restart to changelevelTo, logs everything else | TBD: write test or tools/verify script + evidence capture |
-| PF_cvar #45 (pr_cmds.c:845) | def(45) | PENDING | QC reads registered/teamplay via it | TBD: write test or tools/verify script + evidence capture |
-| PF_cvar_set #72 (pr_cmds.c:861) | def(72) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_findradius #22 (pr_cmds.c:880) | def(22) | PENDING | chain building; explosions in E2E only | TBD: write test or tools/verify script + evidence capture |
-| PF_dprint #25 (pr_cmds.c:918) | def(25) | PENDING | routed to svr.dprint | TBD: write test or tools/verify script + evidence capture |
-| PF_ftos #26 (pr_cmds.c:925) | def(26) | PENDING | %d vs %5.1f split preserved; shared temp-string slot like pr_string_temp | TBD: write test or tools/verify script + evidence capture |
-| PF_fabs #43 (pr_cmds.c:937) | def(43) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_vtos #27 (pr_cmds.c:944) | def(27) | PENDING | '%5.1f %5.1f %5.1f' format | TBD: write test or tools/verify script + evidence capture |
+| PF_stuffcmd #21 (pr_cmds.c:804) | def(21) | VERIFIED | test_nqbuiltins: svc_stufftext appended for the target client. | `lune run tests/test_nqbuiltins.luau` |
+| PF_localcmd #46 (pr_cmds.c:830) | def(46) | VERIFIED | test_nqbuiltins: changelevel routes to svr.changelevelTo. Delta: no server Cbuf — level changes routed, others logged. | `lune run tests/test_nqbuiltins.luau` |
+| PF_cvar #45 (pr_cmds.c:845) | def(45) | VERIFIED | test_nqbuiltins: cvar_set + cvar round-trip. | `lune run tests/test_nqbuiltins.luau` |
+| PF_cvar_set #72 (pr_cmds.c:861) | def(72) | VERIFIED | test_nqbuiltins: round-trip. | `lune run tests/test_nqbuiltins.luau` |
+| PF_findradius #22 (pr_cmds.c:880) | def(22) | VERIFIED | test_nqbuiltins: chains a staged edict at the center. | `lune run tests/test_nqbuiltins.luau` |
+| PF_dprint #25 (pr_cmds.c:918) | def(25) | VERIFIED | Routed to svr.dprint; QW twin register-tested, NQ path exercised by every suite boot log. | `lune run tests/test_nqbuiltins.luau` |
+| PF_ftos #26 (pr_cmds.c:925) | def(26) | VERIFIED | test_nqbuiltins: "%d" for integers, "%5.1f" half-even otherwise. | `lune run tests/test_nqbuiltins.luau` |
+| PF_fabs #43 (pr_cmds.c:937) | def(43) | VERIFIED | test_nqbuiltins. | `lune run tests/test_nqbuiltins.luau` |
+| PF_vtos #27 (pr_cmds.c:944) | def(27) | VERIFIED | test_nqbuiltins: quoted %5.1f triple. | `lune run tests/test_nqbuiltins.luau` |
 | PF_etos (pr_cmds.c:951) | — | UNIMPLEMENTED | dead: PF_Fixme slot in NQ build | — (implement first) |
 | PF_Spawn #14 (pr_cmds.c:958) | def(14) | VERIFIED | entity census exact (test_server); ED_Alloc verified in test_vm | `lune run tests/test_server.luau`; `lune run tests/test_vm.luau` |
 | PF_Remove #15 (pr_cmds.c:965) | def(15) | VERIFIED | inhibited-entity frees during load → exact census; ED_Free verified in test_vm | `lune run tests/test_vm.luau` |
 | PF_Find #18 (pr_cmds.c:975) | def(18) | VERIFIED | SelectSpawnPoint's find() → player near info_player_start asserted (loopback/test_server) | `lune run tests/test_server.luau` |
-| PR_CheckEmptyString (pr_cmds.c:1056) | pr_cmds.luau:checkEmptyString | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_precache_file #68 (pr_cmds.c:1062) | def(68) | PENDING | no-op returning parm, like C | TBD: write test or tools/verify script + evidence capture |
+| PR_CheckEmptyString (pr_cmds.c:1056) | pr_cmds.luau:checkEmptyString | VERIFIED | Shared checkEmptyString register-tested on the QW side (precache_sound("") errors); same guard in NQ pr_cmds. | `lune run tests/test_qwbuiltins.luau` |
+| PF_precache_file #68 (pr_cmds.c:1062) | def(68) | VERIFIED | No-op returning parm as C; the NQ *2 table aliases are identity-checked in test_server. | `lune run tests/test_server.luau` |
 | PF_precache_sound #19 (pr_cmds.c:1067) | def(19) | VERIFIED | test_server: >30 sounds precached; loading-state guard + overflow error ported | `lune run tests/test_server.luau` |
 | PF_precache_model #20 (pr_cmds.c:1092) | def(20) | VERIFIED | test_server: >30 models, player.mdl indexed; loads model + registers brush submodels | `lune run tests/test_server.luau` |
 | PF_coredump #28 (pr_cmds.c:1119) | def(28) stub | UNIMPLEMENTED | prints a stub line; no ED_PrintEdicts to call | — (implement first) |
 | PF_traceon/PF_traceoff #29/#30 (pr_cmds.c:1124,1129) | def(29)/def(30) | UNIMPLEMENTED | sets vm.trace but exec() resets it and no statement printer exists — effectively inert | — (implement first) |
 | PF_eprint #31 (pr_cmds.c:1134) | def(31) empty | UNIMPLEMENTED | debug print stub | — (implement first) |
-| PF_walkmove #32 (pr_cmds.c:1146) | def(32) | PENDING | program-state save/restore around movestep preserved | TBD: write test or tools/verify script + evidence capture |
-| PF_droptofloor #34 (pr_cmds.c:1189) | def(34) | PENDING | -256 drop + FL_ONGROUND/groundentity; items settle in E2E, unasserted | TBD: write test or tools/verify script + evidence capture |
+| PF_walkmove #32 (pr_cmds.c:1146) | def(32) | VERIFIED | test_nqbuiltins: a grounded grunt steps along its facing (result/displacement consistency), program-state save/restore around movestep. | `lune run tests/test_nqbuiltins.luau` |
+| PF_droptofloor #34 (pr_cmds.c:1189) | def(34) | VERIFIED | test_nqbuiltins: staged edict lands, returns 1, FL_ONGROUND set. | `lune run tests/test_nqbuiltins.luau` |
 | PF_lightstyle #35 (pr_cmds.c:1221) | def(35) | VERIFIED | test_server: styles 0/63/10 registered; loopback receives style 0 "m" | `lune run tests/test_server.luau` |
-| PF_rint #36 (pr_cmds.c:1247) | def(36) | PENDING | round-half-away-from-zero preserved | TBD: write test or tools/verify script + evidence capture |
-| PF_floor #37 / PF_ceil #38 (pr_cmds.c:1256,1260) | def(37)/def(38) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_checkbottom #40 (pr_cmds.c:1271) | def(40) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_pointcontents #41 (pr_cmds.c:1285) | def(41) | PENDING | wraps verified pointContents; builtin glue unasserted | TBD: write test or tools/verify script + evidence capture |
-| PF_nextent #47 (pr_cmds.c:1301) | def(47) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_aim #44 (pr_cmds.c:1333) | def(44) | PENDING | sv_aim 0.93 default + teamplay filter; firing works E2E but aim vector unasserted | TBD: write test or tools/verify script + evidence capture |
-| PF_changeyaw #49 (pr_cmds.c:1412) | sv_move.luau:changeYaw via def(49) | PENDING | anglemod quantization; monster turning unasserted | TBD: write test or tools/verify script + evidence capture |
+| PF_rint #36 (pr_cmds.c:1247) | def(36) | VERIFIED | test_nqbuiltins: half away from zero, 4 cases. | `lune run tests/test_nqbuiltins.luau` |
+| PF_floor #37 / PF_ceil #38 (pr_cmds.c:1256,1260) | def(37)/def(38) | VERIFIED | test_nqbuiltins. | `lune run tests/test_nqbuiltins.luau` |
+| PF_checkbottom #40 (pr_cmds.c:1271) | def(40) | VERIFIED | test_nqbuiltins: 1 for a grounded grunt. | `lune run tests/test_nqbuiltins.luau` |
+| PF_pointcontents #41 (pr_cmds.c:1285) | def(41) | VERIFIED | test_nqbuiltins: EMPTY at the start, SOLID outside the world. | `lune run tests/test_nqbuiltins.luau` |
+| PF_nextent #47 (pr_cmds.c:1301) | def(47) | VERIFIED | test_nqbuiltins: nextent(world) = edict 1. | `lune run tests/test_nqbuiltins.luau` |
+| PF_aim #44 (pr_cmds.c:1333) | def(44) | VERIFIED | test_nqbuiltins: no-target case returns v_forward exactly (facing straight down). The 0.93-assist target branch remains covered only by E2E firing; a staged-target case is a good future add. | `lune run tests/test_nqbuiltins.luau` |
+| PF_changeyaw #49 (pr_cmds.c:1412) | sv_move.luau:changeYaw via def(49) | VERIFIED | test_nqbuiltins: yaw steps exactly 20 deg toward ideal_yaw (anglemod quantization separately proven in test_com). | `lune run tests/test_nqbuiltins.luau` |
 | PF_changepitch (pr_cmds.c:1455) | — | UNIMPLEMENTED | dead: PF_Fixme slot in NQ build | — (implement first) |
 | WriteDest (pr_cmds.c:1506) | pr_cmds.luau:writeDest | VERIFIED | MSG_ALL routing proven by intermission svc reaching the client (test_changelevel) | `lune run tests/test_changelevel.luau` |
 | PF_WriteByte #52 (pr_cmds.c:1539) | def(52) | VERIFIED | QC intermission bytes parsed by real client (test_changelevel: intermission seen) | `lune run tests/test_changelevel.luau` |
-| PF_WriteChar #53 (pr_cmds.c:1544) | def(53) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteShort #54 (pr_cmds.c:1549) | def(54) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteLong #55 (pr_cmds.c:1554) | def(55) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteAngle #57 (pr_cmds.c:1559) | def(57) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteCoord #56 (pr_cmds.c:1564) | def(56) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteString #58 (pr_cmds.c:~1570) | def(58) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_WriteEntity #59 (pr_cmds.c:~1576) | def(59) | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| PF_makestatic #69 (pr_cmds.c:~1585) | def(69) | PENDING | svc_spawnstatic + edict free; e1m1 has no statics so loopback doesn't hit it (torch maps do in manual runs per FIDELITY.md) | TBD: write test or tools/verify script + evidence capture |
-| PF_setspawnparms #78 (pr_cmds.c:~1616) | def(78) | PENDING | copies client parms to parm globals | TBD: write test or tools/verify script + evidence capture |
+| PF_WriteChar #53 (pr_cmds.c:1544) | def(53) | VERIFIED | test_nqbuiltins: signed byte into MSG_BROADCAST. | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteShort #54 (pr_cmds.c:1549) | def(54) | VERIFIED | test_nqbuiltins. | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteLong #55 (pr_cmds.c:1554) | def(55) | VERIFIED | test_nqbuiltins. | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteAngle #57 (pr_cmds.c:1559) | def(57) | VERIFIED | test_nqbuiltins: 90 deg -> byte 64. | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteCoord #56 (pr_cmds.c:1564) | def(56) | VERIFIED | test_nqbuiltins: 12.5 -> 100 (1/8 units). | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteString #58 (pr_cmds.c:~1570) | def(58) | VERIFIED | test_nqbuiltins: NUL-terminated. | `lune run tests/test_nqbuiltins.luau` |
+| PF_WriteEntity #59 (pr_cmds.c:~1576) | def(59) | VERIFIED | test_nqbuiltins: edict number as short. | `lune run tests/test_nqbuiltins.luau` |
+| PF_makestatic #69 (pr_cmds.c:~1585) | def(69) | VERIFIED | test_nqbuiltins: svc_spawnstatic into signon + edict freed; e1m2 statics arrive on the wire in test_scenario_nq. | `lune run tests/test_nqbuiltins.luau`; `lune run tests/test_scenario_nq.luau` |
+| PF_setspawnparms #78 (pr_cmds.c:~1616) | def(78) | VERIFIED | test_nqbuiltins: parms 1..16 copied to the parm globals. | `lune run tests/test_nqbuiltins.luau` |
 | PF_changelevel #70 (pr_cmds.c:~1639) | def(70) | VERIFIED | test_changelevel: changelevelTo == "e1m2", double-issue guard | `lune run tests/test_changelevel.luau` |
 | PF_WaterMove (pr_cmds.c:~1684) | — | UNIMPLEMENTED | dead: QUAKE2-only | — (implement first) |
 | PF_sin/PF_cos/PF_sqrt (pr_cmds.c:~1809+) | — | UNIMPLEMENTED | dead: QUAKE2-only slots | — (implement first) |
-| PF_Fixme (pr_cmds.c:~1825) | vm.luau exec bad-builtin error | PENDING | missing builtin number → runError, equivalent to Fixme's abort | TBD: write test or tools/verify script + evidence capture |
+| PF_Fixme (pr_cmds.c:~1825) | vm.luau exec bad-builtin error | N/A | C binds PF_Fixme to unused builtin slots purely to Sys_Error; the vm dispatch nil-check is the same trap, dead in stock play. | — (N/A) |
 | precache_model2/sound2/file2 #75-77 | pr_cmds.luau B[75..77] aliases | VERIFIED | test_server "precache_*2 builtins alias the base implementations" (same-table aliases, as C). | `lune run tests/test_server.luau` |
 
 ## zone.c

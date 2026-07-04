@@ -56,6 +56,17 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (NQ builtins battery)
+- tests/test_nqbuiltins.luau (53 checks): the NQ twin of the QW
+  register-level battery, plus NQ-specific coverage — wire-writing
+  builtins asserted byte-level in the client reliable stream/datagram
+  (bprint/sprint/centerprint/stuffcmd/particle/Write*), traceline glue
+  vs a direct world.move, monster builtins on a live grunt
+  (checkbottom/changeyaw exact 20-deg step/walkmove), droptofloor,
+  makestatic signon growth, aim no-target path, vectoangles vertical
+  special case. 44 nq-server pr_cmds rows earned; PF_break/PF_Fixme
+  ruled N/A (debugger traps).
+
 ### 2026-07-04 (nq-server PENDING sweep 1)
 - tests/test_com.luau: Q_atoi/Q_atof/anglemod vs transcribed C
   (documented deltas: Luau tonumber accepts exponents where Q_atof
