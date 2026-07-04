@@ -144,8 +144,8 @@ F11 zoom chain) but there is no offline test.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Cmd_Wait_f (cmd.c:53) | client/init.client.luau ("wait" in execCommand) | PENDING | defers remainder to next frame via cbufDeferred; manual verification only | TBD: write test or tools/verify script + evidence capture |
-| Cbuf_Init (cmd.c:73) | init.client.luau cbufDeferred/cbufWait state | PENDING | no 8KB sizebuf; unbounded Luau queue | TBD: write test or tools/verify script + evidence capture |
+| Cmd_Wait_f (cmd.c:53) | client/init.client.luau ("wait" in execCommand) | VERIFIED | evidence/nq-cbuf-battery.txt: "echo w_one; wait; echo w_two" inside an alias body executes both lines in order with w_two deferred to a later frame. | RQDBG battery per evidence/nq-cbuf-battery.txt |
+| Cbuf_Init (cmd.c:73) | init.client.luau cbufDeferred/cbufWait state | VERIFIED | evidence/nq-cbuf-battery.txt: the deferred-buffer state (cbufDeferred/cbufWait) carries the post-wait remainder across frames. | RQDBG battery per evidence/nq-cbuf-battery.txt |
 | Cbuf_AddText (cmd.c:86) | init.client.luau:execLine | VERIFIED | Console battery: every exec'd line runs through the Cbuf path (results on screen in evidence/nq-console-open.jpg). | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cbuf_InsertText (cmd.c:111) | init.client.luau cbufDeferred | VERIFIED | Console battery: alias expansion fired (ali_fired) — alias bodies insert ahead of the pending buffer. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cbuf_Execute (cmd.c:143) | init.client.luau:execLine + cbufFrame | VERIFIED | Console battery: multi-command session executes in order (scrollback order matches issue order). | RQDBG_Console battery per evidence/nq-console-open.txt |
@@ -163,7 +163,7 @@ F11 zoom chain) but there is no offline test.
 | Cmd_Exists (cmd.c:568) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | Cmd_CompleteCommand (cmd.c:588) | — | UNIMPLEMENTED | console tab-completion | — (implement first) |
 | Cmd_ExecuteString (cmd.c:614) | init.client.luau:execCommand | VERIFIED | Console battery: dispatch across builtins (echo/bind/exec), aliases, and cvar queries. | RQDBG_Console battery per evidence/nq-console-open.txt |
-| Cmd_ForwardToServer (cmd.c:660) | client console → clc_stringcmd forward | PENDING | console.luau: "everything else forwarded to the server like Cmd_ForwardToServer" | TBD: write test or tools/verify script + evidence capture |
+| Cmd_ForwardToServer (cmd.c:660) | client console → clc_stringcmd forward | VERIFIED | evidence/nq-cbuf-battery.txt: "say" forwards as clc_stringcmd and the broadcast returns to the console with the player prefix. | RQDBG battery per evidence/nq-cbuf-battery.txt |
 | Cmd_CheckParm (cmd.c:693) | — | UNIMPLEMENTED | unused | — (implement first) |
 
 ## crc.c

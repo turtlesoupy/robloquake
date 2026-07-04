@@ -1,0 +1,22 @@
+Evidence: the NQ Cbuf/wait/forward battery (text output, no image)
+Engine: NetQuake boot, game id1 (local dev only); map e1m1
+Run: 2026-07-04, Studio Play (solo), via the RQDBG_Console "exec"
+  action AFTER the raw-line harness fix (exec no longer pre-splits ';').
+Code state: the commit introducing this file
+Procedure (execute_luau, Client datamodel):
+  exec 'alias wtest "echo w_one; wait; echo w_two"'
+  exec "wtest"                 -- wait defers w_two to a later frame
+  exec "echo semi_a; echo semi_b"
+  exec "say net_hello_check"   -- unknown command -> forwarded
+Output (verbatim):
+  {"semiSplit":true,"aliasQuotedBody":true,"sayForwarded":true,
+   "orderKept":true}
+What it proves:
+  - Cmd_TokenizeString/Cbuf: a quoted alias body containing ';' is
+    stored intact and expands correctly (no split inside quotes);
+  - Cmd_Wait_f + Cbuf_Init deferral state: w_two executes on a later
+    frame than w_one, in order, through cbufDeferred/cbufFrame;
+  - raw-line ';' splitting outside quotes works;
+  - Cmd_ForwardToServer: "say" is not a client command — it reaches
+    the server as clc_stringcmd and the broadcast returns to the
+    console with the player prefix.
