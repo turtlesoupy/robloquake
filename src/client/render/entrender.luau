@@ -31,11 +31,13 @@ export type ModelDef = {
 	skinW: number?,
 	skinH: number?,
 	palRef: any?, -- palette, kept for fallback tinting
+	fullbrightSkin: boolean?, -- mostly palette-224+ skin: render unlit
 }
 
 -- One rendered entity instance
 export type RenderEnt = {
 	kind: string,
+	fullbrightSkin: boolean?,
 	modelindex: number,
 	-- alias
 	em: EditableMesh?,
@@ -374,7 +376,11 @@ end
 
 function entrender.create(def: ModelDef, parent: Instance): RenderEnt?
 	if def.kind == "alias" then
-		return buildAliasEnt(def, parent)
+		local re = buildAliasEnt(def, parent)
+		if re then
+			re.fullbrightSkin = def.fullbrightSkin
+		end
+		return re
 	elseif def.kind == "sprite" then
 		return buildSpriteEnt(def, parent)
 	elseif def.kind == "brush" then
@@ -407,6 +413,9 @@ function entrender.setLight(re: RenderEnt, light: number)
 	local part = re.part
 	if not part then
 		return
+	end
+	if re.fullbrightSkin then
+		light = 255
 	end
 	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
 	l = l ^ 0.7 -- match the world lighting gamma
@@ -441,6 +450,19 @@ function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 		def.skinImages = imgs
 		local skin1 = am.skins[1]
 		def.skinPixels = if skin1.group then (skin1.frames :: { buffer })[1] else skin1.pixels :: buffer
+		-- the software colormap keeps palette 224-255 fullbright; per-pixel
+		-- isn't expressible on a tinted MeshPart, so mostly-fullbright skins
+		-- (torch flames, candles) render unlit as an approximation
+		do
+			local fb, count = 0, am.skinwidth * am.skinheight
+			local px = def.skinPixels :: buffer
+			for i = 0, count - 1 do
+				if buffer.readu8(px, i) >= 224 then
+					fb += 1
+				end
+			end
+			def.fullbrightSkin = fb * 2 > count
+		end
 		def.skinW = am.skinwidth
 		def.skinH = am.skinheight
 		def.translatedSkins = {}

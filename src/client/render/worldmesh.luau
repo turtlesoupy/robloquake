@@ -419,6 +419,10 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		end
 	end
 
+	if atlas then
+		lightatlaslib.flushPages(atlas)
+	end
+
 	container.Parent = parent
 	return container, animOut
 end

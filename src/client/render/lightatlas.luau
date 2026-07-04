@@ -41,6 +41,8 @@ export type Region = {
 
 type Page = {
 	img: EditableImage,
+	cpu: buffer, -- CPU mirror; initial build batches into one upload
+	live: boolean, -- after flush, region writes also hit the image
 	shelfY: number,
 	shelfX: number,
 	shelfH: number,
@@ -66,7 +68,14 @@ local function newPage(a: Atlas): Page?
 		warn("[robloquake] light atlas page allocation failed")
 		return nil
 	end
-	local page: Page = { img = img :: EditableImage, shelfY = 0, shelfX = 0, shelfH = 0 }
+	local page: Page = {
+		img = img :: EditableImage,
+		cpu = buffer.create(PAGE * PAGE * 4),
+		live = false,
+		shelfY = 0,
+		shelfX = 0,
+		shelfH = 0,
+	}
 	table.insert(a.pages, page)
 	return page
 end
@@ -180,22 +189,40 @@ function lightatlas.writeRegion(a: Atlas, region: Region, styleValue: (style: nu
 		addDynamicLights(region, blocklights, dlights)
 	end
 
-	-- alpha = 1 - brightness, black RGB; +2 for the gutter ring
-	-- (WritePixelsBuffer requires the buffer length to match exactly)
+	-- alpha = 1 - brightness, black RGB; +2 for the gutter ring. Writes land
+	-- in the page's CPU mirror; live pages also upload the touched rect
+	-- (WritePixelsBuffer requires the buffer length to match exactly).
+	local page = a.pages[region.page]
+	if not page then
+		return
+	end
 	local w, h = smax + 2, tmax + 2
-	local writeBuf = buffer.create(w * h * 4)
+	local cpu = page.cpu
 	for py = 0, h - 1 do
 		local ly = math.clamp(py - 1, 0, tmax - 1)
+		local rowbase = ((region.y + py) * PAGE + region.x) * 4
 		for px = 0, w - 1 do
 			local lx = math.clamp(px - 1, 0, smax - 1)
 			local alpha = math.floor((1 - brightness(blocklights[ly * smax + lx + 1])) * 255 + 0.5)
-			local o = (py * w + px) * 4
-			buffer.writeu32(writeBuf, o, bit32.lshift(alpha, 24)) -- 0,0,0,alpha (RGBA LE: R=0 G=0 B=0 A=alpha)
+			buffer.writeu32(cpu, rowbase + px * 4, bit32.lshift(alpha, 24)) -- RGBA LE: 0,0,0,alpha
 		end
 	end
-	local page = a.pages[region.page]
-	if page then
+	if page.live then
+		local writeBuf = buffer.create(w * h * 4)
+		for py = 0, h - 1 do
+			buffer.copy(writeBuf, py * w * 4, cpu, ((region.y + py) * PAGE + region.x) * 4, w * 4)
+		end
 		page.img:WritePixelsBuffer(Vector2.new(region.x, region.y), Vector2.new(w, h), writeBuf)
+	end
+end
+
+-- upload whole pages once after a build; subsequent region writes stream
+function lightatlas.flushPages(a: Atlas)
+	for _, page in a.pages do
+		if not page.live then
+			page.live = true
+			page.img:WritePixelsBuffer(Vector2.zero, Vector2.new(PAGE, PAGE), page.cpu)
+		end
 	end
 end
 

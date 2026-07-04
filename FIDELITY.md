@@ -30,6 +30,15 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 - Lightning beams: CL_ParseBeam/CL_UpdateTEnts ported — bolt/bolt2/bolt3
   model chains, one segment per 30 units, random roll, player-tracked
   start position, 0.2s lifetime (pooled render entities)
+- Solo TAB scoreboard (Sbar_SoloScoreboard: monsters/secrets/time/level
+  over the status row, shown when dead too; scorebar.lmp backdrop swap
+  still pending)
+- Chase cam (chase.c verbatim: back 100/up 16, traced look-point pitch,
+  no camera wall clip — authentic quirk; chase_active console cvar)
+- EF_BRIGHTFIELD entity particles (R_EntityParticles with the real
+  anorms.h table)
+- Atlas page writes batched through CPU mirrors (one upload per page at
+  load; region rewrites stream afterwards) — map-load stall fixed
 - Static entity framegroup animation (torch flames): alias statics re-pose
   every frame like R_DrawEntitiesOnList, so flame.mdl/flame2.mdl group
   frames advance by time (user-reported frozen torches)
@@ -56,17 +65,12 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Open — ordered by visibility
 
-1. **Solo TAB scoreboard** (`Sbar_SoloScoreboard`): monsters/secrets/time
-   text over the inventory bar in single player.
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.
 4. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
    tick on Heartbeat (~60Hz). Audit feel + consider fixed-timestep.
 5. **config.cfg / quake.rc execution**: `bind`/`unbind`/`alias`, cvar
    persistence, autoexec. None implemented; keys are hardcoded defaults.
-6. **Chase cam** (`chase_active`).
-7. **EF_BRIGHTFIELD entity particles** (`R_EntityParticles`): unused by
-   id1 QC; port for completeness with the real anorms table.
 8. **Demo playback/recording** (`cl_demo.c`).
 9. **Save/load** (`host_cmd.c` savegames).
 
@@ -80,6 +84,9 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
   Roblox's rolloff approximating `SND_Spatialize`'s linear curve.
 - **Raw input**: Win32 message pump → UserInputService. Escape is reserved
   by Roblox (menu moved to M); Studio eats I/O in play-test.
+- **Alias-model fullbright pixels**: per-pixel colormap fullbrights can't
+  be expressed on a tinted MeshPart; mostly-fullbright skins (flames,
+  candles) render unlit as an approximation, mixed skins tint normally.
 - **Rendering backend**: software rasterizer → EditableMesh geometry (a
   GLQuake-style approach). The surface-cache work above recovers the
   software renderer's lighting semantics; the rasterizer itself (span

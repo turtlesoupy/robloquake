@@ -301,6 +301,10 @@ local function sendStringCmd(line: string)
 	reliable:FireServer(buf)
 end
 
+-- chase.c: chase_active third-person camera (defaults 100/16/0)
+local worldlib = require(engine.server.world) -- pure hull math for TraceLine
+local chase_active = false
+
 con.onCommand = function(line: string)
 	local cmd, args = line:match("^(%S+)%s*(.*)$")
 	if not cmd then
@@ -317,6 +321,12 @@ con.onCommand = function(line: string)
 		end
 	elseif cmd == "impulse" then
 		input.setImpulse(tonumber(args) or 0)
+	elseif cmd == "chase_active" then
+		local v = tonumber(args)
+		if v then
+			chase_active = v ~= 0
+			consolelib.print(con, `"chase_active" is "{v}"`)
+		end
 	elseif cmd == "+showscores" then
 		hudlib.setShowScores(hud, true)
 	elseif cmd == "-showscores" then
@@ -832,7 +842,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local e = c.entities[num]
 		local re = renderEnts[num]
 
-		local shouldDraw = e ~= nil and e.visible and e.modelindex ~= 0 and num ~= c.viewentity
+		local shouldDraw = e ~= nil and e.visible and e.modelindex ~= 0 and (num ~= c.viewentity or chase_active)
 
 		if not shouldDraw then
 			if re then
@@ -882,7 +892,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 			end
 			entrender.setLight(rr, elight)
 
-			-- CL_RelinkEntities: entity effects become dynamic lights
+			-- CL_RelinkEntities: entity effects
+			if bit32.band(e.effects, 1) ~= 0 then -- EF_BRIGHTFIELD
+				particleslib.entityParticles(psys, e.origin, c.time)
+			end
 			if bit32.band(e.effects, 2) ~= 0 then -- EF_MUZZLEFLASH
 				local dl = allocDlight(num, c.time)
 				local fv = mathlib.angleVectors(e.angles)
@@ -945,10 +958,35 @@ RunService.Heartbeat:Connect(function(dt: number)
 	-- view / camera
 	local refdef = viewlib.calcRefdef(c, dt)
 	local forward, right, up = mathlib.angleVectors(refdef.viewangles)
+	if chase_active and worldModels[1] then
+		-- Chase_Update: pull back 100, up 16; re-pitch at the traced
+		-- lookpoint. The original doesn't clip the camera against walls.
+		local dest = refdef.vieworg - forward * 100 - right * 0
+		dest = vector.create(dest.x, dest.y, refdef.vieworg.z + 16)
+		local lookdest = refdef.vieworg + forward * 4096
+		local tr = {
+			allsolid = false,
+			startsolid = false,
+			inopen = false,
+			inwater = false,
+			fraction = 1,
+			endpos = lookdest,
+			planeNormal = vector.zero,
+			planeDist = 0,
+			ent = nil,
+		}
+		local hull = worldModels[1].hulls[1]
+		worldlib.recursiveHullCheck(hull, hull.firstclipnode, 0, 1, refdef.vieworg, lookdest, tr :: any)
+		local stop = tr.endpos - refdef.vieworg
+		local d = math.max(vector.dot(stop, forward), 1)
+		refdef.viewangles = vector.create(-math.deg(math.atan(stop.z / d)), refdef.viewangles.y, refdef.viewangles.z)
+		refdef.vieworg = dest
+		forward, right, up = mathlib.angleVectors(refdef.viewangles)
+	end
 	camera.CFrame = qcoords.cframe(refdef.vieworg, forward, right, up)
 
 	-- view weapon
-	if refdef.gunmodel ~= 0 and c.stats[cllib.STAT_HEALTH] > 0 and c.intermission == 0 then
+	if refdef.gunmodel ~= 0 and c.stats[cllib.STAT_HEALTH] > 0 and c.intermission == 0 and not chase_active then
 		if gunModelIndex ~= refdef.gunmodel then
 			if gunEnt then
 				entrender.destroy(gunEnt)

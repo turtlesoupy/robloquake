@@ -60,6 +60,7 @@ export type Hud = {
 	interFrame: Frame,
 	interSig: string,
 	showScores: boolean,
+	soloRows: { [string]: confontlib.TextRow },
 	fs: vfslib.Vfs,
 	conchars: buffer?,
 	charPics: { [number]: EditableImage? },
@@ -274,6 +275,25 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.interSig = ""
 	h.showScores = false
 	h.fs = fs
+
+	-- Sbar_SoloScoreboard rows drawn over the status row (canvas coords)
+	local function soloRow(x: number, y: number, cols: number): confontlib.TextRow
+		local holder = Instance.new("Frame")
+		holder.Name = "solo"
+		holder.BackgroundTransparency = 1
+		holder.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+		holder.Size = UDim2.fromOffset(cols * 8 * SCALE, 8 * SCALE)
+		holder.Parent = canvas
+		local row = confontlib.newRow(holder, cols, SCALE)
+		;(row :: any).holder = holder
+		return row
+	end
+	h.soloRows = {
+		monsters = soloRow(8, 28, 20),
+		secrets = soloRow(8, 36, 20),
+		time = soloRow(184, 28, 14),
+		level = soloRow(0, 36, 40),
+	}
 
 	-- stash the wad for update-time pic loads
 	;(h :: any)._wad = w
@@ -554,6 +574,10 @@ function hud.update(h: Hud, c: cllib.Client)
 	local items = c.items
 	local health = c.stats[cllib.STAT_HEALTH]
 
+	-- Sbar_DrawScoreboard (solo): replaces the status row when showing
+	-- scores or dead, outside deathmatch
+	local soloActive = (h.showScores or health <= 0) and c.gametype ~= 1
+
 	-- armor
 	if bit32.band(items, IT_INVULNERABILITY) ~= 0 then
 		drawNum(h, h.armorDigits, 24, 666, 1)
@@ -676,6 +700,39 @@ function hud.update(h: Hud, c: cllib.Client)
 			label.Position = UDim2.fromOffset((288 + i * 8) * SCALE, 8 * SCALE)
 		else
 			label.Visible = false
+		end
+	end
+
+	-- Sbar_SoloScoreboard text over the status row
+	local font = h.font
+	if soloActive and font then
+		local mins = math.floor(c.time / 60)
+		local secs = math.floor(c.time - 60 * mins)
+		confontlib.setRow(font, h.soloRows.monsters, ("Monsters:%3i /%3i"):format(c.stats[14] or 0, c.stats[12] or 0))
+		confontlib.setRow(font, h.soloRows.secrets, ("Secrets :%3i /%3i"):format(c.stats[13] or 0, c.stats[11] or 0))
+		confontlib.setRow(font, h.soloRows.time, ("Time :%3i:%i%i"):format(mins, secs // 10, secs % 10))
+		confontlib.setRow(font, h.soloRows.level, c.levelname)
+		local lvlHolder = (h.soloRows.level :: any).holder :: Frame
+		lvlHolder.Position = UDim2.fromOffset((232 - #c.levelname * 4) * SCALE, 36 * SCALE)
+		for _, row in h.soloRows do
+			((row :: any).holder :: Frame).Visible = true
+		end
+		-- hide the status-row widgets the scoreboard replaces
+		h.armorIcon.Visible = false
+		h.face.Visible = false
+		h.ammoIcon.Visible = false
+		for _, l in h.armorDigits do
+			l.Visible = false
+		end
+		for _, l in h.healthDigits do
+			l.Visible = false
+		end
+		for _, l in h.ammoDigits do
+			l.Visible = false
+		end
+	else
+		for _, row in h.soloRows do
+			((row :: any).holder :: Frame).Visible = false
 		end
 	end
 
