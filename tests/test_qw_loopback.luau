@@ -140,6 +140,37 @@ t.check(cl.stats[qwp.STAT_SHELLS] >= 25, "shells stat present")
 t.check(cl.lightstyles[0] ~= nil, "lightstyles received")
 t.check(cl.players[0] ~= nil and cl.players[0].name == "looper", "own player info received")
 
+-- fire the shotgun: svc_sound must reach the client through the PHS
+local cmd = {
+	angles = vector.create(0, yaw, 0),
+	forwardmove = 0,
+	sidemove = 0,
+	upmove = 0,
+	buttons = 1,
+	impulse = 0,
+	msec = 50,
+}
+cl.realtime += 0.05
+for _, packet in pending do
+	qwcl.processPacket(cl, packet)
+end
+pending = {}
+qwcl.sendCmd(cl, cmd)
+qwsv.frame(svr, 0.05)
+qwsv.sendClientMessages(svr)
+for _, packet in toClient do
+	qwcl.processPacket(cl, packet)
+end
+toClient = {}
+local heardFire = false
+for _, snd in cl.sounds do
+	if cl.sound_name[snd.num] == "weapons/guncock.wav" then
+		heardFire = true
+	end
+end
+t.check(heardFire, "svc_sound guncock arrived through the PHS multicast")
+t.check(cl.stats[qwp.STAT_SHELLS] < 25 or cl.stats[qwp.STAT_AMMO] < 25, "ammo stat dropped after firing")
+
 -- packet entities carry the world items
 local lastFrame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_MASK)]
 t.check(#lastFrame.packet_entities > 0, `packet entities present ({#lastFrame.packet_entities})`)

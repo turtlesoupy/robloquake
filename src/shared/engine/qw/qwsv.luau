@@ -94,6 +94,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 			sv_friction = 4,
 			sv_waterfriction = 4,
 			sv_aim = 2,
+			sv_phs = 1,
 			pausable = 1,
 			registered = 1,
 		} :: { [string]: number }
@@ -148,23 +149,48 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 	svr.dprint = function(_s: string) end
 	svr.active = false
 
-	-- hooks used by qwbuiltins/qwphys (transport wires in later layers)
+	-- hooks used by qwbuiltins/qwphys
 	svr.soundLog = {}
 	svr.startSound = function(_svr: any, ed: vmlib.Edict, channel: number, sample: string, volume: number, attenuation: number)
 		table.insert(svr.soundLog, { ent = ed.num, channel = channel, sample = sample, volume = volume, attenuation = attenuation })
+		qwsv.startSoundWire(svr, ed, channel, sample, volume, attenuation)
 	end
 	svr.printLog = {}
 	svr.broadcastPrint = function(_svr: any, level: number, text: string)
 		table.insert(svr.printLog, { level = level, text = text })
+		-- SV_BroadcastPrintf: reliable svc_print to every spawned client
+		for i = 1, svr.maxclients do
+			local cl: Client = svr.clients[i]
+			if cl.active and cl.spawned and cl.send then
+				msg.writeByte(cl.netchan.message, qwp.svc_print)
+				msg.writeByte(cl.netchan.message, level)
+				msg.writeString(cl.netchan.message, text)
+			end
+		end
 	end
 	svr.clientPrint = function(_svr: any, client: Client, level: number, text: string)
 		table.insert(client.prints, text)
+		if client.send then
+			msg.writeByte(client.netchan.message, qwp.svc_print)
+			msg.writeByte(client.netchan.message, level)
+			msg.writeString(client.netchan.message, text)
+		end
 	end
-	svr.flushMulticast = function(_svr: any, _reliable: boolean)
-		-- netchan layer routes this per-client later; content is correct
-		msg.clear(svr.multicast)
+	svr.svMulticast = function(_svr: any, origin: vector, to: number)
+		qwsv.svMulticast(svr, origin, to)
 	end
-	svr.logfrag = function(_svr: any, _killer: number, _killee: number) end
+	svr.flushMulticast = function(_svr: any, reliable: boolean)
+		-- legacy ALL-semantics flush (builtin 82 now routes svMulticast)
+		qwsv.svMulticast(svr, vector.zero, if reliable then 3 else 0)
+	end
+	svr.fraglog = {}
+	svr.logfrag = function(_svr: any, killer: number, killee: number)
+		-- SV_LogPlayer format: \killer\killee\ per line, ring of 512
+		table.insert(svr.fraglog, { killer = killer, killee = killee, time = svr.time })
+		if #svr.fraglog > 512 then
+			table.remove(svr.fraglog, 1)
+		end
+	end
 	svr.soundIndex = function(_svr: any, sample: string): number?
 		for i, name in svr.sound_precache do
 			if name == sample then
@@ -185,8 +211,11 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 		table.insert(svr.soundLog, { particle = true, org = org, color = color, count = count })
 	end
 	svr.clientCommands = function(_svr: any, client: Client, text: string)
-		-- stuffcmd: queued for the wire layer
 		table.insert(client.prints, "[stuff] " .. text)
+		if client.send then
+			msg.writeByte(client.netchan.message, qwp.svc_stufftext)
+			msg.writeString(client.netchan.message, text)
+		end
 	end
 	-- QW rand: deterministic LCG shared with the NQ server port
 	local rngState = 12345
@@ -215,6 +244,7 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	svr.sound_precache = {}
 	svr.brushModels = {}
 	svr.lightstyles = {}
+	svr.phsCache = {}
 	msg.clear(svr.datagram)
 	msg.clear(svr.reliable_datagram)
 	msg.clear(svr.signon)
@@ -1433,6 +1463,192 @@ function qwsv.writeEntitiesToClient(svr: any, client: Client, out: msg.SizeBuf)
 	end)
 
 	emitNailUpdate(svr, nails, out)
+end
+
+--------------------------------------------------------------------------
+-- multicast (sv_send.c SV_Multicast + lazy SV_CalcPHS)
+
+local function visRowBytes(svr: any): number
+	return 4 * bit32.rshift(svr.worldmodel.numleafs + 31, 5)
+end
+
+-- PVS row for a C leaf number (0 = solid leaf = everything visible)
+local function pvsRow(svr: any, leafnumC: number): buffer
+	local rowbytes = visRowBytes(svr)
+	if leafnumC == 0 then
+		local all = buffer.create(rowbytes)
+		buffer.fill(all, 0, 0xff, rowbytes)
+		return all
+	end
+	local leaf = svr.worldmodel.brush.leafs[leafnumC + 1]
+	local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+	local row = buffer.create(rowbytes)
+	buffer.copy(row, 0, pvs, 0, math.min(rowbytes, buffer.len(pvs)))
+	return row
+end
+
+-- PHS row: the or of the PVS rows of every leaf visible from here
+-- (SV_CalcPHS output, computed per-leaf on demand and cached — the
+-- eager O(numleafs^2) build would stall level load on this platform)
+local function phsRow(svr: any, leafnumC: number): buffer
+	local cached = svr.phsCache[leafnumC]
+	if cached then
+		return cached
+	end
+	local rowbytes = visRowBytes(svr)
+	local num = svr.worldmodel.numleafs
+	local scan = pvsRow(svr, leafnumC)
+	local row = buffer.create(rowbytes)
+	buffer.copy(row, 0, scan, 0, rowbytes)
+	for j = 0, rowbytes - 1 do
+		local bitbyte = buffer.readu8(scan, j)
+		if bitbyte == 0 then
+			continue
+		end
+		for k = 0, 7 do
+			if bit32.band(bitbyte, bit32.lshift(1, k)) == 0 then
+				continue
+			end
+			-- or this pvs row into the phs (+1: pvs is 1 based)
+			local index = j * 8 + k + 1
+			if index >= num then
+				continue
+			end
+			local src = pvsRow(svr, index)
+			for w = 0, rowbytes - 4, 4 do
+				local b = buffer.readu32(src, w)
+				if b ~= 0 then
+					buffer.writeu32(row, w, bit32.bor(buffer.readu32(row, w), b))
+				end
+			end
+		end
+	end
+	svr.phsCache[leafnumC] = row
+	return row
+end
+
+-- SV_Multicast: sends the contents of svr.multicast to a subset of the
+-- clients, then clears it. MULTICAST_ALL/PHS/PVS = 0/1/2, _R = 3/4/5
+function qwsv.svMulticast(svr: any, origin: vector, to: number)
+	local leaf = bsp.pointInLeaf(origin, svr.worldmodel)
+	local leafnum = if leaf then leaf.num else 0
+
+	local reliable = false
+	local mask: buffer? = nil
+	if to == 3 then
+		reliable = true
+	elseif to == 4 then
+		reliable = true
+		mask = phsRow(svr, leafnum)
+	elseif to == 1 then
+		mask = phsRow(svr, leafnum)
+	elseif to == 5 then
+		reliable = true
+		mask = pvsRow(svr, leafnum)
+	elseif to == 2 then
+		mask = pvsRow(svr, leafnum)
+	elseif to ~= 0 then
+		error(`SV_Multicast: bad to:{to}`)
+	end
+
+	local ent = svr.qdefs.ent
+	for j = 1, svr.maxclients do
+		local client: Client = svr.clients[j]
+		if not (client.active and client.spawned) then
+			continue
+		end
+
+		local inrange = mask == nil
+		if not inrange then
+			local corg = vmlib.edVector(client.edict, ent.origin)
+			if (to == 1 or to == 4) and vector.magnitude(origin - corg) <= 1024 then
+				inrange = true
+			else
+				local cleaf = bsp.pointInLeaf(corg, svr.worldmodel)
+				if cleaf then
+					-- -1: pvs rows are 1 based, not 0 based like leafs
+					local ln = cleaf.num - 1
+					local m = mask :: buffer
+					inrange = ln < 0
+						or bit32.band(buffer.readu8(m, bit32.rshift(ln, 3)), bit32.lshift(1, bit32.band(ln, 7))) ~= 0
+				else
+					inrange = true
+				end
+			end
+		end
+		if not inrange then
+			continue
+		end
+
+		local dest = if reliable then client.netchan.message else client.datagram
+		if dest.cursize + svr.multicast.cursize <= dest.maxsize then
+			buffer.copy(dest.data, dest.cursize, svr.multicast.data, 0, svr.multicast.cursize)
+			dest.cursize += svr.multicast.cursize
+		end
+	end
+
+	msg.clear(svr.multicast)
+end
+
+-- SV_StartSound (wire half; the soundLog hook calls through here)
+function qwsv.startSoundWire(svr: any, entity: vmlib.Edict, channel: number, sample: string, volume: number, attenuation: number)
+	if not svr.active or not svr.qdefs then
+		return
+	end
+	local sound_num = svr.soundIndex(svr, sample)
+	if not sound_num then
+		svr.print(`SV_StartSound: {sample} not precacheed`)
+		return
+	end
+
+	local reliable = false
+	local use_phs
+	if bit32.band(channel, 8) ~= 0 or cvarlib.value(svr.cvars, "sv_phs") == 0 then
+		if bit32.band(channel, 8) ~= 0 then
+			reliable = true -- sounds that break the phs are reliable
+		end
+		use_phs = false
+		channel = bit32.band(channel, 7)
+	else
+		use_phs = true
+	end
+
+	channel = bit32.bor(bit32.lshift(entity.num, 3), channel)
+	if volume ~= qwp.DEFAULT_SOUND_PACKET_VOLUME then
+		channel = bit32.bor(channel, qwp.SND_VOLUME)
+	end
+	if attenuation ~= qwp.DEFAULT_SOUND_PACKET_ATTENUATION then
+		channel = bit32.bor(channel, qwp.SND_ATTENUATION)
+	end
+
+	-- use the entity origin unless it is a bmodel
+	local ent = svr.qdefs.ent
+	local origin
+	if vmlib.edFloat(entity, ent.solid) == qd.SOLID_BSP then
+		origin = vmlib.edVector(entity, ent.origin)
+			+ 0.5 * (vmlib.edVector(entity, ent.mins) + vmlib.edVector(entity, ent.maxs))
+	else
+		origin = vmlib.edVector(entity, ent.origin)
+	end
+
+	msg.writeByte(svr.multicast, qwp.svc_sound)
+	msg.writeShort(svr.multicast, channel)
+	if bit32.band(channel, qwp.SND_VOLUME) ~= 0 then
+		msg.writeByte(svr.multicast, volume)
+	end
+	if bit32.band(channel, qwp.SND_ATTENUATION) ~= 0 then
+		msg.writeByte(svr.multicast, attenuation * 64)
+	end
+	msg.writeByte(svr.multicast, sound_num)
+	msg.writeCoord(svr.multicast, origin.x)
+	msg.writeCoord(svr.multicast, origin.y)
+	msg.writeCoord(svr.multicast, origin.z)
+
+	if use_phs then
+		qwsv.svMulticast(svr, origin, if reliable then 4 else 1)
+	else
+		qwsv.svMulticast(svr, origin, if reliable then 3 else 0)
+	end
 end
 
 -- SV_Frame (physics portion; players move on cmd arrival)

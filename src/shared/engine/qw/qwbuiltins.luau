@@ -843,11 +843,9 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(82, "multicast", function()
-		-- SV_Multicast: first pass sends ALL semantics for every mode
-		-- (correct content, extra coverage); PVS/PHS culling is a TODO
+		local org = vmlib.globalVector(vm, OFS_PARM0)
 		local to = vmlib.globalFloat(vm, OFS_PARM1)
-		local reliable = to == 3 or to == 4 or to == 5 -- MULTICAST_*_R
-		svr.flushMulticast(svr, reliable)
+		svr.svMulticast(svr, org, to)
 	end)
 
 	vm.builtins = B
