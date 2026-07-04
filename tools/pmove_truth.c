@@ -158,7 +158,8 @@ int main(void)
 			onground >= 0 ? 1 : 0, waterlevel);
 	}
 
-	/* course 2: dm3 stairs (ticks 301-460) */
+	/* course 3 runs after course 2 — see below.
+	   course 2: dm3 stairs (ticks 301-460) */
 	memset(&pmove, 0, sizeof(pmove));
 	pmove.numphysent = 1;
 	pmove.physents[0].model = &stairmodel;
@@ -181,6 +182,42 @@ int main(void)
 		PlayerMove();
 
 		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", 300 + tick,
+			pmove.origin[0], pmove.origin[1], pmove.origin[2],
+			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
+			onground >= 0 ? 1 : 0, waterlevel);
+	}
+
+	/* course 3: spectator flight on e1m1 (ticks 461-520) — SpectatorMove
+	   accel/friction, no gravity, flying through the void */
+	memset(&pmove, 0, sizeof(pmove));
+	pmove.numphysent = 1;
+	pmove.physents[0].model = &worldmodel;
+	pmove.spectator = 1;
+	pmove.origin[0] = 480; pmove.origin[1] = -352; pmove.origin[2] = 88;
+
+	static phase_t specscript[] = {
+		{20, 400, 0, 0, 90, -30, 0},  /* fly up-forward */
+		{35, 0, 350, 0, 90, 0, 0},    /* strafe drift */
+		{50, -400, 0, 200, 180, 45, 0}, /* reverse + upmove, pitched down */
+		{60, 0, 0, 0, 0, 0, 0},       /* coast to a stop on friction */
+	};
+	for (int tick = 1; tick <= 60; tick++) {
+		phase_t *ph = &specscript[0];
+		for (int i = 0; i < (int)(sizeof(specscript)/sizeof(specscript[0])); i++)
+			if (tick <= specscript[i].untilTick) { ph = &specscript[i]; break; }
+
+		pmove.cmd.msec = 50;
+		pmove.cmd.forwardmove = (short)ph->fwd;
+		pmove.cmd.sidemove = (short)ph->side;
+		pmove.cmd.upmove = (short)ph->upm;
+		pmove.cmd.angles[0] = ph->pitch;
+		pmove.cmd.angles[1] = ph->yaw;
+		pmove.cmd.angles[2] = 0;
+		pmove.cmd.buttons = ph->jump ? 2 : 0;
+
+		PlayerMove();
+
+		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", 460 + tick,
 			pmove.origin[0], pmove.origin[1], pmove.origin[2],
 			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
 			onground >= 0 ? 1 : 0, waterlevel);

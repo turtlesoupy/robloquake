@@ -142,5 +142,34 @@ for tick = 301, 460 do
 	truthMaxZ = math.max(truthMaxZ, truth[tick][4])
 end
 t.check(truthMaxZ > 110, `truth course covers the staircase (max z {truthMaxZ})`)
+
+-- course 3: spectator flight on e1m1 (SpectatorMove accel/friction, no
+-- gravity). Mirrored in tools/pmove_truth.c ticks 461-520.
+local specScript = {
+	{ 20, 400, 0, 0, 90, -30, false },
+	{ 35, 0, 350, 0, 90, 0, false },
+	{ 50, -400, 0, 200, 180, 45, false },
+	{ 60, 0, 0, 0, 0, 0, false },
+}
+local specPm: pmovelib.PlayerMove = {
+	origin = vector.create(480, -352, 88),
+	angles = vector.zero,
+	velocity = vector.zero,
+	oldbuttons = 0,
+	waterjumptime = 0,
+	dead = false,
+	spectator = true,
+	physents = { { model = world, origin = vector.zero } },
+	cmd = { angles = vector.zero, forwardmove = 0, sidemove = 0, upmove = 0, buttons = 0, msec = 50 },
+	numtouch = 0,
+	touchindex = {},
+	onground = -1,
+	waterlevel = 0,
+	watertype = -1,
+}
+runCourse(specPm, specScript, 60, 460)
+print(("course 3 (spectator flight): max position error %.6f overall"):format(maxPosErr))
+t.check(maxPosErr < 0.01, "spectator course matches the verbatim QW C within 0.01 units")
+t.check(specPm.origin.z > 150, `spectator flew (final z {string.format("%.0f", specPm.origin.z)})`)
 t.eq(groundMismatch, 0, "onground/waterlevel agree every tick, both courses")
 t.finish("test_qw_pmove")
