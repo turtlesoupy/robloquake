@@ -360,6 +360,8 @@ local chase_active = false
 
 local camera = Workspace.CurrentCamera
 local currentFov = 90 -- fov cvar (horizontal, CalcFov semantics)
+local gunVrectPitch = 0 -- vrect view-model raise (see qcoords.vrect)
+local applyFov: () -> () = function() end
 local refreshInputMode: () -> () = function() end
 
 --------------------------------------------------------------------------
@@ -589,8 +591,7 @@ execCommand = function(line: string)
 		if v and v >= 10 and v <= 170 then
 			-- quake fov is horizontal for 4:3; convert to vertical
 			currentFov = v
-			local vp = camera.ViewportSize
-			camera.FieldOfView = qcoords.calcFovY(v, vp.X, vp.Y)
+			applyFov()
 		end
 		return
 	elseif cmd == "togglemenu" then
@@ -991,14 +992,15 @@ end
 
 camera.CameraType = Enum.CameraType.Scriptable
 currentFov = 90
-do
-	local function applyFov()
-		local vp = camera.ViewportSize
-		camera.FieldOfView = qcoords.calcFovY(currentFov, vp.X, vp.Y)
-	end
-	applyFov()
-	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
+applyFov = function()
+	-- CalcFov over the vrect (window minus sbar), per SCR_CalcRefdef
+	local vp = camera.ViewportSize
+	local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.SBAR_LINES_PX)
+	camera.FieldOfView = fovY
+	gunVrectPitch = gp
 end
+applyFov()
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
 
 input.init(90)
 input.lockMouse()
@@ -1525,7 +1527,11 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local ge = gunEnt
 		if ge then
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
-			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
+			-- vrect: rotate the view model up by the projection-center
+			-- offset so the sbar doesn't cover it (see qcoords.vrect);
+			-- gunangles.x is pre-negated, so up = add
+			local vrectAngles = vector.create(refdef.gunangles.x + gunVrectPitch, refdef.gunangles.y, refdef.gunangles.z)
+			entrender.updateAlias(ge, def, refdef.gunorg, vrectAngles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
 			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)
 			for _, dl in dlights do

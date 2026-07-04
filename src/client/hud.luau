@@ -17,6 +17,9 @@ local hud = {}
 
 local SCALE = 2 -- 320-wide virtual canvas scaled up
 
+-- sb_lines at viewsize 100 (screen.c): 24+16+8 virtual px of HUD
+hud.SBAR_LINES_PX = 48 * SCALE
+
 -- item flags (quakedef.h)
 local IT_SHOTGUN = 1
 local IT_INVULNERABILITY = 4194304

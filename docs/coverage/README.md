@@ -80,3 +80,19 @@ it enters here in the same commit.
   Remaining sbar overlays (ping scoreboard), console, cshift flash, and NQ
   wall-texture animation still need their own captures (tool recovered
   after a Studio play restart; next session can finish the pass).
+
+### 2026-07-04 (vrect / view-weapon occlusion)
+- Regression class caught by the user: once the sbar shipped, both engines'
+  view weapons sat under it — the SCR_CalcRefdef SUBSTITUTED rows carried a
+  justification ("replicate when the sbar lands") that had expired, and the
+  qw V_CalcRefdef VERIFIED was earned before the HUD existed. Lesson encoded:
+  a substitution's justification names its expiry condition; when the
+  condition lands, the row reopens.
+- Fix: qcoords.vrect — fov_y from the vrect (window minus sb_lines, exactly
+  screen.c CalcFov usage) and the view model rotated up about the camera so
+  the vrect bottom edge lands at the sbar top. World image remains
+  window-centered (Roblox cameras have no projection-center offset): the
+  vertical crop differs from C by sb/2, documented per row.
+- VERIFIED both engines: live projection measurements (muzzle 83% vs sbar
+  top 86%, C-projected 84%) + NQ screenshot with the muzzle visible above
+  the HUD. SCR_CalcRefdef rows (both) and qw V_CalcRefdef updated.

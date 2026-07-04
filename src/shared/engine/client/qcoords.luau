@@ -57,4 +57,26 @@ function qcoords.calcFovY(fovX: number, width: number, height: number): number
 	return math.deg(2 * math.atan(height / x))
 end
 
+-- SCR_CalcRefdef/R_SetVrect: at viewsize 100 the 3D view occupies the
+-- window minus sb_lines (48 virtual px of status bar + inventory), so
+-- fov_y derives from the REDUCED height and the projection center sits
+-- sb/2 above the window center. Roblox cameras cannot shift the
+-- projection center, so the world image stays window-centered (delta:
+-- the vertical crop differs by sb/2) — but the VIEW MODEL, which in C
+-- hugs the vrect bottom just above the sbar, is rotated up about the
+-- camera by the center offset so its on-screen placement matches.
+function qcoords.vrect(fovX: number, vpW: number, vpH: number, sbPx: number): (number, number)
+	local vrectH = math.max(vpH - sbPx, 1)
+	local fovY = qcoords.calcFovY(fovX, vpW, vrectH)
+	-- rotation anchored so the vrect's bottom edge (where the C gun
+	-- rests) lands at the sbar top in our window-centered projection:
+	-- C row for the edge = vpH - sb; ours for depression phi' is
+	-- vpH/2 * (1 + tan(phi')/tan(F)). Solving phi' and taking
+	-- theta = F - phi' (F = fovY/2):
+	local F = math.rad(fovY) / 2
+	local phi = math.atan(math.tan(F) * (vpH - 2 * sbPx) / vpH)
+	local gunPitch = math.deg(F - phi)
+	return fovY, gunPitch
+end
+
 return qcoords

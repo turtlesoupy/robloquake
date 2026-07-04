@@ -146,7 +146,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | VERIFIED | FIDELITY.md: finale typewriter at scr_printspeed |
 | SCR_CheckDrawCenterString | centerTime gate in hud.update | PENDING | scr_centertime 2s; stays up during intermission like C |
 | CalcFov | qcoords.calcFovY | PENDING | delta: horizontal fov converted to vertical at the real viewport aspect (Roblox FOV is vertical) |
-| SCR_CalcRefdef | — | SUBSTITUTED | no viewsize/vrect machinery; 3D view is always full-window |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Same vrect implementation as QW (see qw-client.md): fov from window-minus-sbar, view model rotated to the vrect bottom anchor. Live-measured muzzle 83% vs sbar 86% + screenshot (dm3, gun visible above HUD). |
 | SCR_SizeUp_f / SCR_SizeDown_f | accepted no-op commands | UNIMPLEMENTED | viewsize fixed |
 | SCR_Init | init.client GUI setup | PENDING | |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent |

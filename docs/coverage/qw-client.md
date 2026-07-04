@@ -182,7 +182,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. |
 | V_CalcViewRoll | camera block (roll + dead branch) | PENDING | 80° death roll at viewheight -16 ported; PF_DEAD or health<=0 triggers. |
 | V_CalcIntermissionRefdef | intermission branch | PENDING | Fixed simorg/simangles from svc_intermission, no bob/height; no idle sway (see V_AddIdle). |
-| V_CalcRefdef | camera block in heartbeat | VERIFIED | Backlog 115a438/9ecc594: "V_CalcRefdef camera (bob/roll/punch/dead/gib/intermission)" implemented, session live-verified view weapon + world. Deltas: no view_ofs from server (STAT_VIEWHEIGHT + PF_GIB +8), gun bob simplified to forward push. |
+| V_CalcRefdef | camera block in heartbeat | VERIFIED | Re-verified WITH the HUD present (the prior VERIFIED predated the sbar and missed the vrect occlusion): bob/roll/punch/dead/gib/intermission + vrect view-model placement, screenshot + live projection measurements 2026-07-04. Deltas: no view_ofs from server, gun bob simplified to forward push, gun lag smoothing (CalcGunAngle) still absent. |
 | DropPunchAngle | `punchangle -= 10*dt`, clamp 0 | VERIFIED | Backlog 2ee4228 note: "QW DropPunchAngle is verbatim (kicks last one frame — authentic QW)". svc_smallkick/bigkick set -2/-4. |
 | V_RenderView | camera.CFrame via `qcoords.cframe` | SUBSTITUTED | Roblox camera replaces the software refresh entry; live 547df88 world renders through it. |
 | V_Init | — | SUBSTITUTED | No cvar/command registration. |
@@ -206,7 +206,7 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 |---|---|---|---|
 | CalcFov | `qcoords.calcFovY` | VERIFIED | Commit 2ee4228 (backlog): fov cvar horizontal at true viewport aspect (16:9 fov 90 → 58.7 vertical), viewport resize tracked, "gun placement verified exact vs v_shot.mdl authoring". |
 | SCR_CenterPrint / SCR_DrawCenterString / SCR_CheckDrawCenterString / SCR_EraseCenterString | centerprints drained to `print()` | PENDING | Text reaches the Studio output only; on-screen center string is part of the console/HUD follow-up. |
-| SCR_CalcRefdef | — | SUBSTITUTED | Roblox viewport; journaled follow-up: WinQuake draws the 3D vrect *above* the sbar (raised view center) — to replicate when the QW sbar lands. |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | fov_y from the vrect (window minus sb_lines=48 virtual px, screen.c:255-259) and the view model rotated up so the vrect bottom edge lands at the sbar top (Roblox cameras cannot shift the projection center — the world image stays window-centered, a documented sb/2 crop delta). Live-measured: muzzle 83% vs sbar top 86%, matching the C-projected 84%. |
 | SCR_SizeUp_f / SCR_SizeDown_f | — | UNIMPLEMENTED | viewsize scaling (fidelity backlog). |
 | SCR_Init | — | SUBSTITUTED | |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. |
