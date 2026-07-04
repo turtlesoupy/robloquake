@@ -106,6 +106,13 @@ function vmlib.new(pr: progslib.Progs, maxEdicts: number, maxclients: number): V
 		print = print,
 		_strcache = {},
 	}
+	vm.stateOffsets = {
+		globSelf = defs.glob.self,
+		globTime = defs.glob.time,
+		nextthink = defs.ent.nextthink,
+		frame = defs.ent.frame,
+		think = defs.ent.think,
+	}
 	return vm
 end
 
@@ -543,11 +550,12 @@ function vmlib.exec(vm: VM, fnum: number)
 				s = enterFunction(vm, fn)
 			end
 		elseif op == 60 then -- OP_STATE
-			local self_ = edicts[buffer.readi32(g, defs.glob.self * 4) + 1]
-			local ent = defs.ent
-			vmlib.edSetFloat(self_, ent.nextthink, buffer.readf32(g, defs.glob.time * 4) + 0.1)
-			vmlib.edSetFloat(self_, ent.frame, buffer.readf32(g, a * 4))
-			vmlib.edSetInt(self_, ent.think, buffer.readi32(g, b * 4))
+			-- offsets are per-VM: the QW progs ABI differs from NQ's
+			local so = vm.stateOffsets
+			local self_ = edicts[buffer.readi32(g, so.globSelf * 4) + 1]
+			vmlib.edSetFloat(self_, so.nextthink, buffer.readf32(g, so.globTime * 4) + 0.1)
+			vmlib.edSetFloat(self_, so.frame, buffer.readf32(g, a * 4))
+			vmlib.edSetInt(self_, so.think, buffer.readi32(g, b * 4))
 		elseif op == 61 then -- OP_GOTO
 			s += a - 1 -- offset the s++
 		elseif op == 62 then -- OP_AND
@@ -772,6 +780,59 @@ function vmlib.loadFromFile(vm: VM, data: string, deathmatch: number, skill: num
 		end
 
 		buffer.writei32(vm.globals, defs.glob.self * 4, ent.num)
+		vmlib.exec(vm, fnum)
+	end
+
+	vm.print(`{inhibit} entities inhibited`)
+end
+
+-- QW ED_LoadFromFile: same parse loop with the QW ABI injected and
+-- deathmatch-only inhibiting (QW has no skill levels)
+function vmlib.loadFromFileQW(vm: VM, data: string, deathmatch: number, qglob: { [string]: number }, qent: { [string]: number })
+	local ent: Edict? = nil
+	local inhibit = 0
+	local pos = 1
+	buffer.writef32(vm.globals, qglob.time * 4, vm.time)
+
+	while true do
+		local token
+		token, pos = com.parse(data, pos)
+		if token == nil then
+			break
+		end
+		if token:sub(1, 1) ~= "{" then
+			error(`ED_LoadFromFile: found {token} when expecting \{`)
+		end
+
+		if not ent then
+			ent = vmlib.edictNum(vm, 0)
+		else
+			ent = vmlib.alloc(vm)
+		end
+		pos = vmlib.parseEdict(vm, data, pos, ent)
+
+		local spawnflags = vmlib.edFloat(ent, qent.spawnflags)
+		if deathmatch ~= 0 and bit32.band(spawnflags, SPAWNFLAG_NOT_DEATHMATCH) ~= 0 then
+			vmlib.free(vm, ent)
+			inhibit += 1
+			continue
+		end
+
+		local classofs = vmlib.edInt(ent, qent.classname)
+		if classofs == 0 then
+			vm.print("No classname for edict")
+			vmlib.free(vm, ent)
+			continue
+		end
+		local classname = vmlib.getString(vm, classofs)
+		local fnum = vm.progs.functionsByName[classname]
+		if not fnum then
+			vm.print(`No spawn function for: {classname}`)
+			vmlib.free(vm, ent)
+			continue
+		end
+
+		buffer.writei32(vm.globals, qglob.self * 4, ent.num)
 		vmlib.exec(vm, fnum)
 	end
 

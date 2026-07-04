@@ -10,6 +10,7 @@ local com = require("../common/com")
 local cvarlib = require("../common/cvar")
 local mathlib = require("../common/mathlib")
 local msg = require("../common/msg")
+local modelslib = require("../models/models")
 local vmlib = require("../progs/vm")
 local defs = require("../progs/defs") -- ev_* type constants only
 local proto = require("../protocol")
@@ -383,19 +384,21 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(23, "bprint", function()
-		svr.broadcastPrint(svr, varString(vm, 0))
+		-- QW: void(float level, string s) bprint
+		local level = vmlib.globalFloat(vm, OFS_PARM0)
+		svr.broadcastPrint(svr, level, varString(vm, 1))
 	end)
 
 	def(24, "sprint", function()
-		local entnum = vmlib.globalInt(vm, OFS_PARM0)
-		local s = varString(vm, 1)
+		-- QW: void(entity client, float level, string s) sprint
+		local entnum = vmlib.globalEdict(vm, OFS_PARM0).num
+		local level = vmlib.globalFloat(vm, OFS_PARM1)
+		local text = varString(vm, 2)
 		if entnum < 1 or entnum > svr.maxclients then
 			svr.print("tried to sprint to a non-client")
 			return
 		end
-		local client = svr.clients[entnum]
-		msg.writeByte(client.message, proto.svc_print)
-		msg.writeString(client.message, s)
+		svr.clientPrint(svr, svr.clients[entnum], level, text)
 	end)
 
 	def(25, "dprint", function()
@@ -666,6 +669,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	local MSG_ONE = 1
 	local MSG_ALL = 2
 	local MSG_INIT = 3
+	local MSG_MULTICAST = 4 -- QW
 
 	local function writeDest(): msg.SizeBuf
 		local dest = vmlib.globalFloat(vm, OFS_PARM0)
@@ -681,6 +685,8 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 			return svr.reliable_datagram
 		elseif dest == MSG_INIT then
 			return svr.signon
+		elseif dest == MSG_MULTICAST then
+			return svr.multicast
 		end
 		error("WriteDest: bad destination")
 	end

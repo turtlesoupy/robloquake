@@ -663,6 +663,7 @@ function sv_phys.walkMove(svr: any, ed: vmlib.Edict)
 end
 
 -- SV_Physics_Client: player character actions
+-- NQ remnant, unreachable in QW (SV_RunCmd owns players); kept for parity
 function sv_phys.physicsClient(svr: any, ed: vmlib.Edict, num: number)
 	local vm = svr.vm
 	local w = svr.world
@@ -853,7 +854,7 @@ function sv_phys.physics(svr: any)
 	buffer.writei32(g, glob.self * 4, 0)
 	buffer.writei32(g, glob.other * 4, 0)
 	buffer.writef32(g, glob.time * 4, svr.time)
-	vmlib.exec(vm, vmlib.globalInt(vm, glob.StartFrame))
+	vmlib.exec(vm, svr.qdefs.func.StartFrame)
 
 	-- treat each object in turn
 	local i = 0
@@ -870,7 +871,9 @@ function sv_phys.physics(svr: any)
 
 		local movetype = vmlib.edFloat(ed, ent.movetype)
 		if i > 0 and i <= svr.maxclients then
-			sv_phys.physicsClient(svr, ed, i)
+			-- QW: clients move in SV_RunCmd through pmove, never here
+			i += 1
+			continue
 		elseif movetype == qd.MOVETYPE_PUSH then
 			physicsPusher(svr, ed)
 		elseif movetype == qd.MOVETYPE_NONE then
