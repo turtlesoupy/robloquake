@@ -193,12 +193,14 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Sbar_ShowTeamScores / Sbar_DontShowTeamScores / Sbar_ShowScores / Sbar_DontShowScores | — | UNIMPLEMENTED | +showscores/+showteamscores keys. | — (implement first) |
+| Sbar_ShowScores / Sbar_DontShowScores | qwclient execCommand +/-showscores → hudlib.setShowScores | VERIFIED | Implemented 2026-07-04 (the TAB binds); [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) shows the overlay raised via +showscores. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
+| Sbar_ShowTeamScores / Sbar_DontShowTeamScores | — | UNIMPLEMENTED | +showteamscores keys (teamplay overlay absent). | — (implement first) |
 | Sbar_Changed / Sbar_Init | — | UNIMPLEMENTED | | — (implement first) |
 | Sbar_DrawPic / Sbar_DrawSubPic / Sbar_DrawTransPic / Sbar_DrawCharacter / Sbar_DrawString / Sbar_itoa / Sbar_DrawNum | — | UNIMPLEMENTED | Drawing primitives (NQ hud.luau has equivalents to reuse). | — (implement first) |
 | Sbar_SortFrags / Sbar_SortTeams | — | UNIMPLEMENTED | Data available in `cl.players`. | — (implement first) |
 | Sbar_SoloScoreboard / Sbar_DrawInventory / Sbar_DrawFrags / Sbar_DrawFace / Sbar_DrawNormal / Sbar_Draw | — | UNIMPLEMENTED | | — (implement first) |
-| Sbar_IntermissionNumber / Sbar_TeamOverlay / Sbar_DeathmatchOverlay / Sbar_MiniDeathmatchOverlay / Sbar_IntermissionOverlay / Sbar_FinaleOverlay | — | UNIMPLEMENTED | Intermission state (cl.intermission=1/2) is parsed and moves the camera; overlays missing. | — (implement first) |
+| Sbar_DeathmatchOverlay | hudlib QW overlay driver ("dm" mode) | VERIFIED | [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) + .txt: RANKINGS plaque with the QW ping/pl/time/frags/name columns and self-row highlight. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
+| Sbar_IntermissionNumber / Sbar_TeamOverlay / Sbar_MiniDeathmatchOverlay / Sbar_IntermissionOverlay / Sbar_FinaleOverlay | hudlib driver covers intermission via the DM overlay (authentic QW shows the scoreboard at intermission); team/mini/finale variants absent | PENDING | Intermission state is parsed and moves the camera; the DM overlay doubles as the intermission screen but has not been captured at an actual intermission; team/mini/finale unimplemented. | TBD: capture at a QW intermission; implement team/mini/finale |
 
 ## screen.c
 
@@ -221,11 +223,11 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Con_Printf / Con_Print | `cl.prints` sink → hudlib notify + `consolelib.print` + Studio output | PENDING | svc_print text (incl. chat, verified live 547df88 "kill/respawn + chat broadcasts over the wire") now also lands in the console scrollback; needs a live screenshot. | TBD: write test or tools/verify script + evidence capture |
+| Con_Printf / Con_Print | `cl.prints` sink → hudlib notify + `consolelib.print` + Studio output | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg) + .txt: entered-the-game and PRINT_CHAT lines in the QW scrollback (cl.prints sink through the shared consolelib). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
 | Con_DPrintf | `cl.dprint` hook | PENDING | qwclient wires it to print. | TBD: write test or tools/verify script + evidence capture |
 | Key_ClearTyping / Con_ToggleConsole_f / Con_ToggleChat_f / Con_MessageMode_f / Con_MessageMode2_f | qwclient key wiring + `execCommand` | PENDING | Backquote/tilde toggles; `messagemode`/`messagemode2` commands open the chat line (T is bound to messagemode per default.cfg); input.setEnabled(false) while either is up. | TBD: write test or tools/verify script + evidence capture |
 | Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | consolelib | PENDING | `clear` empties con.lines; wrap/scrollback in consolelib.print; resize N/A (fixed 64-col conback). | TBD: write test or tools/verify script + evidence capture |
-| Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | `consolelib.update` + chat row | PENDING | Input line with blink cursor + scrollback via conchars rows; the messagemode "say:" line is a confont row (notify fade stays on hudlib). NotifyBox/SafePrintf N/A. | TBD: write test or tools/verify script + evidence capture |
+| Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | `consolelib.update` + chat row | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg): conback, scrollback, ] prompt with cursor under the QW boot. NotifyBox/SafePrintf N/A (no dedicated-server stdin). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
 
 ## keys.c
 

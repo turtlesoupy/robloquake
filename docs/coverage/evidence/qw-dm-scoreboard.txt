@@ -1,0 +1,11 @@
+Evidence: qw-dm-scoreboard.jpg — QW deathmatch RANKINGS overlay
+Engine: QuakeWorld boot (engine="qw"), game id1 (local dev only)
+Map: dm3, deathmatch 1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), console "+showscores" via the
+  RQDBG_Console harness; recovered from the transcript
+Code state: the commit introducing this file (which also wires
+  +showscores/-showscores into the QW execCommand — the TAB binds)
+What it proves: the QW ping-column deathmatch overlay renders —
+RANKINGS plaque, PING/PL/TIME/FRAGS/NAME columns, the local player row
+(ping 999: authentic self-ping on a listen setup) with the name-row
+highlight.

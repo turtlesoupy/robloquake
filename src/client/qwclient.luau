@@ -1017,6 +1017,9 @@ return function()
 		elseif cmd == "quit" or cmd == "disconnect" then
 			-- CL_Quit_f / CL_Disconnect_f: N/A on this platform
 			consolelib.print(con, "use the Roblox menu to leave the experience")
+		elseif cmd == "+showscores" or cmd == "-showscores" then
+			-- Sbar_ShowScores / Sbar_DontShowScores (TAB binds these)
+			hudlib.setShowScores(hud, cmd == "+showscores")
 		elseif cmd == "fov" then
 			local v = tonumber(args)
 			if v and v >= 10 and v <= 170 then

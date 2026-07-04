@@ -1,0 +1,12 @@
+Evidence: qw-console-open.jpg — QW boot console (shared consolelib)
+Engine: QuakeWorld boot (engine="qw"), game id1 (local dev only)
+Map: dm3, deathmatch 1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), RQDBG_Console harness
+  ("say qw chat line" then toggle); recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the QW boot drives the shared console — conback + id
+watermark, half-screen slide, ] input prompt, scrollback showing
+"turtlesoupy entered the game" and "turtlesoupy: qw chat line": the
+say command forwarded to the server as a stringcmd
+(Cmd_ForwardToServer), broadcast back at PRINT_CHAT, and printed
+through the cl.prints console sink (Con_Print path).
