@@ -330,13 +330,13 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_CheckBottom (sv_move.c:37) | server/sv_move.luau:checkBottom | VERIFIED | test_nqbuiltins: PF_checkbottom = 1 for a grounded grunt. | `lune run tests/test_nqbuiltins.luau` |
-| SV_movestep (sv_move.c:110) | sv_move.luau:movestep | VERIFIED | test_nqbuiltins: PF_walkmove steps a grounded grunt through movestep with program-state save/restore. | `lune run tests/test_nqbuiltins.luau` |
-| SV_StepDirection (sv_move.c:233) | sv_move.luau:stepDirection | PENDING | 45/315-degree turn gate preserved | TBD: write test or tools/verify script + evidence capture |
-| SV_FixCheckBottom (sv_move.c:268) | sv_move.luau:fixCheckBottom | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| SV_NewChaseDir (sv_move.c:284) | sv_move.luau:newChaseDir | PENDING | transliteration preserves the original's 215 (not 225) diagonal constant; RNG is the deterministic LCG, so direction choices diverge from any given C run | TBD: write test or tools/verify script + evidence capture |
-| SV_CloseEnough (sv_move.c:373) | sv_move.luau:closeEnough | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| SV_MoveToGoal (sv_move.c:393) | sv_move.luau:moveToGoal (builtin 67) | PENDING | exercised whenever monsters hunt in E2E tests; unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_CheckBottom (sv_move.c:37) | server/sv_move.luau:checkBottom | VERIFIED | svmove truth course: bit-identical over 200 chase calls vs the verbatim C (plus the earlier builtin-battery behavioral checks). | `lune run tests/test_svmove.luau` |
+| SV_movestep (sv_move.c:110) | sv_move.luau:movestep | VERIFIED | svmove truth course: bit-identical over 200 chase calls vs the verbatim C (plus the earlier builtin-battery behavioral checks). | `lune run tests/test_svmove.luau` |
+| SV_StepDirection (sv_move.c:233) | sv_move.luau:stepDirection | VERIFIED | test_svmove vs tools/svmove_truth.c (verbatim sv_move.c + shared msvcrt LCG): 200 MoveToGoal calls, position AND yaw error 0.000000 — every step/turn decision identical. | `lune run tests/test_svmove.luau` |
+| SV_FixCheckBottom (sv_move.c:268) | sv_move.luau:fixCheckBottom | VERIFIED | svmove truth course: the PARTIALGROUND path participates in the bit-identical chase (any divergence would desync the shared rand stream). | `lune run tests/test_svmove.luau` |
+| SV_NewChaseDir (sv_move.c:284) | sv_move.luau:newChaseDir | VERIFIED | svmove truth course: the rand()-gated direction swaps and search loops match the C decision-for-decision (shared LCG from seed 12345). | `lune run tests/test_svmove.luau` |
+| SV_CloseEnough (sv_move.c:373) | sv_move.luau:closeEnough | VERIFIED | svmove truth course: both sides idle at the same arrival tick against ±1-expanded abs boxes. | `lune run tests/test_svmove.luau` |
+| SV_MoveToGoal (sv_move.c:393) | sv_move.luau:moveToGoal (builtin 67) | VERIFIED | svmove truth course: 200 calls bit-identical (0.000000 position/yaw error), monster chases 360+ units across the e1m1 hall. | `lune run tests/test_svmove.luau` |
 
 ## sv_phys.c
 
