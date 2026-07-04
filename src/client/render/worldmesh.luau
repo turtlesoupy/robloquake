@@ -12,6 +12,7 @@ local qcoords = require(engine.client.qcoords)
 
 local textures = require(script.Parent.textures)
 local tris = require(script.Parent.tris)
+local lightatlaslib = require(script.Parent.lightatlas)
 
 local worldmesh = {}
 
@@ -104,6 +105,29 @@ local function baseStyleValue(_style: number): number
 	return worldmesh.BASE_STYLE_VALUE
 end
 
+-- Per-map light atlas (the software surface cache). resetLighting must be
+-- called before building a map's meshes; brush submodels built later share
+-- the same atlas so doors/plats keep their lightmaps.
+local currentAtlas: lightatlaslib.Atlas? = nil
+local currentStyleValue: (number) -> number = baseStyleValue
+
+function worldmesh.resetLighting(styleValue: (number) -> number)
+	currentAtlas = lightatlaslib.new()
+	currentStyleValue = styleValue
+end
+
+function worldmesh.updateLightStyles(changed: { [number]: boolean })
+	if currentAtlas then
+		lightatlaslib.updateStyles(currentAtlas, currentStyleValue, changed)
+	end
+end
+
+function worldmesh.updateDlights(data: bsp.BspData, dlights: { lightatlaslib.Dlight })
+	if currentAtlas then
+		lightatlaslib.updateDlights(currentAtlas, data, dlights, currentStyleValue)
+	end
+end
+
 -- Animated textures (water/sky) registered during builds; the client takes
 -- and owns them (worldmesh.takeTextureAnims) and rewrites the images.
 export type TextureAnim = {
@@ -177,42 +201,11 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		return img
 	end
 
-	type FaceData = { pos: { Vector3 }, uv: { Vector2 }, layers: { { { number } }? } }
+	type FaceData = { pos: { Vector3 }, uv: { Vector2 } }
 	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh cap
 
-	for miptex, surfs in byTexture do
-		local tex = data.textures[miptex + 1]
-
-		-- pass 1: gather face data
-		local faceList: { FaceData } = {}
-		for _, surf in surfs do
-			local ti = data.texinfo[surf.texinfonum + 1]
-			local vecs = ti.vecs
-			local texW = if tex then tex.width else 64
-			local texH = if tex then tex.height else 64
-
-			local fd: FaceData = { pos = {}, uv = {}, layers = {} }
-			for e = 0, surf.numedges - 1 do
-				local se = data.surfedges[surf.firstedge + e + 1]
-				local v: vector
-				if se >= 0 then
-					v = data.vertexes[data.edges0[se + 1] + 1]
-				else
-					v = data.vertexes[data.edges1[-se + 1] + 1]
-				end
-
-				local s = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
-				local t = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
-
-				table.insert(fd.pos, qcoords.toRoblox(v))
-				table.insert(fd.uv, Vector2.new(s / texW, t / texH))
-				fd.layers[#fd.pos] = sampleLightStyles(data, surf, s, t)
-			end
-			table.insert(faceList, fd)
-		end
-
-		-- pass 2: chunk faces so each mesh stays under the vertex cap, then
-		-- build one MeshPart per chunk
+	-- generic chunked mesh builder: positions+uvs -> MeshParts in container
+	local function buildChunks(faces: { FaceData }, partName: string, img: EditableImage?, fallbackColor: Color3?, translucentMap: boolean)
 		local chunk: { FaceData } = {}
 		local chunkVerts = 0
 
@@ -220,7 +213,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			if #chunk == 0 then
 				return
 			end
-			local faces = chunk
+			local batch = chunk
 			chunk = {}
 			chunkVerts = 0
 
@@ -232,7 +225,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 
 			local mins = Vector3.new(math.huge, math.huge, math.huge)
 			local maxs = -mins
-			for _, fd in faces do
+			for _, fd in batch do
 				for _, rp in fd.pos do
 					mins = mins:Min(rp)
 					maxs = maxs:Max(rp)
@@ -240,36 +233,17 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end
 			local center = (mins + maxs) / 2
 
-			-- rank = nth AddColor call; used to remap ids onto the fixed copy
-			local pendingAnim: { { rank: number, layers: { { number } } } } = {}
-			local colorRank = 0
-			for _, fd in faces do
+			for _, fd in batch do
 				local vids = {}
 				local uvids = {}
-				local cids = {}
 				for i, rp in fd.pos do
 					table.insert(vids, em:AddVertex(rp - center))
 					table.insert(uvids, em:AddUV(fd.uv[i]))
-					local layers = fd.layers[i]
-					local light = combineLight(layers, baseStyleValue)
-					local cid = em:AddColor(Color3.new(light, light, light), 1)
-					colorRank += 1
-					table.insert(cids, cid)
-					if layers then
-						-- animated if any layer's style is non-zero
-						for _, sv in layers do
-							if sv[1] ~= 0 then
-								table.insert(pendingAnim, { rank = colorRank, layers = layers })
-								break
-							end
-						end
-					end
 				end
 				-- quake winds clockwise from the front; roblox fronts are CCW
 				for k = 3, #vids do
 					local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
 					em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
-					em:SetFaceColors(fid, { cids[1], cids[k], cids[k - 1] })
 				end
 			end
 
@@ -279,7 +253,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end)
 			em:Destroy()
 			if not ok or not fixedOrErr then
-				warn(`[robloquake] fixed mesh copy failed for texture {miptex}: {fixedOrErr}`)
+				warn(`[robloquake] fixed mesh copy failed for {partName}: {fixedOrErr}`)
 				return
 			end
 			local fixed = fixedOrErr :: EditableMesh
@@ -289,24 +263,13 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end)
 			if not ok2 then
 				fixed:Destroy()
-				warn(`[robloquake] mesh build failed for texture {miptex}: {partOrErr}`)
+				warn(`[robloquake] mesh build failed for {partName}: {partOrErr}`)
 				return
 			end
 			local part = partOrErr :: MeshPart
 			retainMesh(container, fixed)
 
-			-- remap animated colors onto the fixed copy: GetColors returns
-			-- ids in creation order (nth AddColor -> newIds[n])
-			if #pendingAnim > 0 then
-				local newIds = fixed:GetColors()
-				for _, entry in pendingAnim do
-					local newId = newIds[entry.rank]
-					if newId then
-						table.insert(animOut, { em = fixed, cid = newId, layers = entry.layers })
-					end
-				end
-			end
-			part.Name = if tex then tex.name else tostring(miptex)
+			part.Name = partName
 			part.Anchored = true
 			part.CanCollide = false
 			part.CanQuery = false
@@ -314,11 +277,20 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			part.CastShadow = false
 			part.Material = Enum.Material.SmoothPlastic
 
-			local img = textureImage(miptex)
 			if img then
+				-- both passes ride TextureContent; the overlay/fullbright
+				-- images carry alpha which MeshPart textures blend
+				-- (SurfaceAppearance content props are plugin-gated at runtime)
 				part.TextureContent = Content.fromObject(img)
-			elseif tex then
-				part.Color = textures.averageColor(tex.pixels, tex.width * tex.height, pal)
+				if translucentMap then
+					-- epsilon transparency forces the translucent render
+					-- queue, where texture alpha blends per-texel (the
+					-- opaque queue alpha-tests instead)
+					part.Transparency = 0.02
+					part.Color = Color3.new(1, 1, 1)
+				end
+			elseif fallbackColor then
+				part.Color = fallbackColor
 			end
 
 			-- CreateMeshPartAsync centers geometry on the part; restore
@@ -327,9 +299,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			part.Parent = container
 		end
 
-		for _, fd in faceList do
-			-- front/back seam handling never applies to world faces; each
-			-- face contributes #pos vertices
+		for _, fd in faces do
 			if chunkVerts + #fd.pos > MAX_BATCH_VERTS then
 				flushChunk()
 			end
@@ -337,6 +307,116 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			chunkVerts += #fd.pos
 		end
 		flushChunk()
+	end
+
+	-- overlay faces grouped by atlas page; fullbright faces by texture
+	local overlayByPage: { [number]: { FaceData } } = {}
+	local fbFaces: { [number]: { FaceData } } = {}
+	local fbImages: { [number]: EditableImage? } = {}
+	local atlas = currentAtlas
+
+	for miptex, surfs in byTexture do
+		local tex = data.textures[miptex + 1]
+		local faceList: { FaceData } = {}
+
+		for _, surf in surfs do
+			local ti = data.texinfo[surf.texinfonum + 1]
+			local vecs = ti.vecs
+			local texW = if tex then tex.width else 64
+			local texH = if tex then tex.height else 64
+
+			-- surface normal for overlay offset (lightmap floats 1 unit in
+			-- front of the face; fullbright pixels 2)
+			local plane = data.planes[surf.planenum + 1]
+			local normal = plane.normal
+			if bit32.band(surf.flags, bsp.SURF_PLANEBACK) ~= 0 then
+				normal = -normal
+			end
+
+			local region = if atlas then lightatlaslib.alloc(atlas, data, surf, currentStyleValue) else nil
+
+			local fd: FaceData = { pos = {}, uv = {} }
+			local ofd: FaceData? = if region then { pos = {}, uv = {} } else nil
+			for e = 0, surf.numedges - 1 do
+				local se = data.surfedges[surf.firstedge + e + 1]
+				local v: vector
+				if se >= 0 then
+					v = data.vertexes[data.edges0[se + 1] + 1]
+				else
+					v = data.vertexes[data.edges1[-se + 1] + 1]
+				end
+
+				local sc = v.x * vecs[1] + v.y * vecs[2] + v.z * vecs[3] + vecs[4]
+				local tc = v.x * vecs[5] + v.y * vecs[6] + v.z * vecs[7] + vecs[8]
+
+				table.insert(fd.pos, qcoords.toRoblox(v))
+				table.insert(fd.uv, Vector2.new(sc / texW, tc / texH))
+
+				if ofd and region then
+					local ls = (sc - surf.texturemins[1]) / 16
+					local lt = (tc - surf.texturemins[2]) / 16
+					local u, vv = lightatlaslib.uv(region, ls, lt)
+					table.insert(ofd.pos, qcoords.toRoblox(v + normal))
+					table.insert(ofd.uv, Vector2.new(u, vv))
+				end
+			end
+			table.insert(faceList, fd)
+
+			if ofd and region then
+				local list = overlayByPage[region.page]
+				if not list then
+					list = {}
+					overlayByPage[region.page] = list
+				end
+				table.insert(list, ofd)
+
+				-- fullbright pixels reassert above the darkness overlay
+				if tex then
+					if fbImages[miptex] == nil then
+						fbImages[miptex] = textures.createFullbrightImage(tex.pixels, tex.width, tex.height, pal) or false :: any
+					end
+					if fbImages[miptex] then
+						local fbd: FaceData = { pos = {}, uv = {} }
+						for i, rp in fd.pos do
+							-- re-derive from quake vertex: fd.pos is transformed;
+							-- offset 2 units along the normal in quake space
+							fbd.pos[i] = rp + qcoords.toRoblox(normal * 2) - qcoords.toRoblox(vector.zero)
+							fbd.uv[i] = fd.uv[i]
+						end
+						local flist = fbFaces[miptex]
+						if not flist then
+							flist = {}
+							fbFaces[miptex] = flist
+						end
+						table.insert(flist, fbd)
+					end
+				end
+			end
+		end
+
+		buildChunks(
+			faceList,
+			if tex then tex.name else tostring(miptex),
+			textureImage(miptex),
+			if tex then textures.averageColor(tex.pixels, tex.width * tex.height, pal) else Color3.fromRGB(128, 128, 128),
+			false
+		)
+	end
+
+	-- the darkness overlay: black pages with alpha = 1 - brightness
+	if atlas then
+		for pi, faces in overlayByPage do
+			local img = lightatlaslib.pageImage(atlas, pi)
+			if img then
+				buildChunks(faces, `lightmap{pi}`, img, nil, true)
+			end
+		end
+	end
+	for miptex, faces in fbFaces do
+		local img = fbImages[miptex]
+		if img then
+			buildChunks(faces, `fullbright{miptex}`, img :: EditableImage, nil, true)
+		end
 	end
 
 	container.Parent = parent

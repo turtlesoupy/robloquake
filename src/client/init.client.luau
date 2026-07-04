@@ -140,6 +140,39 @@ end
 -- water / sky textures that rewrite their images every tick
 local textureAnims: { worldmesh.TextureAnim } = {}
 
+-- cl_dlights (CL_AllocDlight / CL_DecayLights)
+local lightatlaslib = require(script.render.lightatlas)
+local MAX_DLIGHTS = 32
+local dlights: { lightatlaslib.Dlight } = {}
+local function allocDlight(key: number, time: number): lightatlaslib.Dlight
+	if key ~= 0 then
+		for _, dl in dlights do
+			if dl.key == key then
+				dl.radius = 0
+				dl.decay = 0
+				dl.minlight = 0
+				return dl
+			end
+		end
+	end
+	for _, dl in dlights do
+		if dl.die < time then
+			dl.key = key
+			dl.radius = 0
+			dl.decay = 0
+			dl.minlight = 0
+			return dl
+		end
+	end
+	local dl: lightatlaslib.Dlight = { key = key, origin = vector.zero, radius = 0, die = 0, decay = 0, minlight = 0 }
+	if #dlights < MAX_DLIGHTS then
+		table.insert(dlights, dl)
+	else
+		dlights[1] = dl
+	end
+	return dl
+end
+
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
 local staticEnts: { entrender.RenderEnt } = {}
 local gunEnt: entrender.RenderEnt? = nil
@@ -222,6 +255,8 @@ c.onServerInfo = function()
 	worldModels = bsplib.load(worldName, buf)
 	table.clear(lightAnim)
 	table.clear(styleValues)
+	table.clear(dlights)
+	worldmesh.resetLighting(styleValueFor)
 	local _world, anim = worldmesh.build(worldModels[1], pal, worldFolder, "world")
 	for _, e in anim do
 		table.insert(lightAnim, e)
@@ -374,6 +409,13 @@ c.onTempEntity = function(_c, te)
 		particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, c.time)
 	elseif te.type == proto.TE_EXPLOSION or te.type == proto.TE_EXPLOSION2 or te.type == proto.TE_TAREXPLOSION then
 		particleslib.explosion(psys, te.pos, c.time)
+		if te.type ~= proto.TE_TAREXPLOSION then
+			local dl = allocDlight(0, c.time)
+			dl.origin = te.pos
+			dl.radius = 350
+			dl.die = c.time + 0.5
+			dl.decay = 300
+		end
 		teSound("weapons/r_exp3.wav", te.pos)
 	elseif te.type == proto.TE_WIZSPIKE then
 		particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, c.time)
@@ -588,7 +630,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- R_AnimateLight: lightstyle values tick at 10Hz from the style strings
 	local styleFrame = math.floor(c.time * 10)
-	if styleFrame ~= lastStyleFrame and #lightAnim > 0 then
+	if styleFrame ~= lastStyleFrame then
 		lastStyleFrame = styleFrame
 		workspace:SetAttribute("RQ_LightTick", styleFrame)
 		for _, ta in textureAnims do
@@ -611,21 +653,24 @@ RunService.Heartbeat:Connect(function(dt: number)
 				changed[style] = true
 			end
 		end
-		local function styleValue(style: number): number
-			return styleValues[style] or worldmesh.BASE_STYLE_VALUE
+		if next(changed) then
+			worldmesh.updateLightStyles(changed)
 		end
-		for _, entry in lightAnim do
-			local dirty = false
-			for _, sv in entry.layers do
-				if changed[sv[1]] then
-					dirty = true
-					break
+	end
+
+	-- CL_DecayLights + the dynamic light surface pass
+	do
+		local active: { lightatlaslib.Dlight } = {}
+		for _, dl in dlights do
+			if dl.die >= c.time and dl.radius > 0 then
+				dl.radius -= dt * dl.decay
+				if dl.radius > 0 then
+					table.insert(active, dl)
 				end
 			end
-			if dirty then
-				local light = worldmesh.combineLight(entry.layers, styleValue)
-				entry.em:SetColor(entry.cid, Color3.new(light, light, light))
-			end
+		end
+		if worldModels[1] then
+			worldmesh.updateDlights(worldModels[1].brush, active)
 		end
 	end
 
@@ -692,7 +737,40 @@ RunService.Heartbeat:Connect(function(dt: number)
 				colors = c.scores[e.colormap].colors
 			end
 			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
-			entrender.setLight(rr, lightpoint.at(worldModels[1], e.origin, styleValueFor))
+			-- R_AliasSetupLighting: dynamic lights add straight onto the
+			-- lightmap sample
+			local elight = lightpoint.at(worldModels[1], e.origin, styleValueFor)
+			for _, dl in dlights do
+				if dl.die >= c.time and dl.radius > 0 then
+					local add = dl.radius - vector.magnitude(e.origin - dl.origin)
+					if add > 0 then
+						elight += add
+					end
+				end
+			end
+			entrender.setLight(rr, elight)
+
+			-- CL_RelinkEntities: entity effects become dynamic lights
+			if bit32.band(e.effects, 2) ~= 0 then -- EF_MUZZLEFLASH
+				local dl = allocDlight(num, c.time)
+				local fv = mathlib.angleVectors(e.angles)
+				dl.origin = e.origin + vector.create(0, 0, 16) + fv * 18
+				dl.radius = 200 + math.random(0, 31)
+				dl.minlight = 32
+				dl.die = c.time + 0.1
+			end
+			if bit32.band(e.effects, 4) ~= 0 then -- EF_BRIGHTLIGHT
+				local dl = allocDlight(num, c.time)
+				dl.origin = e.origin + vector.create(0, 0, 16)
+				dl.radius = 400 + math.random(0, 31)
+				dl.die = c.time + 0.001
+			end
+			if bit32.band(e.effects, 8) ~= 0 then -- EF_DIMLIGHT
+				local dl = allocDlight(num, c.time)
+				dl.origin = e.origin
+				dl.radius = 200 + math.random(0, 31)
+				dl.die = c.time + 0.001
+			end
 
 			-- CL_RelinkEntities: model-flag particle trails (rockets, smoke,
 			-- gibs, tracers) from last frame's origin to this one
@@ -710,6 +788,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 						particleslib.rocketTrail(psys, oldorg, e.origin, 5, c.time)
 					elseif bit32.band(mflags, 1) ~= 0 then -- EF_ROCKET
 						particleslib.rocketTrail(psys, oldorg, e.origin, 0, c.time)
+						local dl = allocDlight(num, c.time)
+						dl.origin = e.origin
+						dl.radius = 200
+						dl.die = c.time + 0.01
 					elseif bit32.band(mflags, 2) ~= 0 then -- EF_GRENADE
 						particleslib.rocketTrail(psys, oldorg, e.origin, 1, c.time)
 					elseif bit32.band(mflags, 128) ~= 0 then -- EF_TRACER3
@@ -748,7 +830,16 @@ RunService.Heartbeat:Connect(function(dt: number)
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
 			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
-			entrender.setLight(ge, math.max(lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor), 24))
+			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)
+			for _, dl in dlights do
+				if dl.die >= c.time and dl.radius > 0 then
+					local add = dl.radius - vector.magnitude(refdef.vieworg - dl.origin)
+					if add > 0 then
+						glight += add
+					end
+				end
+			end
+			entrender.setLight(ge, math.max(glight, 24))
 		end
 	elseif gunEnt then
 		setEntVisible(gunEnt, false)

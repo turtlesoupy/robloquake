@@ -73,6 +73,44 @@ function textures.createImage(pixels: buffer, width: number, height: number, pal
 	return img
 end
 
+-- Fullbright overlay image: the software colormap keeps palette indices
+-- 224-255 at full intensity regardless of light. Returns an image with
+-- only those pixels opaque (nil when the texture has none), drawn as an
+-- unlit pass above the darkness overlay.
+function textures.createFullbrightImage(pixels: buffer, width: number, height: number, pal: Palette): EditableImage?
+	local count = width * height
+	local any = false
+	for i = 0, count - 1 do
+		if buffer.readu8(pixels, i) >= 224 then
+			any = true
+			break
+		end
+	end
+	if not any then
+		return nil
+	end
+	local ok, img = pcall(function()
+		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		local rgba = buffer.create(count * 4)
+		for i = 0, count - 1 do
+			local p = buffer.readu8(pixels, i)
+			if p >= 224 then
+				local c = pal[p + 1]
+				buffer.writeu8(rgba, i * 4, math.floor(c.R * 255 + 0.5))
+				buffer.writeu8(rgba, i * 4 + 1, math.floor(c.G * 255 + 0.5))
+				buffer.writeu8(rgba, i * 4 + 2, math.floor(c.B * 255 + 0.5))
+				buffer.writeu8(rgba, i * 4 + 3, 255)
+			end
+		end
+		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+		return image
+	end)
+	if not ok then
+		return nil
+	end
+	return img
+end
+
 -- Player color translation (CL_NewTranslation): shirt row 16-31 and pants
 -- row 96-111 are remapped from the top/bottom color ranges. Backwards
 -- ranges (>= 128) are reversed.
