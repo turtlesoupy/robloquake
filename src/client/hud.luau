@@ -61,6 +61,7 @@ export type Hud = {
 	interSig: string,
 	showScores: boolean,
 	soloRows: { [string]: confontlib.TextRow },
+	sbarBg: ImageLabel,
 	fs: vfslib.Vfs,
 	conchars: buffer?,
 	charPics: { [number]: EditableImage? },
@@ -171,6 +172,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	setPic(h, ibar, "ibar", w)
 	local sbar = makeLabel(canvas, 0, 24, 320, 24)
 	setPic(h, sbar, "sbar", w)
+	h.sbarBg = sbar
 
 	-- sbar row (y=24 in canvas space)
 	h.armorIcon = makeLabel(canvas, 0, 24, 24, 24)
@@ -577,6 +579,9 @@ function hud.update(h: Hud, c: cllib.Client)
 	-- Sbar_DrawScoreboard (solo): replaces the status row when showing
 	-- scores or dead, outside deathmatch
 	local soloActive = (h.showScores or health <= 0) and c.gametype ~= 1
+	-- Sbar_Draw swaps the status backdrop for scorebar.lmp when scoring
+	setPic(h, h.sbarBg, if soloActive then "scorebar" else "sbar", w)
+	h.sbarBg.Position = UDim2.fromOffset(0, 24 * SCALE)
 
 	-- armor
 	if bit32.band(items, IT_INVULNERABILITY) ~= 0 then

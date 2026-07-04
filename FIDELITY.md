@@ -43,8 +43,7 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
   model chains, one segment per 30 units, random roll, player-tracked
   start position, 0.2s lifetime (pooled render entities)
 - Solo TAB scoreboard (Sbar_SoloScoreboard: monsters/secrets/time/level
-  over the status row, shown when dead too; scorebar.lmp backdrop swap
-  still pending)
+  over the status row, shown when dead too, scorebar.lmp backdrop)
 - Chase cam (chase.c verbatim: back 100/up 16, traced look-point pitch,
   no camera wall clip — authentic quirk; chase_active console cvar)
 - EF_BRIGHTFIELD entity particles (R_EntityParticles with the real
@@ -79,8 +78,6 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.
-4. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
-   tick on Heartbeat (~60Hz). Audit feel + consider fixed-timestep.
 8. **Demo playback/recording** (`cl_demo.c`).
 9. **Save/load** (`host_cmd.c` savegames).
 
@@ -92,6 +89,10 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 - **Audio output**: no PCM access. The software mixer (`snd_mix.c`) is
   replaced by a soundbank asset + PlaybackRegion slices; spatialization is
   Roblox's rolloff approximating `SND_Spatialize`'s linear curve.
+- **Host timing**: WinQuake runs synchronized host frames up to 72fps;
+  Roblox Heartbeat ceilings at ~60Hz. The simulation is dt-driven and
+  verified against compiled C at arbitrary dt, so the divergence is tick
+  granularity, not physics behaviour.
 - **Raw input**: Win32 message pump → UserInputService. Escape is reserved
   by Roblox (menu moved to M); Studio eats I/O in play-test.
 - **Alias-model fullbright pixels**: per-pixel colormap fullbrights can't
