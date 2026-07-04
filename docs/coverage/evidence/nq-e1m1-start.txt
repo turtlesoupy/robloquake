@@ -1,0 +1,15 @@
+Anchor: nq-e1m1-start (scenario row S3)
+Engine: NetQuake boot (QuakeAssets engine attr absent)
+Game: id1 (registered 1.06, local dev only — re-capture on LibreQuake
+  before any public distribution; this repo has no remote)
+Map: e1m1, deathmatch 0, skill default
+Position: player origin (480, -352, 88) via SVDBG_SetOrigin probe
+View: yaw 90, pitch 0 via RQ_ForceYaw/RQ_ForcePitch (real input path)
+Viewsize: 100 (default sbar strip), fov 90 (default)
+Captured: 2026-07-04, Roblox Studio Play (solo), MCP screen_capture
+Code state: commit 838f84d (all capture-relevant changes contained)
+Procedure: tools/verify_visual_anchor.luau
+What it proves: e1m1 start hall renders textured + lightmapped, the
+shotgun view model sits centered above the sbar (ViewportFrame gun
+projection), the full status bar draws with live stats (health 100,
+armor 0, shells 25, active-weapon highlight, inventory row).

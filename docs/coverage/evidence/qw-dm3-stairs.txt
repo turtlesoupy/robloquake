@@ -1,0 +1,16 @@
+Anchor: qw-dm3-stairs (scenario row S4)
+Engine: QuakeWorld boot (QuakeAssets engine="qw")
+Game: id1 (registered 1.06, local dev only — re-capture on LibreQuake
+  before any public distribution; this repo has no remote)
+Map: dm3, deathmatch 1
+Position: player origin (-64, 470, 44) via the QW SVDBG_SetOrigin probe
+  (bottom of the x=-64 staircase used by the pmove stair truth course)
+View: yaw 90, pitch 0 via RQ_ForceYaw/RQ_ForcePitch (real input path)
+Viewsize: 100 (default sbar strip), fov 90 (default)
+Captured: 2026-07-04, Roblox Studio Play (solo), MCP screen_capture
+Code state: commit 838f84d
+Procedure: tools/verify_visual_anchor.luau
+What it proves: the QW boot renders dm3 (risers of the stair truth
+course visible), QW handshake/prediction alive at a fixed vantage, view
+weapon through the ViewportFrame projection, QW sbar via the hudlib
+adapter with live stats.

@@ -51,10 +51,18 @@ rows.
 |---|---|---|---|---|
 | S1 | QW two-client loopback: connect, duel, frag on BOTH scoreboards, death/respawn, changelevel inventory carry | VERIFIED | tests/test_scenario_qw.luau (25 checks): shotgun duel over the wire, frag rebroadcast to both clients, DEAD_DEAD→respawn at full health, SetChangeParms carry incl. the authentic shells-floor-25 | `lune run tests/test_scenario_qw.luau` |
 | S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | VERIFIED | tests/test_scenario_nq.luau (30 checks): shells picked up by really walking over the box (SV_TouchLinks), a live grunt shoots the player (svc_damage pain flash on the client), earned inventory + damaged health carry to e1m2, then a save/load round-trip restores health/shells/origin/time and the game keeps running | `lune run tests/test_scenario_nq.luau` |
-| S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | PENDING | Anchor DEFINED + staged + MCP-visually confirmed (nq-e1m1-start: e1m1, deathmatch 0, pos 480,-352,88, yaw 90, viewsize 100 — start hall, shotgun, full sbar render correctly). Pixel export to disk blocked: Studio MCP returns captures inline only, and macOS screencapture needs a one-time Screen Recording grant for the shell. | tools/verify_visual_anchor.luau procedure; then commit docs/coverage/evidence/nq-e1m1-start.png + .txt |
-| S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | Anchor DEFINED + staged + MCP-visually confirmed (qw-dm3-stairs: dm3, pos -64,470,44, yaw 90 — the truth-course staircase, QW sbar + view weapon render correctly). Same pixel-export blocker as S3. | tools/verify_visual_anchor.luau procedure; then commit docs/coverage/evidence/qw-dm3-stairs.png + .txt |
+| S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | VERIFIED | [evidence/nq-e1m1-start.jpg](evidence/nq-e1m1-start.jpg) + [.txt capture context](evidence/nq-e1m1-start.txt): e1m1 start hall at the fixed anchor (480,-352,88 yaw 90, deathmatch 0, viewsize 100) — textured/lightmapped world, centered shotgun through the ViewportFrame projection, full sbar with live stats. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/nq-e1m1-start.jpg |
+| S4 | QW visual anchor: same vantage discipline, QW engine | VERIFIED | [evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg) + [.txt capture context](evidence/qw-dm3-stairs.txt): the QW boot at the fixed dm3 stair anchor (-64,470,44 yaw 90) — the truth-course risers visible, QW sbar via hudlib adapter, view weapon over the strip. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/qw-dm3-stairs.jpg |
 
 ## Changelog
+
+### 2026-07-04 (S3/S4 anchors committed)
+- Both visual anchor screenshots recovered from the session transcript
+  (the MCP returns captures inline; the transcript stores the bytes —
+  user's insight) and committed under docs/coverage/evidence/ with full
+  capture context. S3 and S4 VERIFIED — all four scenario rows are now
+  done. id1 note: this repo has no remote; the anchors must be
+  re-captured on LibreQuake before anything goes public.
 
 ### 2026-07-04 (Studio verify pass 1)
 - Checked-in Studio verification tooling: tools/verify_visual_anchor.luau
