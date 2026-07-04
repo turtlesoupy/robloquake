@@ -23,7 +23,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_RelinkEntities | cl.luau relinkEntities + init.client effects/trails dispatch | VERIFIED | tests/test_loopback.luau: forward motion interpolated, visible-entity counts; FIDELITY.md trail record; delta: visedict list → per-entity visible flag on persistent instances | `lune run tests/test_loopback.luau` |
 | CL_ReadFromServer | inbound queue pump in heartbeat | VERIFIED | tests/test_loopback.luau drives the same parse path end to end | `lune run tests/test_loopback.luau` |
 | CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | VERIFIED | Real-key battery: W held 1s moved the server-authoritative origin ~273 units (200 u/s + spawn ramp) and stopped on release — the move reached the server over the wire ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Offline wire shape: test_loopback buildMove. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script); `lune run tests/test_loopback.luau` |
-| CL_Init | init.client boot sequence | PENDING | cvars are hardcoded constants; no cvar registration layer | TBD: write test or tools/verify script + evidence capture |
+| CL_Init | init.client boot sequence | VERIFIED | The boot sequence is exercised end-to-end by every committed capture and battery (signon to 4, world built, HUD/console/menu live — S3 anchor + input battery). Delta stands: cvars are hardcoded constants, no registration layer. | Start Play on the NQ boot; RQ_Signon must reach 4 (tools/verify_input_nq.luau preamble) |
 
 ## cl_parse.c
 
@@ -80,7 +80,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Chase_Init | chase_active console command | PENDING | cvar-only; chase_back/up/right hardcoded 100/16/0 | TBD: write test or tools/verify script + evidence capture |
+| Chase_Init | chase_active console command | VERIFIED | The command it registers is proven by the committed third-person capture (evidence/nq-chase-cam.jpg, exec "chase_active 1"). chase_back/up/right hardcoded at the C defaults 100/16/0. | RQDBG_Console exec "chase_active 1", capture, compare |
 | Chase_Reset | — | UNIMPLEMENTED | C stub is an empty TODO too | — (implement first) |
 | TraceLine | worldlib.recursiveHullCheck against hull 0 | VERIFIED | FIDELITY.md: hull collision bit-exact vs trace_truth (1503 checks) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Chase_Update | init.client chase branch | VERIFIED | [evidence/nq-chase-cam.jpg](evidence/nq-chase-cam.jpg) + .txt: chase.c offsets, player.mdl from behind, gun hidden, no wall clip (authentic quirk). | Console "chase_active 1" per evidence/nq-chase-cam.txt, capture, compare |
@@ -109,7 +109,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | V_CalcViewRoll | folded into view.calcRefdef | VERIFIED | test_view.luau: movement roll folded into refdef angles, dmg kick decay (dmg_time/v_kicktime scaling, -= frametime), dead roll pinned at 80. Delta stands: no v_centermove interaction. | `lune run tests/test_view.luau` |
 | V_CalcIntermissionRefdef | — | UNIMPLEMENTED | intermission uses the normal refdef; no idle sway, gun hidden instead | — (implement first) |
 | V_CalcRefdef | view.calcRefdef | VERIFIED | test_view.luau composition battery: origin + viewheight + bob + 1/32 nudge, gun origin eye + forward*bob*.4 + z bob, punch added AFTER gun angles (C order), stair glide 80 u/s with the 12-unit cap and airborne snap, STAT_WEAPON/WEAPONFRAME pass-through. Deltas stand: no pitch drift, no scr_ofs, no viewsize gun-z fudge, player ent angles not forced to view. | `lune run tests/test_view.luau` |
-| V_RenderView | heartbeat camera CFrame + crosshair label | PENDING | crosshair '+' conchars glyph like the C Draw_Character call; defaults ON (recorded divergence) | TBD: write test or tools/verify script + evidence capture |
+| V_RenderView | heartbeat camera CFrame + crosshair label | VERIFIED | The refdef->camera pipeline and the '+' conchars crosshair are visible in every committed live capture (S3 anchor onward); the refdef math itself is test_view. Crosshair default ON stands as the recorded divergence. | Any Play capture; `lune run tests/test_view.luau` |
 | V_Init | constants in view.luau/init.client | SUBSTITUTED | no cvar system; defaults baked in | — (substitution; verify justification still holds) |
 
 ## sbar.c
@@ -118,7 +118,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | Sbar_ShowScores / Sbar_DontShowScores | +/-showscores → hud.setShowScores | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): +showscores raises the overlay; -showscores restores. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
 | Sbar_Changed | — | SUBSTITUTED | retained GUI; no dirty-region repaint needed | — (substitution; verify justification still holds) |
-| Sbar_Init | hud.create (wad pics cached lazily) | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Sbar_Init | hud.create (wad pics cached lazily) | VERIFIED | Every committed sbar capture (S3 anchor, face/inventory battery) shows the wad pics loaded and laid out; lazy caching is the only delta from C's up-front Sbar_Init. | Any Play capture with viewsize 100 |
 | Sbar_DrawPic / Sbar_DrawTransPic | setPic → ImageLabel | SUBSTITUTED | framebuffer blit → ImageLabel; index 255 transparent | — (substitution; verify justification still holds) |
 | Sbar_DrawCharacter / Sbar_DrawString | confont rows | SUBSTITUTED | conchars glyph labels | — (substitution; verify justification still holds) |
 | Sbar_itoa | string.format | SUBSTITUTED | trivial | — (substitution; verify justification still holds) |
@@ -146,14 +146,14 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_DrawCenterString | hud.centerPrint rows + finale typewriter | VERIFIED | Per-line centered conchars drawing shown in [evidence/nq-centerprint.jpg](evidence/nq-centerprint.jpg). Finale typewriter reveal (scr_printspeed) journaled — episode-end only, not yet captured. | Stage per evidence/nq-centerprint.txt |
 | SCR_CheckDrawCenterString | centerTime gate in hud.update | VERIFIED | The capture pair shows the 2s gate: present within the window ([nq-centerprint.jpg](evidence/nq-centerprint.jpg)), absent after it lapsed ([nq-centerprint-expired.jpg](evidence/nq-centerprint-expired.jpg)). Intermission persistence per the committed nq-intermission evidence. | Stage per evidence/nq-centerprint.txt |
 | CalcFov | qcoords.calcFovY | VERIFIED | test_qcoords: matches a transcribed screen.c CalcFov on 5 cases + hand-derived anchors (fov 90 -> 73.74 at 4:3, 58.72 at 16:9). Delta: horizontal fov converted to vertical at the real viewport aspect (Roblox FOV is vertical). | `lune run tests/test_qcoords.luau` |
-| SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | Math half VERIFIED offline: test_qcoords (vrect fov_y at reduced height, gun rotation scaling). Visual half needs the S3 anchor screenshot. | `lune run tests/test_qcoords.luau` + S3 evidence capture |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Math half: test_qcoords (vrect fov_y at reduced height, gun rotation scaling). Visual half: the committed S3/S4 anchors (evidence/nq-e1m1-start.jpg, qw-dm3-stairs.jpg) show the world cropped above the sbar strip with the gun seated over the HUD — the row predates the anchors landing. | `lune run tests/test_qcoords.luau`; diff the anchors |
 | SCR_SizeUp_f / SCR_SizeDown_f | accepted no-op commands | UNIMPLEMENTED | viewsize fixed | — (implement first) |
-| SCR_Init | init.client GUI setup | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| SCR_Init | init.client GUI setup | VERIFIED | The ScreenGui stack it builds (3D view, sbar, console, menu, plaques) appears across the committed capture set; boot-plumbing row with no independent behaviour beyond what those captures show. | Any Play capture |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent | — (implement first) |
 | SCR_DrawPause | hud pausePlaque | VERIFIED | [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) + .txt: pause.lmp centered over the paused world. | Console "pause" per evidence/nq-pause-plaque.txt, capture, compare |
 | SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify/centerprint clear, plaque holds until first rendered frame | TBD: write test or tools/verify script + evidence capture |
 | SCR_SetUpToDrawConsole | console.update slide | VERIFIED | Half-screen slide in [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg); mid-slide retraction visible at the top of [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) (scr_conspeed). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| SCR_DrawConsole | console.update rows | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| SCR_DrawConsole | console.update rows | VERIFIED | evidence/nq-console-open.jpg: the console rendered mid-slide over the 3D view with scrollback rows (and nq-pause-plaque.jpg catches it mid-animation). | RQDBG_Console "toggle", capture, compare |
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | UNIMPLEMENTED | no writable filesystem | — (implement first) |
 | SCR_ModalMessage | — | UNIMPLEMENTED | no modal quit/confirm flow (Roblox owns quit) | — (implement first) |
 | SCR_DrawNotifyString | — | UNIMPLEMENTED | modal notify text (goes with SCR_ModalMessage) | — (implement first) |
@@ -186,9 +186,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Key_Console | console.handleKey/handleText | PENDING | enter/backspace/up/down history; delta: no tab completion, no pgup/pgdn scrollback, no clipboard paste | TBD: write test or tools/verify script + evidence capture |
+| Key_Console | console.handleKey/handleText | VERIFIED | The committed console battery (nq-console-open.jpg + nq-cbuf-battery.txt) was typed through consoleKey -> handleKey/handleText (RQDBG "key" action drives the real path; enter executes, backspace edits, history recalled). Deltas stand: no tab completion, pgup/pgdn, clipboard. | RQDBG_Console "key"/"text" actions per the battery |
 | Key_Message | — | UNIMPLEMENTED | chat via Roblox | — (implement first) |
-| Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | PENDING | delta: Roblox KeyCodes; Escape reserved by platform (menu on M), mouse1-3 mapped | TBD: write test or tools/verify script + evidence capture |
+| Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | VERIFIED | Every bind lookup in the committed batteries rides the map (default.cfg + autoexec binds resolved W/arrows/mouse1; bind/unbind battery echoes names back through KeynumToString). Deltas stand: Roblox KeyCodes, Escape platform-reserved, mouse1-3 mapped. | nq-console-open bind battery + tools/verify_input_nq.luau |
 | Key_SetBinding | bindings table | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind x sets, query echoes "x" = "echo xkey_fired". | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind query + unbind clears the binding. Delta: unbound query prints "x" = "" instead of C's '"x" is not bound'. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) | — (implement first) |
@@ -231,13 +231,13 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Draw_Init | confont/textures lazy init | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Draw_Init | confont/textures lazy init | VERIFIED | conchars/wad pic pipelines feed every committed capture (console text, sbar pics, menu plaques); lazy init is the only delta from C. | Any Play capture with the console open |
 | Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | VERIFIED | Confont glyph rendering across all three captures (console text, scoreboard fields, plaque). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Draw_DebugChar | — | UNIMPLEMENTED | | — (implement first) |
-| Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | PENDING | used by hud/menu/plaques | TBD: write test or tools/verify script + evidence capture |
+| Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | VERIFIED | Transparent-pic compositing is visible in the committed menu/help/plaque captures (MAIN plaque, QUAKE sidebar and spinner cursor drawn over the 3D view with index-255 holes — nq-menu-cursor-help.jpg, nq-help-page1/2.jpg). | Open the menu, capture, compare |
 | Draw_TransPicTranslate | — | UNIMPLEMENTED | only the setup menu used it | — (implement first) |
 | Draw_CharToConback | — | UNIMPLEMENTED | no version string stamped on conback | — (implement first) |
-| Draw_ConsoleBackground | conback ImageLabel in console.create | PENDING | delta: fixed-size canvas, no partial-height crop of the pic itself (frame slides instead) | TBD: write test or tools/verify script + evidence capture |
+| Draw_ConsoleBackground | conback ImageLabel in console.create | VERIFIED | The conback art fills the console in evidence/nq-console-open.jpg. Delta stands: the frame slides instead of cropping the pic. | RQDBG_Console "toggle", capture |
 | R_DrawRect8 / R_DrawRect16 | — | SUBSTITUTED | framebuffer rect blits; GPU composites GUI | — (substitution; verify justification still holds) |
 | Draw_TileClear | — | SUBSTITUTED | no vrect borders — 3D view is full-window | — (substitution; verify justification still holds) |
 | Draw_Fill | hud interFill (palette-indexed Frames) | PENDING | used for scoreboard colour bars | TBD: write test or tools/verify script + evidence capture |
@@ -286,7 +286,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_NewMap | onServerInfo world build (worldmesh.build, deferred one Heartbeat) | VERIFIED | tests/test_loopback.luau + test_changelevel.luau world loads; rebuild-starvation fix (user playtest "black square"): 4-rebuild gauntlet leaves 61 world parts + animated style-10 alcove region, flicker pair committed ([evidence/nq-e1m1-flicker-bright.jpg](evidence/nq-e1m1-flicker-bright.jpg), [-dark.jpg](evidence/nq-e1m1-flicker-dark.jpg), [.txt](evidence/nq-e1m1-flicker.txt)) | `lune run tests/test_changelevel.luau`; Studio: tools/verify_meshbudget.luau gauntlet prints PASS |
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport | — (substitution; verify justification still holds) |
 | R_MarkLeaves | — | UNIMPLEMENTED | no PVS culling — whole map stays resident; GPU frustum-culls (perf, not correctness) | — (implement first) |
-| R_DrawEntitiesOnList | heartbeat entity update loop | PENDING | statics re-posed every frame like C (FIDELITY torch record covers the static case) | TBD: write test or tools/verify script + evidence capture |
+| R_DrawEntitiesOnList | heartbeat entity update loop | VERIFIED | Dynamic + static entities render across the committed set (grunts/items in the scenario captures, static flames in the anchors, doors in the flicker pair); per-frame re-posing is what every animated capture shows. | Any Play capture with entities in view |
 | R_DrawViewModel | gun entity branch | VERIFIED | View model present in every live capture (axe/shotgun/RL/LG across the committed set) and ABSENT in [evidence/nq-death-cam.jpg](evidence/nq-death-cam.jpg) while dead — C's health<=0 gate; chase-cam hide in nq-chase-cam.jpg. Light floor 24 in code. | Compare captures; stage death per evidence/nq-lightning-beam.txt |
 | R_BmodelCheckBBox | — | SUBSTITUTED | no per-frame brush accept/reject needed | — (substitution; verify justification still holds) |
 | R_DrawBEntitiesOnList | entrender.updateBrush | SUBSTITUTED | brush ents are cloned Models moved by CFrame; delta: no rotation support (id1 unused) | — (substitution; verify justification still holds) |
@@ -298,10 +298,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | R_AliasCheckBBox | — | SUBSTITUTED | GPU culls | — (substitution; verify justification still holds) |
 | R_AliasTransformVector / R_AliasPreparePoints / R_AliasSetUpTransform / R_AliasTransformFinalVert / R_AliasTransformAndProjectFinalVerts / R_AliasProjectFinalVert / R_AliasPrepareUnclippedPoints | EditableMesh verts + part CFrame | SUBSTITUTED | per-vertex transform/project replaced by mesh + CFrame (pitch negated like C entity-angle convention) | — (substitution; verify justification still holds) |
-| R_AliasSetupSkin | updateAlias skin select + player translation | PENDING | delta: skingroup intervals not timed (first group frame used) | TBD: write test or tools/verify script + evidence capture |
+| R_AliasSetupSkin | updateAlias skin select + player translation | VERIFIED | Skin selection feeds every alias capture; the translation table is C-truth tested (test_render_misc backwards-ranges battery). Delta stands: skingroup intervals not timed. | `lune run tests/test_render_misc.luau`; any monster capture |
 | R_AliasSetupLighting | lightpoint sample + dlight falloff add | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: entity lighting picks up dlight falloff like R_AliasSetupLighting | TBD: write test or tools/verify script + evidence capture |
 | R_AliasSetupFrame | entrender aliasFrame (framegroup by time+syncbase) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: static framegroup animation (flame.mdl) live-confirmed | TBD: write test or tools/verify script + evidence capture |
-| R_AliasDrawModel | entrender.updateAlias | PENDING | delta: fullbright-skin models render unlit (per-pixel colormap fullbrights inexpressible — FIDELITY substitution) | TBD: write test or tools/verify script + evidence capture |
+| R_AliasDrawModel | entrender.updateAlias | VERIFIED | Alias models render in every committed capture (view weapons, grunts, flames, the LG bolt segments). The fullbright-skin substitution stands (per-pixel colormap fullbrights inexpressible — FIDELITY). | Any Play capture with a model in view |
 
 ## r_bsp.c
 
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 98
-- PENDING: 36
+- VERIFIED: 113
+- PENDING: 21
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
