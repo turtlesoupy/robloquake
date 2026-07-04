@@ -172,3 +172,13 @@ it enters here in the same commit.
   forward: VERIFIED requires a named test check or a screenshot committed
   under docs/coverage/evidence/ with capture context. Post-reset VERIFIED
   counts: nq-server 124, nq-client 17, qw-server 66, qw-client 45.
+
+### 2026-07-04 (How-to-verify column)
+- Every manifest table gained a fifth column: the executable
+  re-verification procedure. Seeded mechanically — VERIFIED rows carry
+  their `lune run tests/...` command (249 rows), PENDING rows carry an
+  explicit TBD for the burn-down to fill with a test or a
+  tools/verify script + evidence capture (460 rows), UNIMPLEMENTED and
+  SUBSTITUTED rows are marked accordingly (457 rows). The burn-down
+  definition of done per row: the How-to-verify cell contains a
+  command anyone can run, and the Evidence cell cites its output.
