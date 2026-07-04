@@ -56,6 +56,18 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (nq-server DEMOTED cleared)
+- New tests/test_msg.luau: byte-exact wire codec battery against the C
+  encodings (little-endian, (int)-cast truncation for coords/angles,
+  360-wrap, NUL strings, -1+badread underflow) — re-earns the MSG_*/SZ_*
+  rows. test_server gains the NQ areanode battery (door attribution,
+  unlink/relink bit-equal, PF_setmodel bounds), an SV_CheckStuck
+  restore-from-solid check, and the precache_*2 alias identity check.
+  Movement-chain rows (ClipVelocity through SV_ClientThink) re-cite
+  tools/move_truth.c + test_movement, the compiled-C chain they were
+  originally earned against. nq-server manifest now has zero DEMOTED
+  rows.
+
 ### 2026-07-04 (qw-server DEMOTED cleared)
 - Final 25 qw-server DEMOTED rows re-earned: the shared VM rows against
   test_vm's named checks (alloc/free/parse/exec/string battery — one

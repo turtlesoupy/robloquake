@@ -195,4 +195,57 @@ end
 local shells1 = vmlib.edFloat(player, ent.ammo_shells)
 t.check(shells1 < shells0, `firing consumed shells ({shells0} -> {shells1})`)
 
+--------------------------------------------------------------------------
+-- NQ areanode battery (world.c link lists, the NQ twin of test_qwtrace):
+-- SV_Move attribution on a linked door, unlink/relink toggling the clip
+-- (RemoveLink/InsertLinkBefore), and PF_setmodel's brush bounds
+local worldlib = require("../src/shared/engine/server/world")
+local doorHit: vmlib.Edict? = nil
+local dFrom, dTo = vector.zero, vector.zero
+local dFraction = 1
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if e.free or vmlib.edString(vm, e, ent.classname) ~= "door" then
+		continue
+	end
+	local dmin = vmlib.edVector(e, ent.absmin)
+	local dmax = vmlib.edVector(e, ent.absmax)
+	local dctr = (dmin + dmax) / 2
+	local span = dmax - dmin
+	local axis = if span.x < span.y then vector.create(1, 0, 0) else vector.create(0, 1, 0)
+	local halfThin = (if span.x < span.y then span.x else span.y) / 2
+	dFrom = dctr - axis * (halfThin + 48)
+	dTo = dctr + axis * (halfThin + 48)
+	local probe = worldlib.move(svr.world, dFrom, vector.zero, vector.zero, dTo, 0, vm.edicts[1])
+	if probe.fraction < 1 and probe.ent == e then
+		doorHit = e
+		dFraction = probe.fraction
+		break
+	end
+end
+assert(doorHit, "found a door the NQ trace attributes cleanly")
+t.check(vmlib.edFloat(doorHit, ent.modelindex) > 0 and vmlib.edVector(doorHit, ent.size).x > 0, "NQ PF_setmodel gave the door its brush model index and bounds")
+worldlib.unlinkEdict(doorHit)
+local tr2 = worldlib.move(svr.world, dFrom, vector.zero, vector.zero, dTo, 0, vm.edicts[1])
+t.check(tr2.ent ~= doorHit, "unlinked door no longer clips (RemoveLink)")
+worldlib.linkEdict(svr.world, doorHit, false)
+local tr3 = worldlib.move(svr.world, dFrom, vector.zero, vector.zero, dTo, 0, vm.edicts[1])
+t.check(tr3.ent == doorHit and math.abs(tr3.fraction - dFraction) < 1e-6, "relinked door clips identically (InsertLinkBefore)")
+
+-- SV_CheckStuck: a client teleported into solid is restored to oldorigin
+local sv_phys = require("../src/shared/engine/server/sv_phys")
+local goodOrg = vmlib.edVector(player, ent.origin)
+vmlib.edSetVector(player, ent.oldorigin, goodOrg)
+local dmin2 = vmlib.edVector(doorHit, ent.absmin)
+local dmax2 = vmlib.edVector(doorHit, ent.absmax)
+vmlib.edSetVector(player, ent.origin, (dmin2 + dmax2) / 2)
+sv_phys.checkStuck(svr, player)
+t.check(vector.magnitude(vmlib.edVector(player, ent.origin) - goodOrg) < 1e-6, "SV_CheckStuck restored oldorigin from inside the door")
+
+-- precache_*2 builtins are table aliases of the base ones, as C
+t.check(
+	vm.builtins[75] == vm.builtins[20] and vm.builtins[76] == vm.builtins[19] and vm.builtins[77] == vm.builtins[68],
+	"precache_*2 builtins alias the base implementations"
+)
+
 t.finish("test_server")
