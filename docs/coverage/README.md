@@ -56,6 +56,17 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (playtest: QW sky black artifacts)
+- User playtest report: sky "busted with weird black artifacts" in the
+  QW boot. Root cause: qwclient.luau never consumed
+  worldmesh.takeTextureAnims(), so the 10Hz writers (sky composite
+  scroll, water turbulence, +wall frame swaps) never ran under QW — the
+  raw palettized sky texture rendered its masked front half as opaque
+  black. Ported the NQ pump into the QW heartbeat (same 10Hz tick as
+  lightstyles, cleared on changelevel). Verified live at the dm3 atrium
+  dome: two-layer composite scrolls correctly
+  (evidence/qw-dm3-sky.jpg).
+
 ### 2026-07-04 (S3/S4 anchors committed)
 - Both visual anchor screenshots recovered from the session transcript
   (the MCP returns captures inline; the transcript stores the bytes —

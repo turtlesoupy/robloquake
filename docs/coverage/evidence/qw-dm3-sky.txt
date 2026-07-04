@@ -1,0 +1,14 @@
+Evidence: qw-dm3-sky.jpg — QW boot sky scroll after the texture-anim fix
+Engine: QuakeWorld boot (engine="qw"), game id1 (local dev only)
+Map: dm3, deathmatch 1
+Position: (700, 100, -71) via SVDBG_SetOrigin, yaw 335 pitch -60 (looking
+  up at the atrium sky dome) via RQ_Force* hooks
+Captured: 2026-07-04, Roblox Studio Play (solo), MCP screen_capture,
+  recovered from the session transcript
+Code state: the commit introducing this file
+What it proves: the QW boot now drives the shared 10Hz texture writers —
+  the sky renders the C-correct two-layer composite (front cloud layer
+  with palette-0 transparency over the blue-purple background, both
+  scrolling). Before the fix qwclient never consumed
+  worldmesh.takeTextureAnims(), so the raw palettized sky texture showed
+  its masked front half as black holes (user playtest report).

@@ -289,6 +289,8 @@ return function()
 	end
 
 	local lightAnim: { worldmesh.AnimEntry } = {}
+	local textureAnims: { worldmesh.TextureAnim } = {}
+	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
 	local worldBuilt = false
@@ -324,6 +326,9 @@ return function()
 				for _, e in anim do
 					table.insert(lightAnim, e)
 				end
+				for _, ta in worldmesh.takeTextureAnims() do
+					table.insert(textureAnims, ta)
+				end
 				brushTemplates[name] = template
 			end
 			def = { kind = "brush" :: "brush", flags = 0, brushModel = template }
@@ -343,6 +348,12 @@ return function()
 		local _world, anim = worldmesh.build(cl.models[1].brush, pal, worldFolder, "world")
 		for _, e in anim do
 			table.insert(lightAnim, e)
+		end
+		-- sky scroll / water warp / +wall frame writers (the NQ boot's
+		-- 10Hz pump; without it the raw sky texture shows its masked
+		-- front half as black holes)
+		for _, ta in worldmesh.takeTextureAnims() do
+			table.insert(textureAnims, ta)
 		end
 		print(`[robloquake] qw world built: {cl.levelname}`)
 	end
@@ -894,6 +905,48 @@ return function()
 	local function updateLightstyles(time: number)
 		local changed: { [number]: boolean } = {}
 		local i = math.floor(time * 10)
+		-- 10Hz texture writers ride the same tick (R_UpdateSky/turb + the
+		-- R_TextureAnimation +wall chain at (int)(cl.time*5) %% total)
+		if i ~= lastStyleFrame then
+			lastStyleFrame = i
+			for _, ta in textureAnims do
+				if ta.kind == "turb" then
+					textures.writeTurbFrame(ta.img, ta.pixels, ta.w, ta.h, pal, cl.time)
+				elseif ta.kind == "sky" then
+					textures.writeSkyFrame(ta.img, ta.pixels, ta.w, ta.h, pal, cl.time)
+				elseif ta.kind == "wall" then
+					local base = ta.base
+					local frames = ta.frames
+					local parts = ta.parts
+					if base and frames and parts and base.anim_total > 0 then
+						local reletive = math.floor(cl.time * 5) % base.anim_total
+						local tex = base
+						local count = 0
+						while tex.anim_min > reletive or tex.anim_max <= reletive do
+							local nxt = tex.anim_next
+							if not nxt then
+								error("R_TextureAnimation: broken cycle")
+							end
+							tex = nxt
+							count += 1
+							if count > 100 then
+								error("R_TextureAnimation: infinite cycle")
+							end
+						end
+						if tex.name ~= ta.current then
+							local fimg = frames[tex.name]
+							if fimg then
+								ta.current = tex.name
+								local content = Content.fromObject(fimg)
+								for _, part in parts do
+									part.TextureContent = content
+								end
+							end
+						end
+					end
+				end
+			end
+		end
 		for style, map in cl.lightstyles do
 			if #map > 0 then
 				local c = map:byte((i % #map) + 1) - string.byte("a")
@@ -1194,6 +1247,7 @@ return function()
 			table.clear(modelDefs)
 			table.clear(brushTemplates)
 			table.clear(lightAnim)
+			table.clear(textureAnims)
 			for key, re in renderEnts do
 				entrender.destroy(re)
 				renderEnts[key] = nil
