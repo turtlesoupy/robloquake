@@ -179,9 +179,9 @@ Server operator console commands. No console exists on the Roblox deployment; St
 | SV_Quit_f / SV_Logfile_f / SV_Fraglogfile_f | — | SUBSTITUTED | Process/file lifecycle absent; fraglog ring replaces the frag logfile. |
 | SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f | — | UNIMPLEMENTED | No cheat commands (no console); could be added via Studio. |
 | SV_Map_f | `qwsv.spawnServer` callable; no command/changelevel driver | PENDING | **Gap:** PF_changelevel/localcmd set `svr.changelevelTo`, but nothing in the QW boot (qwserver.luau) consumes it — the NQ path (init.server.luau:400) does. Level change on fraglimit/timelimit dead-ends. Reconnect-on-new-spawncount exists (newF handles it) but is never triggered. |
-| SV_Kick_f | — | UNIMPLEMENTED | Roblox `Player:Kick` exists platform-side but no engine command maps to it. |
+| SV_Kick_f | qw/qwsv.luau:kick | VERIFIED | test_qw_loopback "kick found the userid"/"kicked client dropped": broadcast + direct notice + dropClient. Exposed to the host via ServerStorage QW_HostCmd (owner-gating UI hook). |
 | SV_Status_f | attribute diagnostics (qwserver.luau Heartbeat) | SUBSTITUTED | SV_Time/SV_Edicts/SV_Origin ServerStorage attributes replace the console status dump for Studio. |
-| SV_ConSay_f | — | UNIMPLEMENTED | |
+| SV_ConSay_f | qw/qwsv.luau:conSay | VERIFIED | test_qw_loopback "conSay reached the client": console:-prefixed PRINT_CHAT to every spawned client over the reliable stream. |
 | SV_SendServerInfoChange / SV_Serverinfo_f / SV_Localinfo_f | static `svr.serverinfo` only | UNIMPLEMENTED | serverinfo is fixed at newGame; no runtime change path or svc_serverinfo broadcast. localinfo absent entirely. |
 | SV_User_f / SV_Gamedir / SV_Gamedir_f | — | SUBSTITUTED | Single gamedir baked into the asset bundle. |
 | SV_Floodprot_f / SV_Floodprotmsg_f | hardcoded values in `say` handler | SUBSTITUTED | Flood protection on (4/4s/10s) but not tunable; C default is off until configured. |

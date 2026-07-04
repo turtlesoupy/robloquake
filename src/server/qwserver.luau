@@ -145,6 +145,22 @@ return function(ctx: Ctx)
 			end
 		end
 
+		-- host commands from Studio / the owner UI: "kick <uid>",
+		-- "say <text>", "changelevel <map>" (SV_ConSay_f / SV_Kick_f)
+		local ServerStorage = game:GetService("ServerStorage")
+		local hostCmd = ServerStorage:GetAttribute("QW_HostCmd")
+		if typeof(hostCmd) == "string" and hostCmd ~= "" then
+			ServerStorage:SetAttribute("QW_HostCmd", "")
+			local verb, rest = hostCmd:match("^(%S+)%s*(.*)$")
+			if verb == "kick" then
+				qwsv.kick(svr, tonumber(rest) or -1)
+			elseif verb == "say" then
+				qwsv.conSay(svr, rest)
+			elseif verb == "changelevel" and rest ~= "" then
+				svr.changelevelTo = rest
+			end
+		end
+
 		diagAccum += dt
 		if diagAccum > 0.5 then
 			diagAccum = 0

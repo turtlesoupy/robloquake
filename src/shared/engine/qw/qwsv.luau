@@ -1262,6 +1262,35 @@ function qwsv.dropClient(svr: any, client: Client)
 	qwsv.fullClientUpdate(svr, client, svr.reliable_datagram)
 end
 
+-- SV_ConSay_f: host chat, "console: " prefixed, to every spawned client
+function qwsv.conSay(svr: any, text: string)
+	text = text:gsub('^"(.*)"$', "%1")
+	local line = `console: {text}\n`
+	table.insert(svr.printLog, { level = qwp.PRINT_CHAT, text = line })
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if cl.active and cl.spawned then
+			svr.clientPrint(svr, cl, qwp.PRINT_CHAT, line)
+		end
+	end
+end
+
+-- SV_Kick_f: drop by userid, with the broadcast + direct notice
+function qwsv.kick(svr: any, uid: number): boolean
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if cl.active and cl.userid == uid then
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{cl.name} was kicked\n`)
+			-- print directly: the dropped client won't get the broadcast
+			svr.clientPrint(svr, cl, qwp.PRINT_HIGH, "You were kicked from the game\n")
+			qwsv.dropClient(svr, cl)
+			return true
+		end
+	end
+	svr.print(`Couldn't find user number {uid}`)
+	return false
+end
+
 -- SV_ExecuteClientMessage
 function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 	local chan = client.netchan

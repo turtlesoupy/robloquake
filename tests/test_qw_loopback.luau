@@ -225,4 +225,21 @@ local player2 = sclient.edict
 t.check(bit32.band(vmlib.edFloat(player2, svr.qdefs.ent.items) // 1, 4) ~= 0, "qw nailgun carried")
 t.eq(vmlib.edFloat(player2, svr.qdefs.ent.ammo_nails), 142, "qw nail count carried")
 
+--------------------------------------------------------------------------
+-- host tools: SV_ConSay_f reaches the client; SV_Kick_f drops it
+cl.prints = {}
+qwsv.conSay(svr, "hello from the console")
+tick(0)
+tick(0)
+local sawSay = false
+for _, pr in cl.prints do
+	if pr.text:find("console: hello from the console") then
+		sawSay = true
+	end
+end
+t.check(sawSay, "conSay reached the client (PRINT_CHAT)")
+
+t.check(qwsv.kick(svr, sclient.userid), "kick found the userid")
+t.check(not sclient.active, "kicked client dropped")
+
 t.finish("test_qw_loopback")
