@@ -37,14 +37,25 @@ def build(source: pathlib.Path, game: str) -> None:
         print(f"{pakpath} -> {pak_dir} ({len(data)} bytes, {nchunks} chunks)")
 
 
+# per-game default pak source (mirrors tools/build_soundbank.py)
+DEFAULT_SOURCES = {
+    "id1": ROOT / "external_assets/quake106/extracted/id1",
+    "lq1": ROOT / "external_assets/librequake/full/id1",
+}
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--source",
         type=pathlib.Path,
-        default=ROOT / "external_assets/quake106/extracted/id1",
-        help="directory containing pak0.pak, pak1.pak, ...",
+        default=None,
+        help="directory with pak0.pak, pak1.pak, ... (default: per --game)",
     )
-    ap.add_argument("--game", default="id1", help="game directory name (id1 or a mod dir)")
+    ap.add_argument("--game", default="id1", help="game directory name (id1 or lq1)")
     args = ap.parse_args()
-    build(args.source, args.game)
+    source = args.source
+    if source is None:
+        source = DEFAULT_SOURCES.get(args.game)
+        if source is None:
+            raise SystemExit("unknown game; pass --source")
+    build(source, args.game)

@@ -4,9 +4,16 @@
 *.rbxl.lock
 *.rbxlx.lock
 
-# Proprietary Quake assets — never commit these
+# Generated asset bundles — build artifacts, not source. Regenerate with
+# tools/build_assets.py + tools/build_soundbank.py. The id1 tree is also
+# proprietary and must never be committed regardless.
+/assets/
 id1/
 *.pak
+
+# Python bytecode
+__pycache__/
+*.pyc
 
 # OS noise
 .DS_Store

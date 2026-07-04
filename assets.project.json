@@ -1,0 +1,11 @@
+{
+  "name": "robloquake-assets",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "QuakeAssets": {
+        "$path": "assets"
+      }
+    }
+  }
+}

@@ -38,19 +38,30 @@ for correctness. Before anything is published to Roblox, id Software content
 must be replaced with [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).
 
 `tools/build_assets.py` splits pak files into base64 chunks under `assets/`
-(also gitignored) which sync to `ReplicatedStorage.QuakeAssets` and are
-reassembled at runtime.
+and `tools/build_soundbank.py` builds the concatenated audio bank. All of
+`assets/` is a **build artifact** (gitignored) — the repo ships the tools,
+not the data. At runtime the server holds the chunks in
+`ServerStorage.QuakeAssets` and streams a per-map bundle to clients.
 
 ## Tooling
 
-- [Rojo](https://rojo.space/) syncs `src/` into Studio (`rojo serve`).
+- [Rojo](https://rojo.space/) — two project files:
+  - `default.project.json` syncs `src/` (the code) — this is your daily
+    `rojo serve`.
+  - `assets.project.json` syncs `assets/` into `ServerStorage.QuakeAssets` —
+    run only when the pak data changes (`rojo serve assets.project.json`).
 - [Rokit](https://github.com/rojo-rbx/rokit) manages the toolchain.
 - [Lune](https://lune-org.github.io/docs) runs the offline test suite.
 
 ```sh
-rokit install                    # toolchain
-python3 tools/build_assets.py    # chunk the pak for syncing
-rojo serve                       # then Connect from the Rojo plugin
+rokit install                              # toolchain
+
+# regenerate the (gitignored) asset bundle from LibreQuake, then sync it once
+python3 tools/build_assets.py    --game lq1
+python3 tools/build_soundbank.py --game lq1
+rojo build assets.project.json -o assets.rbxm   # or: rojo serve assets.project.json
+
+rojo serve                                 # day-to-day: code only
 ```
 
 ### Tests
@@ -70,7 +81,8 @@ against the real server in one process.
 ## Layout
 
 ```
-default.project.json     Rojo project map
+default.project.json     Rojo map for the code (daily sync)
+assets.project.json      Rojo map for the asset bundle (occasional sync)
 src/shared/engine/       The engine (platform-independent Luau)
   common/                buffers, math, tokenizer, net messages, cvars
   bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders
@@ -82,8 +94,10 @@ src/client/              Roblox client (renderer, input, view, HUD)
 reference/               WinQuake + QuakeC sources (gitignored, GPL)
 ```
 
-## Licensing note
+## Licensing
 
-The engine port is derived from the GPL-2.0 WinQuake sources; treat this
-repository's engine code as GPL-2.0. LibreQuake content is BSD-licensed.
-Original id Software assets are proprietary and never ship.
+The engine port is a derivative work of id Software's WinQuake sources,
+released under **GPL-2.0** — so this repository's code is GPL-2.0 (see
+[`LICENSE`](LICENSE)). LibreQuake content is separately licensed and is a
+build-time dependency, not part of this repo. Original id Software assets
+are proprietary and never ship.

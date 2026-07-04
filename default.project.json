@@ -49,11 +49,6 @@
       "$properties": {
         "Gravity": 0
       }
-    },
-    "ServerStorage": {
-      "QuakeAssets": {
-        "$path": "assets"
-      }
     }
   }
 }
