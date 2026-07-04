@@ -70,8 +70,8 @@ function particles.blobExplosion(sys: System, org: vector, time: number)
 end
 
 -- R_RunParticleEffect (blood, gunshot sparks, etc.)
-function particles.runEffect(sys: System, org: vector, dir: vector, color: number, count: number, time: number)
-	particlesim.runEffect(sys.sim, org, dir, color, count, time)
+function particles.runEffect(sys: System, org: vector, dir: vector, color: number, count: number, time: number, qwScale: boolean?)
+	particlesim.runEffect(sys.sim, org, dir, color, count, time, qwScale)
 end
 
 -- R_RocketTrail

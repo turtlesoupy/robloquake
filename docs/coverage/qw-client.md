@@ -364,11 +364,11 @@ Per the port architecture, the software rasterizer is replaced wholesale; groups
 | r_sprite.c | entrender sprite billboards | SUBSTITUTED | Sprite frames as billboards. | — (substitution; verify justification still holds) |
 | r_sky.c / d_sky.c | shared sky (10Hz image scroll) | SUBSTITUTED | Rasterizer substituted; the compositing itself is C-shaped (front layer palette-0 transparency over the back half, dual scroll). FIXED 2026-07-04 (user playtest): the QW boot never ran the shared texture writers — raw sky showed black holes; qwclient now consumes worldmesh.takeTextureAnims() and pumps sky/turb/+wall at 10Hz. Evidence: [evidence/qw-dm3-sky.jpg](evidence/qw-dm3-sky.jpg) + .txt. | Stage per evidence/qw-dm3-sky.txt, capture, compare |
 | gl_*.c (entire GL renderer) | — | SUBSTITUTED | The port targets the software renderer's feature set as the fidelity reference; the GL path is an alternative C backend, not a feature source. | — (substitution; verify justification still holds) |
-| r_part.c: R_RunParticleEffect | `particles.runEffect` | PENDING | r_part.c port live-verified under the NQ boot (memory 2026-07-03); QW wiring (`handleTempEntity`) not separately visually verified. | TBD: write test or tools/verify script + evidence capture |
-| r_part.c: R_ParticleExplosion | `particles.explosion` | PENDING | Same. | TBD: write test or tools/verify script + evidence capture |
+| r_part.c: R_RunParticleEffect | `particles.runEffect` (qwScale) | VERIFIED | test_particles2: shared battery (die 0.1*(rand%5), color (c&~7)+(rand&7), org spread, vel dir*15) plus the QW count-based org-spread scale (>130 → 3, >20 → 2, else 1) added 2026-07-04 and asserted at counts 10/50/200; QW's pt_grav type is physics-identical to pt_slowgrav (plain grav both engines — see the pt_grav fall-through fix on the NQ R_DrawParticles row). All qwclient tent callsites pass qwScale. | `lune run tests/test_particles2.luau` |
+| r_part.c: R_ParticleExplosion | `particles.explosion` | VERIFIED | test_particles2 explosion battery (1024 particles, 512/512 explode/explode2, ramp1[0], die +5, org ±16, vel ±256) — QW r_part.c explosion body is identical to WinQuake's. | `lune run tests/test_particles2.luau` |
 | r_part.c: R_LavaSplash / R_TeleportSplash | `particles.lavaSplash` / `.teleportSplash` | VERIFIED | Shared particlesim core: test_particles2 teleportSplash battery (896 grid, colors, die window, speeds, zero-dir fix); lavaSplash shares the dir/normalize/speed structure. | `lune run tests/test_particles2.luau` |
 | r_part.c: R_RocketTrail (all 7 trail types) | `particles.rocketTrail` | VERIFIED | Shared particlesim core: test_particles2 type-0 battery (count/colors/die/advance quirk). QW trail-type mapping by model flags wired in `relinkEntities` (Studio-side; visual anchor covers it). | `lune run tests/test_particles2.luau` |
-| r_part.c: R_DrawParticles | `particles.update` | PENDING | Called per Heartbeat with cl.time/dt. | TBD: write test or tools/verify script + evidence capture |
+| r_part.c: R_DrawParticles | `particles.update` | VERIFIED | test_particles2 physics batteries (blob/blob2, explode ramps, fire, grav/slowgrav plain-grav, expiry); QW's switch matches WinQuake's with pt_grav at plain grav — the port's QUAKE2-only grav*20 was fixed 2026-07-04. Rendering substitution (neon cubes) noted on the NQ row. | `lune run tests/test_particles2.luau` |
 | r_light.c: R_AnimateLight | qwclient `updateLightstyles` + `worldmesh.updateLightStyles` | PENDING | 10Hz 'a'–'z' style animation; loopback asserts lightstyles *arrive* (cl.lightstyles[0]); animation live-verified under NQ only. | TBD: write test or tools/verify script + evidence capture |
 | r_light.c: R_MarkLights / R_AddDynamicLights | `worldmesh.updateDlights` + `render/lightatlas.luau` | PENDING | Dynamic light surface pass fed by the CL_DecayLights block; no recorded QW visual check. | TBD: write test or tools/verify script + evidence capture |
 | r_light.c: R_LightPoint | `render/lightpoint.at` | PENDING | Used for the R_DrawViewModel gun light (floor of 24 — NQ-boot note says the floor is required or the gun vanishes in dark rooms). | TBD: write test or tools/verify script + evidence capture |
@@ -400,9 +400,9 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 53 |
-| PENDING | 65 |
-| UNIMPLEMENTED | 59 |
+| VERIFIED | 74 |
+| PENDING | 50 |
+| UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |
 

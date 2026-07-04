@@ -129,18 +129,24 @@ function particlesim.blobExplosion(sys: System, org: vector, time: number)
 	end
 end
 
--- R_RunParticleEffect (blood, gunshot sparks, etc.)
-function particlesim.runEffect(sys: System, org: vector, dir: vector, color: number, count: number, time: number)
+-- R_RunParticleEffect (blood, gunshot sparks, etc.). The QW variant
+-- widens the org spread by a count-based scale (>130 → 3, >20 → 2) and
+-- types pt_grav instead of pt_slowgrav — physics-identical (stock
+-- WinQuake pt_grav falls through to pt_slowgrav), so only the spread
+-- needs the qwScale switch. NQ alone has the 1024 rocket-explosion
+-- branch (QW spawns explosions from the TE parse directly).
+function particlesim.runEffect(sys: System, org: vector, dir: vector, color: number, count: number, time: number, qwScale: boolean?)
 	if count == 1024 then
 		particlesim.explosion(sys, org, time)
 		return
 	end
+	local scale = if not qwScale then 1 elseif count > 130 then 3 elseif count > 20 then 2 else 1
 	for _ = 1, count do
 		local p = alloc(sys)
 		p.die = time + 0.1 * (rand() % 5)
 		p.color = bit32.band(color, bit32.bnot(7)) + bit32.band(rand(), 7)
 		p.type = pt_slowgrav
-		p.org = org + vector.create(rand() % 16 - 8, rand() % 16 - 8, rand() % 16 - 8)
+		p.org = org + vector.create(scale * (rand() % 16 - 8), scale * (rand() % 16 - 8), scale * (rand() % 16 - 8))
 		p.vel = dir * 15
 	end
 end
@@ -501,7 +507,9 @@ function particlesim.update(sys: System, time: number, frametime: number)
 		elseif t == pt_blob2 then
 			p.vel = vector.create(p.vel.x - p.vel.x * dvel, p.vel.y - p.vel.y * dvel, p.vel.z - grav)
 		elseif t == pt_grav then
-			p.vel = vector.create(p.vel.x, p.vel.y, p.vel.z - grav * 20)
+			-- stock WinQuake falls through to pt_slowgrav here (the grav*20
+			-- variant is #ifdef QUAKE2 only); QW writes the same plain grav
+			p.vel = vector.create(p.vel.x, p.vel.y, p.vel.z - grav)
 		elseif t == pt_slowgrav then
 			p.vel = vector.create(p.vel.x, p.vel.y, p.vel.z - grav)
 		end

@@ -352,20 +352,20 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| R_InitParticles | particles.new pool | PENDING | delta: pool 1024 vs C default 2048 (-particles switch absent); pooled neon Parts | TBD: write test or tools/verify script + evidence capture |
+| R_InitParticles | particles.new pool | SUBSTITUTED | Pool is 1024 round-robin (oldest slot stolen) vs C's 2048 free-list that truncates effects when exhausted; pooled neon Parts are a platform substitution. Expiry: raise the pool / adopt free-list truncation if particle-heavy scenes visibly steal live particles. | code: particlesim.new/alloc; spawner behaviour under load exercised by test_particles2 |
 | R_DarkFieldParticles | — | UNIMPLEMENTED | dead code in WinQuake (QUAKE2 #ifdef) — justified omission | — (implement first) |
 | R_EntityParticles | particles.entityParticles (renders the verified particlesim core) | VERIFIED | test_particles2: 162 anorm particles, color 0x6f, die +0.01, orgs on the 64±16 shell (real anorms.h table). | `lune run tests/test_particles2.luau` |
 | R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) | — (implement first) |
 | R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool | — (implement first) |
-| R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | PENDING | dir/16, count 255→1024 explosion escape kept | TBD: write test or tools/verify script + evidence capture |
-| R_ParticleExplosion | particles.explosion | PENDING | 1024 particles, ramp1, ±16 org / ±256 vel match | TBD: write test or tools/verify script + evidence capture |
+| R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | VERIFIED | test_particles2 wire-parse battery: org coords, dir chars * 1/16, color byte, plain count pass-through, and the 255→1024 rocket-explosion escape. FIDELITY FIX 2026-07-04: the escape was MISSING (255 spawned 255 slowgrav sparks instead of a 1024-particle explosion); now applied in cl.luau exactly where C does it. | `lune run tests/test_particles2.luau` |
+| R_ParticleExplosion | particles.explosion | VERIFIED | test_particles2 explosion battery: 1024 particles, 512/512 pt_explode/pt_explode2 on i&1, color ramp1[0]=0x6f, die +5, ramp rand&3, org ±16, vel ±256. Noted delta: C interleaves org/vel rand() draws per axis, port draws org's three then vel's three (same distribution). | `lune run tests/test_particles2.luau` |
 | R_ParticleExplosion2 | particlesim.particleExplosion2 | VERIFIED | tests/test_particles2.luau: 512 particles, color colorStart+(i%colorLength), die +0.3, all pt_blob, ±16 org / ±256 vel | `lune run tests/test_particles2.luau` |
 | R_BlobExplosion | particlesim.blobExplosion | VERIFIED | tests/test_particles2.luau: 1024 particles, 512 pt_blob (66+rand%6) / 512 pt_blob2 (150+rand%6), die 1+(rand&8)*0.05, pt_blob/pt_blob2 update physics checked | `lune run tests/test_particles2.luau` |
-| R_RunParticleEffect | particles.runEffect | PENDING | color &~7 + rand&7, die 0.1*(rand%5), vel dir*15 match | TBD: write test or tools/verify script + evidence capture |
-| R_LavaSplash | particles.lavaSplash | PENDING | 32x32 grid, color 224+&7, z 256 dir match | TBD: write test or tools/verify script + evidence capture |
+| R_RunParticleEffect | particles.runEffect | VERIFIED | test_particles2 runEffect battery: die 0.1*(rand%5), color (c&~7)+(rand&7), pt_slowgrav, org ±8, vel dir*15 exact, and the count==1024 rocket-explosion branch fields. | `lune run tests/test_particles2.luau` |
+| R_LavaSplash | particles.lavaSplash | VERIFIED | test_particles2 lavaSplash battery: full 32x32 grid, color 224+(rand&7), die 2..2.62, pt_slowgrav, grid org offsets, normalized dir with z=256 dominant, speeds 50..113. | `lune run tests/test_particles2.luau` |
 | R_TeleportSplash | particles.teleportSplash (renders the verified particlesim core) | VERIFIED | test_particles2: full 896-particle grid, colors 7..14, die window, speeds 50..113, zero-dir center particle zero-vel (a stale-pool-velocity divergence vs C VectorNormalize found and fixed 2026-07-04). | `lune run tests/test_particles2.luau` |
 | R_RocketTrail | particles.rocketTrail (renders the verified particlesim core) | VERIFIED | test_particles2: type 0 — 30 particles for len 90, ramp3 colors {0x6d,0x6b,6,5}, die +2, orgs hugging the first third of the segment (the authentic start+=normalized-vec quirk). Other trail types share the loop; tracer/blood branches structurally identical. | `lune run tests/test_particles2.luau` |
-| R_DrawParticles | particles.update | PENDING | physics (time1/2/3, grav, dvel, ramps) match; rendering delta: 0.25-stud neon cubes vs 1px span dots; z-buffer test free from GPU | TBD: write test or tools/verify script + evidence capture |
+| R_DrawParticles | particles.update | VERIFIED | test_particles2 physics batteries: pt_blob/pt_blob2 (dvel accel/drag + grav), pt_explode ramp1@time2 + dvel accel, pt_explode2 ramp2@time3 + frametime drag, pt_grav/pt_slowgrav plain grav, expiry. FIDELITY FIX 2026-07-04: pt_grav used the QUAKE2-only grav*20 — stock WinQuake falls through to pt_slowgrav and QW writes plain grav; blood fell 20x too fast. Rendering substitution stands: 0.25-stud neon cubes vs 1px span dots. | `lune run tests/test_particles2.luau` |
 
 ## r_sky.c
 
@@ -456,9 +456,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 59
-- PENDING: 73
-- UNIMPLEMENTED: 65
+- VERIFIED: 61
+- PENDING: 74
+- UNIMPLEMENTED: 62
 - SUBSTITUTED: 67
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 

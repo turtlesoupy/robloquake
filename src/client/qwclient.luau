@@ -540,17 +540,17 @@ return function()
 			dl.die = cl.time + 0.1
 			dl.minlight = 32
 		elseif t == qwp.TE_SPIKE then
-			particleslib.runEffect(psys, te.pos, vector.zero, 0, 10, cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 0, 10, cl.time, true)
 			spikeSound(te.pos)
 		elseif t == qwp.TE_SUPERSPIKE then
-			particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 0, 20, cl.time, true)
 			spikeSound(te.pos)
 		elseif t == qwp.TE_GUNSHOT then
-			particleslib.runEffect(psys, te.pos, vector.zero, 0, 20 * (te.count or 1), cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 0, 20 * (te.count or 1), cl.time, true)
 		elseif t == qwp.TE_BLOOD then
-			particleslib.runEffect(psys, te.pos, vector.zero, 73, 20 * (te.count or 1), cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 73, 20 * (te.count or 1), cl.time, true)
 		elseif t == qwp.TE_LIGHTNINGBLOOD then
-			particleslib.runEffect(psys, te.pos, vector.zero, 225, 50, cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 225, 50, cl.time, true)
 		elseif t == qwp.TE_EXPLOSION or t == qwp.TE_TAREXPLOSION then
 			particleslib.explosion(psys, te.pos, cl.time)
 			if t == qwp.TE_EXPLOSION then
@@ -582,10 +582,10 @@ return function()
 			end
 			teSound("weapons/r_exp3.wav", te.pos)
 		elseif t == qwp.TE_WIZSPIKE then
-			particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 20, 30, cl.time, true)
 			teSound("wizard/hit.wav", te.pos)
 		elseif t == qwp.TE_KNIGHTSPIKE then
-			particleslib.runEffect(psys, te.pos, vector.zero, 226, 20, cl.time)
+			particleslib.runEffect(psys, te.pos, vector.zero, 226, 20, cl.time, true)
 			teSound("hknight/hit.wav", te.pos)
 		elseif t == qwp.TE_LAVASPLASH then
 			particleslib.lavaSplash(psys, te.pos, cl.time)

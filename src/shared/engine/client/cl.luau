@@ -628,6 +628,10 @@ function cl.parseServerMessage(c: Client, data: buffer)
 			local dir = vector.create(msg.readChar(r), msg.readChar(r), msg.readChar(r)) * (1 / 16)
 			local count = msg.readByte(r)
 			local color = msg.readByte(r)
+			-- R_ParseParticleEffect: msgcount 255 means a rocket explosion
+			if count == 255 then
+				count = 1024
+			end
 			c.onParticle(c, org, dir, color, count)
 		elseif cmd == proto.svc_spawnbaseline then
 			local i = msg.readShort(r)
