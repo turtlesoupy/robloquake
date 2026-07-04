@@ -214,6 +214,8 @@ for _ = 1, 10 do
 end
 t.eq(c.signon, cllib.SIGNONS, "signed on to e1m2")
 t.eq(c.model_precache[2], "maps/e1m2.bsp", "world is e1m2")
+-- CL_ParseStatic: e1m2's torch flames arrive as svc_spawnstatic
+t.check(#c.statics > 0, `torch statics parsed on e1m2 ({#c.statics})`)
 
 -- inventory earned through play carried via SetChangeParms/DecodeLevelParms
 player = svr.clients[1].edict

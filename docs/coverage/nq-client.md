@@ -36,7 +36,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) | `lune run tests/test_loopback.luau` |
 | CL_ParseClientdata | cl.luau parseClientdata | VERIFIED | tests/test_loopback.luau: health 100, shells 25, velocity, onground | `lune run tests/test_loopback.luau` |
 | CL_NewTranslation | textures.translatePixels + entrender translatedSkins cache | PENDING | shirt/pants rows 16-31/96-111 incl. reversed ranges; applied as whole-skin image, not colormap | TBD: write test or tools/verify script + evidence capture |
-| CL_ParseStatic | cl.luau parseStatic + statics spawn pass | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: static framegroup animation fix (torches) live-confirmed | TBD: write test or tools/verify script + evidence capture |
+| CL_ParseStatic | cl.luau parseStatic + statics spawn pass | VERIFIED | test_scenario_nq "torch statics parsed on e1m2" (svc_spawnstatic through the wire client; the statics spawn pass renders them Studio-side). | `lune run tests/test_scenario_nq.luau` |
 | CL_ParseStaticSound | cl.luau + sound.static | VERIFIED | tests/test_loopback.luau: "ambient sounds spawned" (>=4) | `lune run tests/test_loopback.luau` |
 | CL_ParseServerMessage | cl.luau parseServerMessage | VERIFIED | tests/test_loopback.luau full protocol path; FIDELITY.md byte-exact protocol 15 layer; delta: svc_stopsound read but discarded, svc_cdtrack stored but unused | `lune run tests/test_loopback.luau` |
 
