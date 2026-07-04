@@ -1,0 +1,22 @@
+NQ Con_DrawNotify / Con_Clear_f probe (2026-07-04)
+===================================================
+
+Engine: NQ boot, e1m1, id1 (registered 1.06).
+Driver: RQDBG_Console exec + a PlayerGui conchar-glyph census
+(ImageLabels with AbsolutePosition.Y < 250) — the notify area sits
+under the Roblox topbar chrome at this window size, so screenshots
+hide it; the glyph census is the re-runnable check (snippet kept in
+tools/verify_input_nq.luau conventions).
+
+Con_DrawNotify: baseline 21 glyphs in the top region; after
+  exec `say Con_DrawNotify probe line` the census reads 57 (+36 = the
+  "turtlesoupy: Con_DrawNotify probe line" conchars) at +0.5s, and
+  falls back to 21 after 3.2s — the authentic con_notifytime 3s
+  expiry. (Port divergence noted on the row: client-side `echo` prints
+  to the console buffer only; notify lines come from server prints,
+  matching the wire path the sbar pickups use.)
+
+Con_Clear_f: RQDBG lines dump = 368 chars before exec `clear`, 0
+  after — Con_Clear_f empties con.lines.
+
+id1 CONTENT NOTE: local repo only.
