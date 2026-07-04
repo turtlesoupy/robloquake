@@ -1,0 +1,18 @@
+Evidence: nq-explosion-dlight.jpg + nq-explosion-decayed.jpg — the
+NQ dynamic-light family, frozen and released
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Staging: god + notarget + give 7/give r via the RQDBG console; RL fired
+  at the entrance grate floor (yaw 90 pitch 60), then console "pause"
+  ~0.4s after firing to FREEZE the explosion mid-flash (pause stops
+  cl.time, so the 0.5s dlight cannot decay while the capture runs).
+Captured: 2026-07-04, Studio Play (solo); recovered from the transcript
+Code state: the commit introducing these files
+What the pair proves: frame 1 (paused) — the R_ParticleExplosion burst
+at the impact point with the explosion dlight's radial wash re-lighting
+the floor texels around it (CL_AllocDlight -> R_MarkLights ->
+R_AddDynamicLights -> R_BuildLightMap region rewrite on the atlas).
+Frame 2 (unpaused +1.2s, same vantage) — the flash and wash are gone
+and the floor texels are back to their static lightmap (CL_DecayLights
++ the region restore path). The saturated red tiles at the edges are
+STATIC map lighting, present in both frames — the delta is the impact
+region in the center.
