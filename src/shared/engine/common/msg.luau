@@ -90,6 +90,13 @@ end
 
 -- MSG_WriteAngle: note the C casts f to int BEFORE scaling, and the whole
 -- expression is integer math with truncation toward zero
+-- QW MSG_WriteAngle16: (int)(f*65536/360) truncates toward zero
+function msg.writeAngle16(sb: SizeBuf, f: number)
+	local v = f * 65536 / 360
+	v = if v >= 0 then math.floor(v) else -math.floor(-v)
+	msg.writeShort(sb, bit32.band(v, 65535))
+end
+
 function msg.writeAngle(sb: SizeBuf, f: number)
 	local i = if f >= 0 then math.floor(f) else -math.floor(-f)
 	local scaled = i * 256 / 360
@@ -180,6 +187,11 @@ end
 
 function msg.readCoord(r: Reader): number
 	return msg.readShort(r) * (1 / 8)
+end
+
+-- QW MSG_ReadAngle16
+function msg.readAngle16(r: Reader): number
+	return msg.readShort(r) * (360 / 65536)
 end
 
 function msg.readAngle(r: Reader): number
