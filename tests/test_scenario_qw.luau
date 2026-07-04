@@ -135,6 +135,7 @@ t.eq(vmlib.edFloat(playerA, ent.frags), 1, "server credited alpha the frag")
 t.check(A.cl.players[0].frags == 1, `frag on alpha's own scoreboard ({A.cl.players[0].frags})`)
 t.check(B.cl.players[0].frags == 1, `frag on bravo's scoreboard ({B.cl.players[0].frags})`)
 t.check(B.cl.stats[qwp.STAT_HEALTH] <= 0, "bravo's health stat shows dead")
+t.check(B.cl.damage ~= nil and B.cl.damage.take > 0, "svc_damage reached the victim (V_ParseDamage input)")
 
 -- RESPAWN: the death animation must reach DEAD_DEAD (~1s of think
 -- frames), buttons released flips DEAD_RESPAWNABLE, then attack respawns

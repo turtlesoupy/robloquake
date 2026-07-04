@@ -172,6 +172,42 @@ end
 t.check(heardFire, "svc_sound guncock arrived through the PHS multicast")
 t.check(cl.stats[qwp.STAT_SHELLS] < 25 or cl.stats[qwp.STAT_AMMO] < 25, "ammo stat dropped after firing")
 
+-- CL_ParseProjectiles: fire the nailgun and catch svc_nails carrying
+-- the in-flight spike (nails live one message — CL_ClearProjectiles)
+vmlib.edSetFloat(player, ent.items, bit32.bor(vmlib.edFloat(player, ent.items) // 1, 4))
+vmlib.edSetFloat(player, ent.ammo_nails, 30)
+local sawNail = false
+for i = 1, 30 do
+	local buttons = if i > 2 then 1 else 0
+	local impulse = if i == 1 then 4 else 0
+	cl.realtime += 0.05
+	for _, packet in pending do
+		qwcl.processPacket(cl, packet)
+	end
+	pending = {}
+	qwcl.sendCmd(cl, {
+		angles = vector.create(0, (yaw + 180) % 360, 0),
+		forwardmove = 0,
+		sidemove = 0,
+		upmove = 0,
+		buttons = buttons,
+		impulse = impulse,
+		msec = 50,
+	})
+	qwsv.frame(svr, 0.05)
+	qwsv.sendClientMessages(svr)
+	for _, packet in toClient do
+		table.insert(pending, packet)
+	end
+	toClient = {}
+	qwcl.predictMove(cl)
+	if #cl.nails > 0 then
+		sawNail = true
+		break
+	end
+end
+t.check(sawNail, "svc_nails parsed into cl.nails (CL_ParseProjectiles)")
+
 -- SV_UpdateToReliableMessages: a suicide must reach the client's
 -- scoreboard through the per-frame frag rebroadcast
 local fragsBefore = cl.players[0] and cl.players[0].frags or 0
