@@ -48,21 +48,29 @@ not the data. At runtime the server holds the chunks in
 - [Rojo](https://rojo.space/) — two project files:
   - `default.project.json` syncs `src/` (the code) — this is your daily
     `rojo serve`.
-  - `assets.project.json` syncs `assets/` into `ServerStorage.QuakeAssets` —
-    run only when the pak data changes (`rojo serve assets.project.json`).
+  - `assets.project.json` maps `assets/` to `ServerStorage.QuakeAssets` —
+    assets are a one-shot import, not a live sync: run `tools/sync_assets.sh`
+    when the pak data changes and insert the built folder into the place.
 - [Rokit](https://github.com/rojo-rbx/rokit) manages the toolchain.
 - [Lune](https://lune-org.github.io/docs) runs the offline test suite.
 
 ```sh
 rokit install                              # toolchain
 
-# regenerate the (gitignored) asset bundle from LibreQuake, then sync it once
-python3 tools/build_assets.py    --game lq1
-python3 tools/build_soundbank.py --game lq1
-rojo build assets.project.json -o assets.rbxm   # or: rojo serve assets.project.json
+# regenerate the (gitignored) asset bundle, build the import file, and
+# follow the printed steps to insert it into the place (one-shot; the
+# instances persist in the saved place afterwards)
+tools/sync_assets.sh id1                   # or: tools/sync_assets.sh lq1
+python3 tools/build_soundbank.py --game id1
 
 rojo serve                                 # day-to-day: code only
 ```
+
+Attributes on `ServerStorage.QuakeAssets` select the engine and rules per
+place (they live in the place file, so re-set them after an asset import):
+`engine="qw"` boots QuakeWorld (competitive); anything else boots NetQuake
+(campaign/coop). `startmap`, `deathmatch`, `coop`, `skill`, `fraglimit`,
+`timelimit`, `teamplay`, `samelevel` feed the matching cvars.
 
 ### Tests
 
