@@ -209,24 +209,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 end
 
 -- pick the frame (handling framegroups by time)
-local function aliasFrame(am: mdl.AliasModel, frame: number, syncbase: number, time: number): mdl.Frame
-	if frame >= am.numframes or frame < 0 then
-		frame = 0
-	end
-	local fd = am.frames[frame + 1]
-	if fd.group then
-		local intervals = fd.intervals :: { number }
-		local fullinterval = intervals[#intervals]
-		local targettime = (time + syncbase) - math.floor((time + syncbase) / fullinterval) * fullinterval
-		for i, interval in intervals do
-			if interval > targettime then
-				return fd.frames[i]
-			end
-		end
-		return fd.frames[1]
-	end
-	return fd.frames[1]
-end
+local aliasFrame = mdl.selectFrame -- shared so lune can drive R_AliasSetupFrame's math
 
 -- update an alias entity's pose for this frame
 function entrender.updateAlias(

@@ -264,4 +264,26 @@ function mdl.frameVert(m: AliasModel, frame: Frame, i: number): (vector, number)
 	return packed * m.scale + m.scale_origin, buffer.readu8(frame.verts, o + 3)
 end
 
+-- R_AliasSetupFrame's framegroup selection: pick the group frame whose
+-- interval bounds (time + syncbase) mod fullinterval. C's fallthrough to
+-- the last frame is unreachable (targettime < fullinterval by
+-- construction) in both C and this port.
+function mdl.selectFrame(am: AliasModel, frame: number, syncbase: number, time: number): Frame
+	if frame >= am.numframes or frame < 0 then
+		frame = 0
+	end
+	local fd = am.frames[frame + 1]
+	if fd.group then
+		local intervals = fd.intervals :: { number }
+		local fullinterval = intervals[#intervals]
+		local targettime = (time + syncbase) - math.floor((time + syncbase) / fullinterval) * fullinterval
+		for i, interval in intervals do
+			if interval > targettime then
+				return fd.frames[i]
+			end
+		end
+	end
+	return fd.frames[1]
+end
+
 return mdl

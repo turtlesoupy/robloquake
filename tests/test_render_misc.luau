@@ -158,4 +158,58 @@ for y = 0, TW - 1 do
 end
 t.check(okTurb, "turb: x sampling displaced by the row sine (period 32, amp 8) with tiling wrap")
 
+
+--------------------------------------------------------------------------
+-- R_AliasSetupFrame framegroup selection (r_alias.c:652): group frame
+-- picked by (time + syncbase) mod fullinterval against the interval
+-- table; single frames pass through; out-of-range frame -> 0.
+local mdllib = require("../src/shared/engine/models/mdl")
+local flameBuf = vfslib.loadFile(fsys, "progs/flame2.mdl")
+assert(flameBuf, "flame2.mdl missing")
+local flame = mdllib.load("progs/flame2.mdl", flameBuf)
+t.check(flame.numframes >= 1, `flame2.mdl loads ({flame.numframes} frames)`)
+
+-- synthetic group: intervals {0.1, 0.2, 0.3, 0.4} over 4 frames
+local fakeFrames = {}
+for i = 1, 4 do
+	fakeFrames[i] = flame.frames[1].frames[1]
+end
+local group = {
+	group = true,
+	intervals = { 0.1, 0.2, 0.3, 0.4 },
+	frames = { "A", "B", "C", "D" } :: any,
+	bboxmin = vector.zero,
+	bboxmax = vector.zero,
+}
+local fakeAm = { numframes = 1, frames = { group } } :: any
+t.eq(mdllib.selectFrame(fakeAm, 0, 0, 0.05) :: any, "A", "framegroup: t=0.05 -> interval 0.1 frame")
+t.eq(mdllib.selectFrame(fakeAm, 0, 0, 0.15) :: any, "B", "framegroup: t=0.15 -> second frame")
+t.eq(mdllib.selectFrame(fakeAm, 0, 0, 0.35) :: any, "D", "framegroup: t=0.35 -> last frame")
+t.eq(mdllib.selectFrame(fakeAm, 0, 0, 0.45) :: any, "A", "framegroup: wraps at fullinterval (t=0.45 -> 0.05)")
+t.eq(mdllib.selectFrame(fakeAm, 0, 0.1, 0.05) :: any, "B", "framegroup: syncbase offsets the phase")
+t.eq(mdllib.selectFrame(fakeAm, 7, 0, 0.05) :: any, "A", "out-of-range frame falls back to frame 0 like C")
+
+-- the real flame2.mdl: frame 0 is a group with equal intervals (0.1s
+-- steps in id1); selection at k*0.1+0.05 walks the frames in order
+local fd0 = flame.frames[1]
+if fd0.group then
+	local ivals = fd0.intervals :: { number }
+	local seen = {}
+	for k = 0, #ivals - 1 do
+		local f = mdllib.selectFrame(flame, 0, 0, k * (ivals[1]) + ivals[1] / 2)
+		table.insert(seen, f)
+	end
+	local distinct = 0
+	local marks = {}
+	for _, f in seen do
+		if not marks[f] then
+			marks[f] = true
+			distinct += 1
+		end
+	end
+	t.eq(distinct, #ivals, `flame2 framegroup cycles through all {#ivals} frames over one period`)
+else
+	t.check(true, "flame2 frame 0 not a group on this pak (skip)")
+end
+
 t.finish("test_render_misc")

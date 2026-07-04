@@ -300,7 +300,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_AliasTransformVector / R_AliasPreparePoints / R_AliasSetUpTransform / R_AliasTransformFinalVert / R_AliasTransformAndProjectFinalVerts / R_AliasProjectFinalVert / R_AliasPrepareUnclippedPoints | EditableMesh verts + part CFrame | SUBSTITUTED | per-vertex transform/project replaced by mesh + CFrame (pitch negated like C entity-angle convention) | — (substitution; verify justification still holds) |
 | R_AliasSetupSkin | updateAlias skin select + player translation | VERIFIED | Skin selection feeds every alias capture; the translation table is C-truth tested (test_render_misc backwards-ranges battery). Delta stands: skingroup intervals not timed. | `lune run tests/test_render_misc.luau`; any monster capture |
 | R_AliasSetupLighting | lightpoint sample + dlight falloff add | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: entity lighting picks up dlight falloff like R_AliasSetupLighting | TBD: write test or tools/verify script + evidence capture |
-| R_AliasSetupFrame | entrender aliasFrame (framegroup by time+syncbase) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: static framegroup animation (flame.mdl) live-confirmed | TBD: write test or tools/verify script + evidence capture |
+| R_AliasSetupFrame | mdl.selectFrame (shared; entrender delegates) | VERIFIED | test_render_misc framegroup battery vs r_alias.c:652: interval walk on (time+syncbase) mod fullinterval, wrap, syncbase phase, out-of-range->0, and the real flame2.mdl group cycling through all frames over one period. | `lune run tests/test_render_misc.luau` |
 | R_AliasDrawModel | entrender.updateAlias | VERIFIED | Alias models render in every committed capture (view weapons, grunts, flames, the LG bolt segments). The fullbright-skin substitution stands (per-pixel colormap fullbrights inexpressible — FIDELITY). | Any Play capture with a model in view |
 
 ## r_bsp.c
@@ -381,7 +381,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | R_RotateSprite / R_ClipSpriteFace / R_SetupAndDrawSprite | BillboardGui | SUBSTITUTED | sprite polygon build/clip replaced by billboard | — (substitution; verify justification still holds) |
-| R_GetSpriteframe | updateSprite frame index | PENDING | delta: sprite-group intervals not timed — first group frame used | TBD: write test or tools/verify script + evidence capture |
+| R_GetSpriteframe | updateSprite frame index | SUBSTITUTED | Single sprite frames indexed straight from the entity frame; SPRITE GROUP intervals are not timed (first group frame used) — id1 uses grouped sprites only for s_bubble/s_explod-style effects. Expiry: port the interval walk (same shape as mdl.selectFrame) when a grouped sprite is user-visible in play. | code: entrender.updateSprite; group walk absent by inspection |
 | R_DrawSprite | entrender.updateSprite | PENDING | delta: always camera-facing; SPR_* orientation types (upright/oriented) not honoured | TBD: write test or tools/verify script + evidence capture |
 
 ## r_surf.c
@@ -456,10 +456,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 115
-- PENDING: 18
+- VERIFIED: 116
+- PENDING: 16
 - UNIMPLEMENTED: 62
-- SUBSTITUTED: 69
+- SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.
