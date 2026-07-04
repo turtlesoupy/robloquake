@@ -57,6 +57,10 @@ export type Hud = {
 	notifyLines: { { text: string, expire: number } },
 	loadingPlaque: ImageLabel?,
 	pausePlaque: ImageLabel?,
+	interFrame: Frame,
+	interSig: string,
+	showScores: boolean,
+	fs: vfslib.Vfs,
 	conchars: buffer?,
 	charPics: { [number]: EditableImage? },
 	pal: textures.Palette,
@@ -255,6 +259,22 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	centerFrame.Parent = gui
 	h.centerFrame = centerFrame
 
+	-- Sbar_IntermissionOverlay / Sbar_DeathmatchOverlay / Sbar_FinaleOverlay:
+	-- a 320x200 virtual canvas, rebuilt when the overlay state changes
+	local interFrame = Instance.new("Frame")
+	interFrame.Name = "intermission"
+	interFrame.BackgroundTransparency = 1
+	interFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	interFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	interFrame.Size = UDim2.fromOffset(320 * SCALE, 200 * SCALE)
+	interFrame.Visible = false
+	interFrame.ZIndex = 12
+	interFrame.Parent = gui
+	h.interFrame = interFrame
+	h.interSig = ""
+	h.showScores = false
+	h.fs = fs
+
 	-- stash the wad for update-time pic loads
 	;(h :: any)._wad = w
 
@@ -362,6 +382,167 @@ function hud.print(h: Hud, s: string, time: number?)
 		table.remove(h.notifyLines, 1)
 	end
 	refreshNotify(h)
+end
+
+--------------------------------------------------------------------------
+-- intermission / rankings overlays
+
+local function interLmp(h: Hud, name: string, x: number, y: number, centered: boolean?)
+	local buf = vfslib.loadFile(h.fs, name)
+	if not buf then
+		return
+	end
+	local pic = wadlib.parseQPic(buf)
+	local img = textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
+	if not img then
+		return
+	end
+	local label = Instance.new("ImageLabel")
+	label.BackgroundTransparency = 1
+	label.ImageContent = Content.fromObject(img)
+	label.ResampleMode = Enum.ResamplerMode.Pixelated
+	local px = if centered then (320 - pic.width) // 2 else x
+	label.Position = UDim2.fromOffset(px * SCALE, y * SCALE)
+	label.Size = UDim2.fromOffset(pic.width * SCALE, pic.height * SCALE)
+	label.Parent = h.interFrame
+end
+
+local function interWadPic(h: Hud, name: string, x: number, y: number)
+	local w = (h :: any)._wad :: wadlib.Wad
+	local p = getPic(h, w, name)
+	if not p.img then
+		return
+	end
+	local label = Instance.new("ImageLabel")
+	label.BackgroundTransparency = 1
+	label.ImageContent = Content.fromObject(p.img :: EditableImage)
+	label.ResampleMode = Enum.ResamplerMode.Pixelated
+	label.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+	label.Size = UDim2.fromOffset(p.w * SCALE, p.h * SCALE)
+	label.Parent = h.interFrame
+end
+
+-- Sbar_IntermissionNumber: right-justified big digits in a `digits`-wide field
+local function interBigNum(h: Hud, x: number, y: number, num: number, digits: number)
+	local str = tostring(math.floor(num))
+	if #str > digits then
+		str = str:sub(-digits)
+	end
+	x += (digits - #str) * 24
+	for i = 1, #str do
+		local ch = str:sub(i, i)
+		interWadPic(h, if ch == "-" then "num_minus" else "num_" .. ch, x, y)
+		x += 24
+	end
+end
+
+local function interText(h: Hud, x: number, y: number, text: string)
+	local font = h.font
+	if not font then
+		return
+	end
+	local holder = Instance.new("Frame")
+	holder.BackgroundTransparency = 1
+	holder.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+	holder.Size = UDim2.fromOffset(#text * 8 * SCALE, 8 * SCALE)
+	holder.Parent = h.interFrame
+	local row = confontlib.newRow(holder, math.max(#text, 1), SCALE)
+	confontlib.setRow(font, row, text)
+end
+
+local function interFill(h: Hud, x: number, y: number, w: number, hh: number, palIndex: number)
+	local f = Instance.new("Frame")
+	f.BorderSizePixel = 0
+	f.BackgroundColor3 = h.pal[palIndex + 1] or Color3.new()
+	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
+	f.Parent = h.interFrame
+end
+
+-- Sbar_DeathmatchOverlay
+local function buildRankings(h: Hud, c: cllib.Client)
+	interLmp(h, "gfx/ranking.lmp", 0, 8, true)
+	-- Sbar_SortFrags
+	local order = {}
+	for i, sc in c.scores do
+		if sc.name ~= "" then
+			table.insert(order, i)
+		end
+	end
+	table.sort(order, function(a, b)
+		return c.scores[a].frags > c.scores[b].frags
+	end)
+	local x, y = 80, 40
+	for _, k in order do
+		local sc = c.scores[k]
+		-- Sbar_ColorForMap: palette row base + 8
+		interFill(h, x, y, 40, 4, bit32.band(sc.colors, 0xf0) + 8)
+		interFill(h, x, y + 4, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+		interText(h, x + 8, y, ("%3i"):format(sc.frags))
+		if k == c.viewentity - 1 then
+			interText(h, x - 8, y, string.char(12))
+		end
+		interText(h, x + 64, y, sc.name)
+		y += 10
+	end
+end
+
+-- Sbar_IntermissionOverlay (single player)
+local function buildIntermission(h: Hud, c: cllib.Client)
+	interLmp(h, "gfx/complete.lmp", 64, 24)
+	interLmp(h, "gfx/inter.lmp", 0, 56)
+	local t = math.floor(c.completed_time)
+	local mins = t // 60
+	local secs = t - mins * 60
+	interBigNum(h, 160, 64, mins, 3)
+	interWadPic(h, "num_colon", 234, 64)
+	interWadPic(h, "num_" .. (secs // 10), 246, 64)
+	interWadPic(h, "num_" .. (secs % 10), 266, 64)
+	interBigNum(h, 160, 104, c.stats[13] or 0, 3) -- STAT_SECRETS
+	interWadPic(h, "num_slash", 232, 104)
+	interBigNum(h, 240, 104, c.stats[11] or 0, 3) -- STAT_TOTALSECRETS
+	interBigNum(h, 160, 144, c.stats[14] or 0, 3) -- STAT_MONSTERS
+	interWadPic(h, "num_slash", 232, 144)
+	interBigNum(h, 240, 144, c.stats[12] or 0, 3) -- STAT_TOTALMONSTERS
+end
+
+function hud.setShowScores(h: Hud, on: boolean)
+	h.showScores = on
+end
+
+function hud.updateOverlays(h: Hud, c: cllib.Client)
+	local mode = ""
+	if c.intermission == 1 then
+		mode = if c.gametype == 1 then "dm" else "sp"
+	elseif c.intermission >= 2 then
+		mode = "finale"
+	elseif h.showScores and c.gametype == 1 then
+		mode = "dm"
+	end
+
+	local sig = mode
+	if mode == "dm" then
+		for _, sc in c.scores do
+			if sc.name ~= "" then
+				sig ..= ("|%s:%d:%d"):format(sc.name, sc.frags, sc.colors)
+			end
+		end
+	elseif mode == "sp" then
+		sig ..= tostring(math.floor(c.completed_time))
+	end
+
+	if sig ~= h.interSig then
+		h.interSig = sig
+		h.interFrame:ClearAllChildren()
+		if mode == "dm" then
+			buildRankings(h, c)
+		elseif mode == "sp" then
+			buildIntermission(h, c)
+		elseif mode == "finale" then
+			interLmp(h, "gfx/finale.lmp", 0, 16, true)
+		end
+	end
+	h.interFrame.Visible = mode ~= ""
 end
 
 local WEAPON_NAMES = { "shotgun", "sshotgun", "nailgun", "snailgun", "rlaunch", "srlaunch", "lightng" }

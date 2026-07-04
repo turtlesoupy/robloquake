@@ -182,7 +182,7 @@ local beamPool: { [string]: { entrender.RenderEnt } } = {}
 
 
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
-local staticEnts: { entrender.RenderEnt } = {}
+local staticEnts: { { re: entrender.RenderEnt, se: any, def: entrender.ModelDef } } = {}
 local gunEnt: entrender.RenderEnt? = nil
 local gunModelIndex = 0
 
@@ -317,6 +317,10 @@ con.onCommand = function(line: string)
 		end
 	elseif cmd == "impulse" then
 		input.setImpulse(tonumber(args) or 0)
+	elseif cmd == "+showscores" then
+		hudlib.setShowScores(hud, true)
+	elseif cmd == "-showscores" then
+		hudlib.setShowScores(hud, false)
 	elseif cmd == "crosshair" then
 		local v = tonumber(args)
 		if v then
@@ -659,6 +663,12 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 
+	-- TAB: +showscores
+	if key == Enum.KeyCode.Tab then
+		hudlib.setShowScores(hud, true)
+		return
+	end
+
 	-- the Quake menu lives on M (Escape is reserved by Roblox for its own menu)
 	if key == Enum.KeyCode.M and not menulib.isOpen(mnu) then
 		menulib.toggle(mnu)
@@ -669,6 +679,12 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		menulib.handleKey(mnu, io)
 		refreshInputMode()
 		return
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(io: InputObject)
+	if io.UserInputType == Enum.UserInputType.Keyboard and io.KeyCode == Enum.KeyCode.Tab then
+		hudlib.setShowScores(hud, false)
 	end
 end)
 
@@ -791,14 +807,23 @@ RunService.Heartbeat:Connect(function(dt: number)
 				if re then
 					if re.kind == "alias" then
 						entrender.updateAlias(re, def, se.origin, se.angles, se.frame, se.skinnum, se.syncbase, c.time)
+						entrender.setLight(re, lightpoint.at(worldModels[1], se.origin, styleValueFor))
 					elseif re.kind == "sprite" then
 						entrender.updateSprite(re, def, se.origin, se.frame)
 					elseif re.kind == "brush" then
 						entrender.updateBrush(re, se.origin, se.angles)
 					end
-					table.insert(staticEnts, re)
+					table.insert(staticEnts, { re = re, se = se, def = def })
 				end
 			end
+		end
+	end
+
+	-- statics with framegroup models (torch flames) animate by time, so
+	-- alias statics re-pose every frame like R_DrawEntitiesOnList
+	for _, st in staticEnts do
+		if st.re.kind == "alias" then
+			entrender.updateAlias(st.re, st.def, st.se.origin, st.se.angles, st.se.frame, st.se.skinnum, st.se.syncbase, c.time)
 		end
 	end
 
@@ -963,6 +988,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		hudlib.setLoading(hud, false)
 	end
 	hudlib.setPaused(hud, c.paused == true)
+	hudlib.updateOverlays(hud, c)
 
 	-- console / menu overlays
 	consolelib.update(con, c.time)

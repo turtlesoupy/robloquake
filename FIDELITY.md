@@ -30,6 +30,14 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 - Lightning beams: CL_ParseBeam/CL_UpdateTEnts ported — bolt/bolt2/bolt3
   model chains, one segment per 30 units, random roll, player-tracked
   start position, 0.2s lifetime (pooled render entities)
+- Static entity framegroup animation (torch flames): alias statics re-pose
+  every frame like R_DrawEntitiesOnList, so flame.mdl/flame2.mdl group
+  frames advance by time (user-reported frozen torches)
+- Intermission overlays: Sbar_IntermissionOverlay (complete.lmp/inter.lmp,
+  big-digit time/secrets/monsters at the exact C coordinates),
+  Sbar_DeathmatchOverlay rankings (ranking.lmp, shirt/pants colour bars,
+  frags, self marker char 12), Sbar_FinaleOverlay, and TAB +showscores
+  (also console commands +showscores/-showscores)
 
 - Impact sounds (`cl_tent.c R_ParseTEnt`): TE explosions play r_exp3,
   spikes play tink1/ric1-3, wiz/knight hits — the QC r_exp3 call is
@@ -48,8 +56,8 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Open — ordered by visibility
 
-1. **Intermission / finale overlays**: rankings screen, finale text plaque
-   (`Sbar_IntermissionOverlay`, `SCR_CheckDrawCenterString`).
+1. **Solo TAB scoreboard** (`Sbar_SoloScoreboard`): monsters/secrets/time
+   text over the inventory bar in single player.
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.
 4. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
@@ -84,3 +92,5 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 - `crosshair` defaults 1 (WinQuake: 0)
 - Always-mouselook (WinQuake default: +mlook off)
 - Notify text sits below the Roblox topbar inset rather than y=0
+- TAB also toggles Roblox's own player list (CoreGui overlays kept by
+  request), so both UIs appear on TAB
