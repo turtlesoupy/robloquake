@@ -19,15 +19,15 @@ counterpart, each with its justification.
 
 | Manifest | Rows | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 455 | 124 | 159 | 61 | 111 | 0 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 267 | 17 | 119 | 62 | 66 | 3 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 240 | 111 | 64 | 21 | 42 | 2 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 230 | 45 | 76 | 60 | 49 | 0 |
-| **Total** | **1192** | **297** | **418** | **204** | **268** | **5** |
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 455 | 223 | 58 | 61 | 111 | 2 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 267 | 22 | 114 | 62 | 66 | 3 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 240 | 135 | 39 | 21 | 42 | 3 |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 230 | 52 | 69 | 60 | 49 | 0 |
+| **Total** | **1192** | **432** | **280** | **204** | **268** | **8** |
 
 Counts as of 2026-07-04 after the evidence reset (VERIFIED = re-runnable
 evidence only) and the first burn-down passes; regenerate with
-`grep -oE '"'"'\| (VERIFIED|PENDING|UNIMPLEMENTED|SUBSTITUTED|N/A) '"'"' docs/coverage/*.md | sort | uniq -c`.
+`grep -oE '\| (VERIFIED|PENDING|UNIMPLEMENTED|SUBSTITUTED|N/A) ' docs/coverage/*.md | sort | uniq -c`.
 
 Notes on reading the numbers: 13 of the nq-server UNIMPLEMENTED rows are
 dead code in the original build (QUAKE2/#if 0/PF_Fixme slots); the
