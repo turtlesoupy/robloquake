@@ -6,6 +6,7 @@
 local defs = {}
 
 defs.PROGHEADER_CRC = 5927
+defs.PROGHEADER_CRC_QW = 54730 -- QW server progdefs.h crc
 defs.PROG_VERSION = 6
 
 defs.OFS_NULL = 0

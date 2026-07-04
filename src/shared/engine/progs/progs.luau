@@ -47,7 +47,7 @@ export type Progs = {
 	entityfields: number,
 }
 
-function progs.load(buf: buffer): Progs
+function progs.load(buf: buffer, expectedHeaderCrc: number?): Progs
 	local crc = com.crcBuffer(buf)
 
 	local r = bufio.reader(buf)
@@ -56,7 +56,7 @@ function progs.load(buf: buffer): Progs
 		error(`progs.dat has wrong version number ({version} should be {defs.PROG_VERSION})`)
 	end
 	local headerCrc = r:i32()
-	if headerCrc ~= defs.PROGHEADER_CRC then
+	if headerCrc ~= (expectedHeaderCrc or defs.PROGHEADER_CRC) then
 		error("progs.dat system vars have been modified, progdefs.h is out of date")
 	end
 
