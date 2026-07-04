@@ -417,9 +417,14 @@ function particlesim.teleportSplash(sys: System, org: vector, time: number)
 				p.type = pt_slowgrav
 				local dir = vector.create(j * 8, i * 8, k * 8)
 				p.org = org + vector.create(i + bit32.band(rand(), 3), j + bit32.band(rand(), 3), k + bit32.band(rand(), 3))
+				-- C VectorNormalize leaves a zero vector zero and always
+				-- scales into vel; skipping the write here leaked stale
+				-- pool velocity into the center particle
 				local n = vector.magnitude(dir)
 				if n > 0 then
 					p.vel = dir / n * (50 + bit32.band(rand(), 63))
+				else
+					p.vel = vector.zero
 				end
 			end
 		end

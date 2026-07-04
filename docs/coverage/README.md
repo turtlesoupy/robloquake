@@ -56,6 +56,16 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (particle effect batteries)
+- test_particles2 extended (+7 checks, 10250 total): R_EntityParticles
+  (162 anorms, 64±16 shell), R_TeleportSplash (896-particle grid,
+  color/die/speed windows), R_RocketTrail type 0 (ramp3 colors, the
+  authentic start+=normalized-vec advance quirk). Divergence found and
+  fixed: teleportSplash skipped the vel write for the zero-dir center
+  particle, leaking stale pool velocity (C VectorNormalize leaves zero
+  vectors zero and always scales into vel) — regression check pollutes
+  the pool first. Rows re-earned in both client manifests.
+
 ### 2026-07-04 (qw-client offline rows + CalcFov truth)
 - New tests/test_qcoords.luau: CalcFov against a transcribed screen.c
   formula (5 cases + hand-derived anchors: fov 90 = 73.74 vertical at

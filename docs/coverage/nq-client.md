@@ -354,7 +354,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | R_InitParticles | particles.new pool | PENDING | delta: pool 1024 vs C default 2048 (-particles switch absent); pooled neon Parts | TBD: write test or tools/verify script + evidence capture |
 | R_DarkFieldParticles | — | UNIMPLEMENTED | dead code in WinQuake (QUAKE2 #ifdef) — justified omission | — (implement first) |
-| R_EntityParticles | particles.entityParticles | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: EF_BRIGHTFIELD with the real anorms.h table (162 normals present) | TBD: write test or tools/verify script + evidence capture |
+| R_EntityParticles | particles.entityParticles (renders the verified particlesim core) | VERIFIED | test_particles2: 162 anorm particles, color 0x6f, die +0.01, orgs on the 64±16 shell (real anorms.h table). | `lune run tests/test_particles2.luau` |
 | R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) | — (implement first) |
 | R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool | — (implement first) |
 | R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | PENDING | dir/16, count 255→1024 explosion escape kept | TBD: write test or tools/verify script + evidence capture |
@@ -363,8 +363,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_BlobExplosion | particlesim.blobExplosion | VERIFIED | tests/test_particles2.luau: 1024 particles, 512 pt_blob (66+rand%6) / 512 pt_blob2 (150+rand%6), die 1+(rand&8)*0.05, pt_blob/pt_blob2 update physics checked | `lune run tests/test_particles2.luau` |
 | R_RunParticleEffect | particles.runEffect | PENDING | color &~7 + rand&7, die 0.1*(rand%5), vel dir*15 match | TBD: write test or tools/verify script + evidence capture |
 | R_LavaSplash | particles.lavaSplash | PENDING | 32x32 grid, color 224+&7, z 256 dir match | TBD: write test or tools/verify script + evidence capture |
-| R_TeleportSplash | particles.teleportSplash | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md teleport splash implied by TE record; loops -16..12/-24..28 step 4 match | TBD: write test or tools/verify script + evidence capture |
-| R_RocketTrail | particles.rocketTrail | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: rocket/grenade/gib/tracer/voor trails record; all 7 types + tracercount parity | TBD: write test or tools/verify script + evidence capture |
+| R_TeleportSplash | particles.teleportSplash (renders the verified particlesim core) | VERIFIED | test_particles2: full 896-particle grid, colors 7..14, die window, speeds 50..113, zero-dir center particle zero-vel (a stale-pool-velocity divergence vs C VectorNormalize found and fixed 2026-07-04). | `lune run tests/test_particles2.luau` |
+| R_RocketTrail | particles.rocketTrail (renders the verified particlesim core) | VERIFIED | test_particles2: type 0 — 30 particles for len 90, ramp3 colors {0x6d,0x6b,6,5}, die +2, orgs hugging the first third of the segment (the authentic start+=normalized-vec quirk). Other trail types share the loop; tracer/blood branches structurally identical. | `lune run tests/test_particles2.luau` |
 | R_DrawParticles | particles.update | PENDING | physics (time1/2/3, grav, dvel, ramps) match; rendering delta: 0.25-stud neon cubes vs 1px span dots; z-buffer test free from GPU | TBD: write test or tools/verify script + evidence capture |
 
 ## r_sky.c
