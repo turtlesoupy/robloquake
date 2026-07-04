@@ -313,4 +313,134 @@ local tossEnd = vmlib.edVector(tossEd, ent.origin)
 t.check(apex > tossStart.z + 10, `toss arced upward (apex +{math.floor(apex - tossStart.z)})`)
 t.check(bit32.band(vmlib.edFloat(tossEd, ent.flags), qd.FL_ONGROUND) ~= 0 and vmlib.edVector(tossEd, ent.velocity) == vector.zero, "toss came to rest with FL_ONGROUND and zero velocity")
 
+--------------------------------------------------------------------------
+-- DropPunchAngle (sv_user.c): firing sets punchangle_x = -2 in QC and
+-- the server decays it back to zero. God+notarget keep the grunts from
+-- killing the player mid-battery (an earlier run died here).
+if bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_GODMODE) == 0 then
+	host.clientCommand(svr, client, "god")
+end
+if bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_NOTARGET) == 0 then
+	host.clientCommand(svr, client, "notarget")
+end
+if vmlib.edFloat(player, ent.health) <= 0 then
+	error("player died before the punchangle battery")
+end
+if vmlib.edFloat(player, ent.ammo_shells) < 1 then
+	host.clientCommand(svr, client, "give s 20")
+end
+-- wait out attack_finished (W_WeaponFrame returns early until then,
+-- swallowing impulses too)
+local afdef = vm.progs.fielddefsByName["attack_finished"]
+for _ = 1, 200 do
+	if not afdef or vmlib.edFloat(player, afdef.ofs) <= svr.time then
+		break
+	end
+	host.frame(svr, 0.05)
+end
+local function moveCmd(fwd: number, buttons: number, impulse: number?)
+	clientSend(function(out)
+		msg.writeByte(out, proto.clc_move)
+		msg.writeFloat(out, svr.time)
+		msg.writeAngle(out, 0)
+		msg.writeAngle(out, 90)
+		msg.writeAngle(out, 0)
+		msg.writeShort(out, fwd)
+		msg.writeShort(out, 0)
+		msg.writeShort(out, 0)
+		msg.writeByte(out, buttons)
+		msg.writeByte(out, impulse or 0)
+	end)
+end
+-- the earlier batteries may have drained shells and auto-switched to
+-- the axe; impulse 2 re-selects the shotgun
+moveCmd(0, 0, 2)
+host.frame(svr, 0.05)
+moveCmd(0, 1)
+host.frame(svr, 0.05)
+t.eq(vmlib.edVector(player, ent.punchangle).x, -2, "shotgun set punchangle_x = -2 (QC)")
+for _ = 1, 10 do
+	moveCmd(0, 0)
+	host.frame(svr, 0.05)
+end
+t.eq(vmlib.edVector(player, ent.punchangle).x, 0, "DropPunchAngle decayed punchangle to zero")
+
+-- SV_CleanupEnts: EF_MUZZLEFLASH cleared after the frame that set it
+t.check(bit32.band(vmlib.edFloat(player, ent.effects), 2) == 0, "SV_CleanupEnts cleared EF_MUZZLEFLASH after the frame")
+
+--------------------------------------------------------------------------
+-- NQ SV_Physics_None / SV_Physics_Noclip (twins of the QW checks)
+local noneEd = vmlib.alloc(vm)
+vmlib.edSetFloat(noneEd, ent.movetype, qd.MOVETYPE_NONE)
+vmlib.edSetVector(noneEd, ent.origin, vector.create(480, -352, 120))
+vmlib.edSetVector(noneEd, ent.velocity, vector.create(0, 0, -100))
+worldlib.linkEdict(svr.world, noneEd, false)
+local clipEd = vmlib.alloc(vm)
+vmlib.edSetFloat(clipEd, ent.movetype, qd.MOVETYPE_NOCLIP)
+vmlib.edSetVector(clipEd, ent.origin, vector.create(480, -352, 100))
+vmlib.edSetVector(clipEd, ent.velocity, vector.create(0, 0, 400))
+worldlib.linkEdict(svr.world, clipEd, false)
+for _ = 1, 20 do
+	host.frame(svr, 0.05)
+end
+t.check(vmlib.edVector(noneEd, ent.origin).z == 120, "NQ MOVETYPE_NONE never moves (SV_Physics_None)")
+t.check(vmlib.edVector(clipEd, ent.origin).z > 400, "NQ MOVETYPE_NOCLIP flies through the ceiling (SV_Physics_Noclip)")
+
+--------------------------------------------------------------------------
+-- Host_Say_Team_f / SV_SetIdealPitch / SV_DropClient
+local relB = client.message.cursize
+host.clientCommand(svr, client, "say_team roger")
+t.check(client.message.cursize > relB and buffer.readu8(client.message.data, relB) == proto.svc_print, "say_team broadcasts svc_print (Host_Say_Team_f)")
+
+-- walk the entrance ramp from a known start (the prior battery leaves
+-- the player position arbitrary)
+vmlib.edSetVector(player, ent.origin, vector.create(480, -300, 80))
+vmlib.edSetVector(player, ent.oldorigin, vector.create(480, -300, 80))
+vmlib.edSetVector(player, ent.velocity, vector.zero)
+worldlib.linkEdict(svr.world, player, false)
+local sawPitch = false
+for _ = 1, 80 do
+	moveCmd(200, 0)
+	host.frame(svr, 0.05)
+	if vmlib.edFloat(player, ent.idealpitch) ~= 0 then
+		sawPitch = true
+	end
+end
+t.check(sawPitch, "SV_SetIdealPitch drove ideal_pitch on the entrance ramp")
+
+-- SV_Impact: a nailgun spike flies and its touch removes it on the wall
+host.clientCommand(svr, client, "give 4")
+host.clientCommand(svr, client, "give n 40")
+local afd = vm.progs.fielddefsByName["attack_finished"]
+for _ = 1, 200 do
+	if not afd or vmlib.edFloat(player, afd.ofs) <= svr.time then
+		break
+	end
+	host.frame(svr, 0.05)
+end
+moveCmd(0, 0, 4)
+host.frame(svr, 0.05)
+moveCmd(0, 1)
+host.frame(svr, 0.05)
+local spike: vmlib.Edict? = nil
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "spike" then
+		spike = e
+	end
+end
+assert(spike, "nailgun spawned a spike")
+local impacted = false
+for _ = 1, 80 do
+	host.frame(svr, 0.05)
+	if (spike :: vmlib.Edict).free then
+		impacted = true
+		break
+	end
+end
+t.check(impacted, "spike hit a wall and spike_touch removed it (SV_Impact)")
+
+svlib.dropClient(svr, client, false)
+t.check(not client.active, "SV_DropClient deactivated the client")
+
 t.finish("test_server")

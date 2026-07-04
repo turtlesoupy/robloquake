@@ -8,6 +8,7 @@ local defs = require("../src/shared/engine/progs/defs")
 local vmlib = require("../src/shared/engine/progs/vm")
 local host = require("../src/shared/engine/server/host")
 local worldlib = require("../src/shared/engine/server/world")
+local mathlib = require("../src/shared/engine/common/mathlib")
 local cvarlib = require("../src/shared/engine/common/cvar")
 local msg = require("../src/shared/engine/common/msg")
 local proto = require("../src/shared/engine/protocol")
@@ -414,10 +415,14 @@ t.check(svr.signon.cursize > sgBefore and stat.free, "makestatic wrote svc_spawn
 t.check(not pcall(function()
 	callStr(10, "boom")
 end), "PF_error raises")
-buffer.writei32(vm.globals, glob.self * 4, grunt.num)
+vm.argc = 0
+B[14](vm)
+local victim = vmlib.globalEdict(vm, RET)
+buffer.writei32(vm.globals, glob.self * 4, victim.num)
 t.check(not pcall(function()
 	callStr(11, "objboom")
 end), "PF_objerror raises")
+t.check(victim.free, "PF_objerror freed self (ED_Free), as C")
 
 svr.changelevelTo = nil
 callStr(46, "changelevel e1m2\n")
@@ -431,6 +436,103 @@ vmlib.setGlobalInt(vm, P0, player.num)
 vm.argc = 1
 B[78](vm)
 t.check(vmlib.globalFloat(vm, glob.parm1) == 5 and vmlib.globalFloat(vm, glob.parm1 + 15) == 80, "setspawnparms copies parms")
+
+-- PF_checkclient (17): stage the player in a grunt's PVS and ask
+local gorg2 = vmlib.edVector(grunt, ent.origin)
+local gyaw2 = vmlib.edVector(grunt, ent.angles).y
+local prevOrg = vmlib.edVector(player, ent.origin)
+local placed = false
+local fwd2 = mathlib.angleVectors(vector.create(0, gyaw2, 0))
+for _, base in { gorg2 + fwd2 * 120, gorg2 + fwd2 * 80, gorg2 - fwd2 * 100, gorg2 } do
+	for _, dz in { 8, 24, 48 } do
+		for _, dxy in { vector.zero, vector.create(32, 0, 0), vector.create(-32, 0, 0), vector.create(0, 32, 0), vector.create(0, -32, 0) } do
+			local cand = base + dxy + vector.create(0, 0, dz)
+			vmlib.edSetVector(player, ent.origin, cand)
+			if not worldlib.testEntityPosition(svr.world, player) then
+				vmlib.edSetVector(player, ent.oldorigin, cand)
+				placed = true
+				break
+			end
+		end
+		if placed then
+			break
+		end
+	end
+	if placed then
+		break
+	end
+end
+assert(placed, "staged the player near the grunt")
+worldlib.linkEdict(svr.world, player, false)
+-- newcheckclient rotates on a 0.1s cache; give it a few frames
+local seen = false
+for _ = 1, 10 do
+	host.frame(svr, 0.05)
+	buffer.writei32(vm.globals, glob.self * 4, grunt.num)
+	vm.argc = 0
+	B[17](vm)
+	if vmlib.globalEdict(vm, RET) == player then
+		seen = true
+		break
+	end
+end
+t.check(seen, "PF_checkclient found the staged player in the grunt's PVS (newcheckclient rotation)")
+
+-- SV_MoveToGoal (builtin 67): the grunt closes distance to its enemy.
+-- Deterministic geometry: stage grunt and goal on the same open floor
+-- (the e1m1 lower hall) with a clear straight line between them.
+local function stageEd(ed: vmlib.Edict, target: vector): boolean
+	for _, dz in { 1, 9, 25, 41 } do
+		local cand = target + vector.create(0, 0, dz)
+		vmlib.edSetVector(ed, ent.origin, cand)
+		if not worldlib.testEntityPosition(svr.world, ed) then
+			vmlib.edSetVector(ed, ent.oldorigin, cand)
+			vmlib.edSetVector(ed, ent.velocity, vector.zero)
+			worldlib.linkEdict(svr.world, ed, false)
+			return true
+		end
+	end
+	return false
+end
+t.check(stageEd(grunt, vector.create(480, 100, 26)), "staged the grunt in the lower hall")
+t.check(stageEd(player, vector.create(480, 480, 26)), "staged the goal player down-hall")
+vmlib.edSetInt(grunt, ent.enemy, player.num)
+vmlib.edSetInt(grunt, ent.goalentity, player.num)
+vmlib.edSetFloat(grunt, ent.yaw_speed, 20)
+vmlib.edSetFloat(grunt, ent.flags, bit32.bor(vmlib.edFloat(grunt, ent.flags) // 1, qd.FL_ONGROUND))
+local gdp0 = vmlib.edVector(grunt, ent.origin) - vmlib.edVector(player, ent.origin)
+local gd0 = math.sqrt(gdp0.x * gdp0.x + gdp0.y * gdp0.y)
+local minDist = gd0
+local path = 0
+local prevG = vmlib.edVector(grunt, ent.origin)
+for _ = 1, 100 do
+	buffer.writef32(vm.globals, glob.time * 4, svr.time)
+	buffer.writei32(vm.globals, glob.self * 4, grunt.num)
+	vmlib.setGlobalFloat(vm, P0, 8)
+	vm.argc = 1
+	B[67](vm)
+	local g = vmlib.edVector(grunt, ent.origin)
+	path += vector.magnitude(g - prevG)
+	prevG = g
+	local dp = g - vmlib.edVector(player, ent.origin)
+	minDist = math.min(minDist, math.sqrt(dp.x * dp.x + dp.y * dp.y))
+end
+-- NOTE: goal-approach is NOT asserted — SV_MoveToGoal steps along
+-- ideal_yaw and only re-aims via rand()-gated SV_NewChaseDir, so
+-- offline approach assertions are flaky. The planned sv_move
+-- compiled-C harness is the real evidence for the chase family; this
+-- check pins the dispatch: movetogoal drives changeyaw+movestep and
+-- the monster covers real ground without error.
+local _ = minDist
+t.check(path > 100, `movetogoal walked a real path ({string.format("%.0f", path)} units)`)
+vmlib.edSetVector(player, ent.origin, prevOrg)
+worldlib.linkEdict(svr.world, player, false)
+
+-- localcmd restart routes to a same-map changelevel
+svr.changelevelTo = nil
+callStr(46, "restart\n")
+t.check(svr.changelevelTo ~= nil, "localcmd restart routes to the respawn driver (Host_Restart_f)")
+svr.changelevelTo = nil
 
 -- aim: facing straight down there is no target — returns v_forward
 buffer.writei32(vm.globals, glob.self * 4, player.num)

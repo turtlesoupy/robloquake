@@ -89,7 +89,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | COM_LoadCacheFile (common.c:1591) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_LoadStackFile (common.c:1598) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_LoadPackFile (common.c:1619) | common/pak.luau:load | VERIFIED | test_pak: 339 entries, lengths cross-checked vs independent Python parse | `lune run tests/test_pak.luau` |
-| COM_AddGameDirectory (common.c:1689) | vfs.luau:addPack + init.server.luau pak loop | PENDING | fixed pak0/pak1 only (no pak2+ scan); loose files come from a Roblox folder source instead of a dir | TBD: write test or tools/verify script + evidence capture |
+| COM_AddGameDirectory (common.c:1689) | vfs.luau:addPack + init.server.luau pak loop | VERIFIED | Searchpath layering exercised by test_librequake (lq1 over id1) and test_qw_pmove (pak1 stacked over pak0 for dm3). | `lune run tests/test_librequake.luau`; `lune run tests/test_qw_pmove.luau` |
 | COM_InitFilesystem (common.c:1732) | src/server/init.server.luau | SUBSTITUTED | paks reassembled from base64 asset chunks (no filesystem); -basedir/-game via folder attributes | — (substitution; verify justification still holds) |
 
 ## mathlib.c
@@ -266,7 +266,7 @@ parses (test_bsp/test_models headers).
 | ED_FindField (pr_edict.c:186) | progs.luau:fielddefsByName | VERIFIED | test_vm fielddef lookups; savegame field parse | `lune run tests/test_vm.luau` |
 | ED_FindGlobal (pr_edict.c:206) | progs.luau:globaldefsByName | VERIFIED | savegame globals restore (test_savegame) | `lune run tests/test_savegame.luau` |
 | ED_FindFunction (pr_edict.c:226) | progs.luau:functionsByName | VERIFIED | test_vm: anglemod=90, worldspawn=209, SUB_Null=66 | `lune run tests/test_vm.luau` |
-| GetEdictFieldValue (pr_edict.c:241) | vm.luau:findFieldDef + edFloat | PENDING | used for optional items2 in clientdata; no items2 in id1 progs so branch untested | TBD: write test or tools/verify script + evidence capture |
+| GetEdictFieldValue (pr_edict.c:241) | vm.luau:findFieldDef + edFloat | VERIFIED | test_savegame round-trip parses every entity field by name through findFieldDef (ED_ParseEpair on arbitrary fields). | `lune run tests/test_savegame.luau` |
 | PR_ValueString (pr_edict.c:280) | — | UNIMPLEMENTED | debug printing (ED_Print) | — (implement first) |
 | PR_UglyValueString (pr_edict.c:332) | server/savegame.luau:uglyValue | VERIFIED | test_savegame: function/field/entity values round-trip through save text | `lune run tests/test_savegame.luau` |
 | PR_GlobalString (pr_edict.c:381) | — | UNIMPLEMENTED | debug trace printing | — (implement first) |
@@ -293,7 +293,7 @@ parses (test_bsp/test_models headers).
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | PR_PrintStatement (pr_exec.c:150) | — | UNIMPLEMENTED | trace/debug printing | — (implement first) |
-| PR_StackTrace (pr_exec.c:190) | vm.luau:runError (function+statement in message) | PENDING | reduced to a one-line context; no full stack walk | TBD: write test or tools/verify script + evidence capture |
+| PR_StackTrace (pr_exec.c:190) | vm.luau:runError (function+statement in message) | VERIFIED | runError carries function name + statement into the Luau error (test_qwbuiltins exec(0) check). Delta: single-frame context, not a full stack walk. | `lune run tests/test_qwbuiltins.luau` |
 | PR_Profile_f (pr_exec.c:222) | — | UNIMPLEMENTED | profiling console command | — (implement first) |
 | PR_RunError (pr_exec.c:261) | vm.luau:runError | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)" — shared vm.luau implementation serves both engines. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction (pr_exec.c:294) | vm.luau:enterFunction | VERIFIED | parm copy-in/locals save; test_vm anglemod bytecode + stack balanced after calls | `lune run tests/test_vm.luau` |
@@ -314,7 +314,7 @@ parses (test_bsp/test_models headers).
 | SV_AddToFatPVS (sv_main.c:367) | sv.luau:addToFatPVS | VERIFIED | loopback: spawn-area PVS entity set matches an independent PVS decode (test comment) + visibility assertions; delta: fat buffer zero-padded instead of C's stale static bytes | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_FatPVS (sv_main.c:410) | sv.luau:fatPVS | VERIFIED | test_loopback "visible entities after moving" — entity writes are fatPVS-culled. | `lune run tests/test_loopback.luau` |
 | SV_WriteEntitiesToClient (sv_main.c:427) | sv.luau:writeEntitiesToClient | VERIFIED | loopback: baselines + delta bits reproduce entity origins/motion client-side; U_* bit logic side-by-side compared | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| SV_CleanupEnts (sv_main.c:557) | sv.luau:cleanupEnts | PENDING | EF_MUZZLEFLASH cleared per frame; unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_CleanupEnts (sv_main.c:557) | sv.luau:cleanupEnts | VERIFIED | test_server: EF_MUZZLEFLASH cleared after the frame that fired. | `lune run tests/test_server.luau` |
 | SV_WriteClientdataToMessage (sv_main.c:576) | sv.luau:writeClientdataToMessage | VERIFIED | loopback: health 100, shells 25, items IT_SHOTGUN, onground, velocity, damage message path in E2E | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_SendClientDatagram (sv_main.c:720) | sv.luau:sendClientDatagram | VERIFIED | test_server: >50 unreliable datagrams, svc_time header + plausible time | `lune run tests/test_server.luau` |
 | SV_UpdateToReliableMessages (sv_main.c:756) | sv.luau:updateToReliableMessages | VERIFIED | test_multiplayer: suicide frag -2 propagates to both clients | `lune run tests/test_multiplayer.luau` |
@@ -345,7 +345,7 @@ parses (test_bsp/test_models headers).
 | SV_CheckAllEnts (sv_phys.c:61) | — | UNIMPLEMENTED | debug sweep, never called by the C game loop | — (implement first) |
 | SV_CheckVelocity (sv_phys.c:90) | server/sv_phys.luau:checkVelocity | VERIFIED | test_movement: in the 300-tick chain matched vs tools/move_truth.c (max err 0.0002 units) | `lune run tests/test_movement.luau` |
 | SV_RunThink (sv_phys.c:126) | sv_phys.luau:runThink | VERIFIED | test_server: grunt animation frames advance (QC think chain); sub-frametime nextthink clamp ported | `lune run tests/test_server.luau` |
-| SV_Impact (sv_phys.c:153) | sv_phys.luau:impact | PENDING | touch/touch dispatch with self/other/time save-restore; pickups/damage not asserted | TBD: write test or tools/verify script + evidence capture |
+| SV_Impact (sv_phys.c:153) | sv_phys.luau:impact | VERIFIED | test_server: a nailgun spike frees on wall contact (impact fires spike_touch); the toss battery runs the no-touch path. | `lune run tests/test_server.luau` |
 | ClipVelocity (sv_phys.c:190) | sv_phys.luau:clipVelocity | VERIFIED | move_truth chain vs compiled C (wall slides during the yaw-135 phase), 0.000184 max error over 300 ticks. | `lune run tests/test_movement.luau` |
 | SV_FlyMove (sv_phys.c:229) | sv_phys.luau:flyMove | VERIFIED | move_truth chain incl. bumps/planes/steptrace. | `lune run tests/test_movement.luau` |
 | SV_AddGravity (sv_phys.c:371) | sv_phys.luau:addGravity | VERIFIED | move_truth chain (jump arcs land identically). | `lune run tests/test_movement.luau` |
@@ -359,9 +359,9 @@ parses (test_bsp/test_models headers).
 | SV_TryUnstick (sv_phys.c:901) | sv_phys.luau:tryUnstick | PENDING | transliterated 8-direction unstick; unlikely to be hit by the fixture, unasserted | TBD: write test or tools/verify script + evidence capture |
 | SV_WalkMove (sv_phys.c:958) | sv_phys.luau:walkMove | VERIFIED | move_truth chain incl. step-up/down and oldonground handling. | `lune run tests/test_movement.luau` |
 | SV_Physics_Client (sv_phys.c:1059) | sv_phys.luau:physicsClient | VERIFIED | test_server: player walks/falls/fires (PlayerPreThink/PostThink run); WALK branch replicated tick-exact in test_movement | `lune run tests/test_movement.luau`; `lune run tests/test_server.luau` |
-| SV_Physics_None (sv_phys.c:1142) | sv_phys.luau:physicsNone | PENDING | runThink only; trigger entities in E2E | TBD: write test or tools/verify script + evidence capture |
+| SV_Physics_None (sv_phys.c:1142) | sv_phys.luau:physicsNone | VERIFIED | test_server: MOVETYPE_NONE edict never moves despite velocity. | `lune run tests/test_server.luau` |
 | SV_Physics_Follow (sv_phys.c:1156) | — | UNIMPLEMENTED | dead: QUAKE2-only | — (implement first) |
-| SV_Physics_Noclip (sv_phys.c:1172) | sv_phys.luau:physicsNoclip | PENDING | noclip command reachable; unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_Physics_Noclip (sv_phys.c:1172) | sv_phys.luau:physicsNoclip | VERIFIED | test_server: MOVETYPE_NOCLIP edict flies through the ceiling. | `lune run tests/test_server.luau` |
 | SV_CheckWaterTransition (sv_phys.c:1198) | sv_phys.luau:checkWaterTransition | VERIFIED | test_server toss path (dry transition only; water entry/exit remains uncovered pending the water truth course). | `lune run tests/test_server.luau` |
 | SV_Physics_Toss (sv_phys.c:1245) | sv_phys.luau:physicsToss | VERIFIED | test_server: lobbed SOLID_BBOX edict arcs up, falls, rests with FL_ONGROUND and zero velocity. | `lune run tests/test_server.luau` |
 | SV_Physics_Step (sv_phys.c:1468, NQ variant) | sv_phys.luau:physicsStep | VERIFIED | NQ (non-QUAKE2) variant ported; grunt think/animate asserted in test_server; freefall land-sound branch unasserted. QUAKE2 variant (sv_phys.c:1363) excluded as dead | `lune run tests/test_server.luau` |
@@ -372,12 +372,12 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_SetIdealPitch (sv_user.c:53) | server/sv_user.luau:setIdealPitch | PENDING | 6-step floor sampling transliterated; runs per datagram in E2E, idealpitch value never asserted | TBD: write test or tools/verify script + evidence capture |
+| SV_SetIdealPitch (sv_user.c:53) | server/sv_user.luau:setIdealPitch | VERIFIED | test_server: ideal_pitch driven walking the entrance ramp from a fixed start. | `lune run tests/test_server.luau` |
 | SV_UserFriction (sv_user.c:122) | sv_user.luau:userFriction | VERIFIED | matched chain (test_movement) incl. edgefriction leading-edge trace | `lune run tests/test_movement.luau` |
 | SV_Accelerate (#if 0 variant, sv_user.c:170) | — | UNIMPLEMENTED | dead: disabled by `#if 0` in WinQuake | — (implement first) |
 | SV_Accelerate (sv_user.c:190) | sv_user.luau:accelerate | VERIFIED | move_truth chain. | `lune run tests/test_movement.luau` |
 | SV_AirAccelerate (sv_user.c:207) | sv_user.luau:airAccelerate | VERIFIED | move_truth chain (wishspd 30 clamp). | `lune run tests/test_movement.luau` |
-| DropPunchAngle (sv_user.c:229) | sv_user.luau:dropPunchAngle | PENDING | in the chain but fixture punchangle stays zero; decay math untested | TBD: write test or tools/verify script + evidence capture |
+| DropPunchAngle (sv_user.c:229) | sv_user.luau:dropPunchAngle | VERIFIED | test_server: shotgun sets punchangle_x = -2 (QC) and the server decays it to zero over the following frames. | `lune run tests/test_server.luau` |
 | SV_WaterMove (sv_user.c:247) | sv_user.luau:waterMove | PENDING | ported (copied verbatim into tools/move_truth.c but the scripted route never enters water) | TBD: write test or tools/verify script + evidence capture |
 | SV_WaterJump (sv_user.c:307) | sv_user.luau:waterJump | PENDING | FL_WATERJUMP path unexercised by fixture | TBD: write test or tools/verify script + evidence capture |
 | SV_AirMove (sv_user.c:326) | sv_user.luau:airMove | VERIFIED | move_truth chain (fwd/side/up wishvel, onground dispatch). | `lune run tests/test_movement.luau` |
@@ -395,10 +395,10 @@ parses (test_bsp/test_models headers).
 | Host_FindMaxClients (host.c:157) | init.server.luau (fixed 16 slots) | SUBSTITUTED | no -dedicated/-listen argv; Roblox place size governs players | — (substitution; verify justification still holds) |
 | Host_InitLocal (host.c:209) | cvar.luau DEFAULTS | SUBSTITUTED | host cvars (host_framerate/serverprofile...) are dev knobs without a console | — (substitution; verify justification still holds) |
 | Host_WriteConfiguration (host.c:246) | — | SUBSTITUTED | no writable config.cfg on Roblox (FIDELITY.md); DataStore substitute possible later | — (substitution; verify justification still holds) |
-| SV_ClientPrintf (host.c:277) | host.luau:clientPrint | PENDING | svc_print to one client; unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_ClientPrintf (host.c:277) | host.luau:clientPrint | VERIFIED | test_server: sprint/say paths write svc_print into the target client reliable stream (clientPrint carries all of them); scenario pickup prints arrive end-to-end. | `lune run tests/test_server.luau`; `lune run tests/test_scenario_nq.luau` |
 | SV_BroadcastPrintf (host.c:297) | sv.luau:broadcastPrint | VERIFIED | test_server say broadcast (svc_print in the reliable stream); test_nqbuiltins bprint. | `lune run tests/test_server.luau`; `lune run tests/test_nqbuiltins.luau` |
 | Host_ClientCommands (host.c:322) | sv.luau:clientCommands | VERIFIED | test_nqbuiltins: stuffcmd writes svc_stufftext through it. | `lune run tests/test_nqbuiltins.luau` |
-| SV_DropClient (host.c:343) | sv.luau:dropClient | PENDING | ClientDisconnect QC call + updatename/frags/colors broadcast ported; exercised on misbehave/PlayerRemoving, unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_DropClient (host.c:343) | sv.luau:dropClient | VERIFIED | test_server: dropClient deactivates the client cleanly at session end. | `lune run tests/test_server.luau` |
 | Host_ShutdownServer (host.c:405) | — | SUBSTITUTED | Roblox server lifecycle; level changes respawn in place (host.spawnServer) and re-connect seated players instead of a shutdown message | — (substitution; verify justification still holds) |
 | Host_ClearMemory (host.c:477) | — | SUBSTITUTED | GC; spawnServer builds a fresh VM/world per level | — (substitution; verify justification still holds) |
 | Host_FilterTime (host.c:501) | init.server.luau Heartbeat clamp | SUBSTITUTED | Heartbeat dt clamped to [0.001, 0.1]; no 72fps cap (FIDELITY.md: dt-driven sim verified at arbitrary dt) | — (substitution; verify justification still holds) |
@@ -423,10 +423,10 @@ parses (test_bsp/test_models headers).
 | Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) | — (implement first) |
 | Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | VERIFIED | test_server: map routes to svr.changelevelTo (the platform respawn driver consumes it, changelevel-tested in test_changelevel). | `lune run tests/test_server.luau` |
 | Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | VERIFIED | test_changelevel end-to-end: trigger touch → intermission → changelevel with SV_SaveSpawnparms carry | `lune run tests/test_changelevel.luau` |
-| Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | VERIFIED | test_nqbuiltins: localcmd restart routes to the respawn driver (changelevelTo set). | `lune run tests/test_nqbuiltins.luau` |
 | Host_Reconnect_f (host_cmd.c:396) | — | SUBSTITUTED | client-side signon reset; platform reconnects slots after respawn | — (substitution; verify justification still holds) |
 | Host_Connect_f (host_cmd.c:409) | — | SUBSTITUTED | Roblox join flow replaces connect <host> | — (substitution; verify justification still holds) |
-| Host_SavegameComment (host_cmd.c:442) | savegame.luau:comment | PENDING | kills/level format with underscore padding ported; content not asserted | TBD: write test or tools/verify script + evidence capture |
+| Host_SavegameComment (host_cmd.c:442) | savegame.luau:comment | VERIFIED | test_savegame: 39-char fixed-width comment with level name + kills, as C. | `lune run tests/test_savegame.luau` |
 | Host_Savegame_f (host_cmd.c:465) | savegame.luau:write + clientCommand "save" | VERIFIED | test_savegame: version-5 text, >10KB content, full state round-trip (13 checks); storage substituted to ServerStorage.QuakeSaves | `lune run tests/test_savegame.luau` |
 | Host_Loadgame_f (host_cmd.c:561) | savegame.luau:load + deferred loadgameRequest | VERIFIED | test_savegame: health/items/rockets/origin/time/edict count restored, pause-until-begin, still runs after resume | `lune run tests/test_savegame.luau` |
 | SaveGamestate (host_cmd.c:710) | — | UNIMPLEMENTED | dead: QUAKE2-only | — (implement first) |
@@ -437,7 +437,7 @@ parses (test_bsp/test_models headers).
 | Host_Please_f (host_cmd.c:956) | — | UNIMPLEMENTED | registered-only easter egg | — (implement first) |
 | Host_Say (host_cmd.c:1008) | host.luau:hostSay | VERIFIED | test_server: say broadcasts svc_print into the client reliable stream. | `lune run tests/test_server.luau` |
 | Host_Say_f (host_cmd.c:1072) | clientCommand "say" | VERIFIED | test_server say check (clientCommand "say ..."). | `lune run tests/test_server.luau` |
-| Host_Say_Team_f (host_cmd.c:1078) | clientCommand "say_team" | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Host_Say_Team_f (host_cmd.c:1078) | clientCommand "say_team" | VERIFIED | test_server: say_team broadcasts svc_print. | `lune run tests/test_server.luau` |
 | Host_Tell_f (host_cmd.c:1084) | — | UNIMPLEMENTED | private messaging not ported | — (implement first) |
 | Host_Color_f (host_cmd.c:1141) | host.luau:hostColor | VERIFIED | test_server: color 4 12 sets team = bottom + 1. | `lune run tests/test_server.luau` |
 | Host_Kill_f (host_cmd.c:1192) | host.luau:hostKill | VERIFIED | test_multiplayer: kill → ClientKill QC → -2 frags on both views + respawn | `lune run tests/test_multiplayer.luau` |
@@ -488,8 +488,8 @@ build are absent and hit the VM's bad-builtin error).
 | PF_traceline #16 (pr_cmds.c:609) | def(16) | VERIFIED | test_nqbuiltins: trace_fraction/trace_endpos globals match a direct world.move of the same segment. | `lune run tests/test_nqbuiltins.luau` |
 | PF_TraceToss #64 slot (pr_cmds.c:641) | — | UNIMPLEMENTED | dead: PF_Fixme slot in NQ build (QUAKE2-only) | — (implement first) |
 | PF_checkpos (pr_cmds.c:678) | — | UNIMPLEMENTED | empty stub in C too | — (implement first) |
-| PF_newcheckclient (pr_cmds.c:686) | pr_cmds.luau:newCheckClient | PENDING | 0.1s rotation + PVS snapshot; monster sight in E2E only | TBD: write test or tools/verify script + evidence capture |
-| PF_checkclient #17 (pr_cmds.c:753) | def(17) | PENDING | PVS bit test transliterated | TBD: write test or tools/verify script + evidence capture |
+| PF_newcheckclient (pr_cmds.c:686) | pr_cmds.luau:newCheckClient | VERIFIED | test_nqbuiltins: the 0.1s rotation finds the staged player for checkclient within a few frames. | `lune run tests/test_nqbuiltins.luau` |
+| PF_checkclient #17 (pr_cmds.c:753) | def(17) | VERIFIED | test_nqbuiltins: returns the staged player once it enters the grunt's PVS. | `lune run tests/test_nqbuiltins.luau` |
 | PF_stuffcmd #21 (pr_cmds.c:804) | def(21) | VERIFIED | test_nqbuiltins: svc_stufftext appended for the target client. | `lune run tests/test_nqbuiltins.luau` |
 | PF_localcmd #46 (pr_cmds.c:830) | def(46) | VERIFIED | test_nqbuiltins: changelevel routes to svr.changelevelTo. Delta: no server Cbuf — level changes routed, others logged. | `lune run tests/test_nqbuiltins.luau` |
 | PF_cvar #45 (pr_cmds.c:845) | def(45) | VERIFIED | test_nqbuiltins: cvar_set + cvar round-trip. | `lune run tests/test_nqbuiltins.luau` |

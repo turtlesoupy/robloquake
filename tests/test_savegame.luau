@@ -59,6 +59,10 @@ local savedEdicts = vm.num_edicts
 local sav = savegame.write(svr)
 t.check(#sav > 10000, "savegame has content")
 t.check(sav:sub(1, 2) == "5\n", "savegame version 5")
+-- Host_SavegameComment: fixed-width line with the level name and kills
+local comment = sav:match("^5\n([^\n]*)\n")
+t.check(comment ~= nil and #comment == 39, `comment is the C fixed width ({comment and #comment})`)
+t.check(comment ~= nil and comment:find("Slipgate") ~= nil and comment:find("kills:") ~= nil, "comment carries level name + kills")
 
 -- wreck the state: hurt the player, advance time
 vmlib.edSetFloat(player, ent.health, 13)
