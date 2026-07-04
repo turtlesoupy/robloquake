@@ -354,4 +354,63 @@ qwsv.writeEntitiesToClient(svr, client, nout)
 parseFrame(msg.reader(msg.snapshot(nout)), {})
 t.check(lastNailCount >= 1, `svc_nails carried the in-flight spike ({lastNailCount})`)
 
+--------------------------------------------------------------------------
+-- spectator lifecycle: SV_SpawnSpectator places at info_player_start,
+-- ptrack/msg user commands update the client
+qwsv.connectClient(svr, 2, { name = "spec", spectator = "1" })
+local spec = svr.clients[2]
+t.check(spec.spectator == true, "userinfo spectator=1 marks the client")
+local sorg = vmlib.edVector(spec.edict, ent.origin)
+local atStart = false
+for i = 1, vm.num_edicts - 1 do
+	local e = vm.edicts[i + 1]
+	if not e.free and vmlib.edString(vm, e, ent.classname) == "info_player_start" then
+		if vector.magnitude(vmlib.edVector(e, ent.origin) - sorg) < 1 then
+			atStart = true
+		end
+	end
+end
+t.check(atStart, "SV_SpawnSpectator placed the spectator at info_player_start")
+qwsv.executeUserCommand(svr, spec, "ptrack 0")
+-- C stores i+1 (0 = not tracking)
+t.eq((spec :: any).spec_track, 1, "SV_PTrack_f set the tracked player (stored +1 as C)")
+qwsv.executeUserCommand(svr, spec, "msg 1")
+t.eq((spec :: any).messagelevel, 1, "SV_Msg_f set the message level")
+
+--------------------------------------------------------------------------
+-- SV_Physics_None / Noclip / Step dispatch (qwphys)
+local qwworldlib2 = require("../src/shared/engine/qw/qwworld")
+local qdl2 = require("../src/shared/engine/quakedef")
+local noneEd = vmlib.alloc(vm)
+vmlib.edSetFloat(noneEd, ent.movetype, qdl2.MOVETYPE_NONE)
+vmlib.edSetVector(noneEd, ent.origin, vmlib.edVector(player, ent.origin) + vector.create(0, 0, 200))
+vmlib.edSetVector(noneEd, ent.velocity, vector.create(0, 0, -100))
+qwworldlib2.linkEdict(svr.world, noneEd, false)
+local noneOrg = vmlib.edVector(noneEd, ent.origin)
+local clipEd = vmlib.alloc(vm)
+vmlib.edSetFloat(clipEd, ent.movetype, qdl2.MOVETYPE_NOCLIP)
+vmlib.edSetVector(clipEd, ent.origin, vmlib.edVector(player, ent.origin))
+vmlib.edSetVector(clipEd, ent.velocity, vector.create(0, 0, 500))
+qwworldlib2.linkEdict(svr.world, clipEd, false)
+local stepEd = vmlib.alloc(vm)
+vmlib.edSetFloat(stepEd, ent.movetype, qdl2.MOVETYPE_STEP)
+vmlib.edSetFloat(stepEd, ent.solid, qdl2.SOLID_BBOX)
+vmlib.edSetVector(stepEd, ent.mins, vector.zero)
+vmlib.edSetVector(stepEd, ent.maxs, vector.zero)
+-- open air above the spawn floor (staging inside a ceiling would hit
+-- C's trapped-entity velocity zeroing instead of falling)
+vmlib.edSetVector(stepEd, ent.origin, vector.create(480, -352, 120))
+qwworldlib2.linkEdict(svr.world, stepEd, false)
+local stepStart = vmlib.edVector(stepEd, ent.origin)
+for _ = 1, 30 do
+	qwsv.frame(svr, 0.05)
+end
+t.check(vmlib.edVector(noneEd, ent.origin) == noneOrg, "MOVETYPE_NONE never moves despite velocity (SV_Physics_None)")
+t.check(vmlib.edVector(clipEd, ent.origin).z > vmlib.edVector(player, ent.origin).z + 300, "MOVETYPE_NOCLIP flies through the ceiling (SV_Physics_Noclip)")
+t.check(
+	vmlib.edVector(stepEd, ent.origin).z < stepStart.z - 30
+		and bit32.band(vmlib.edFloat(stepEd, ent.flags), qdl2.FL_ONGROUND) ~= 0,
+	"MOVETYPE_STEP falls under gravity and lands (SV_Physics_Step)"
+)
+
 t.finish("test_qwsv")
