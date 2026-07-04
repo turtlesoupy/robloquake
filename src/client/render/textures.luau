@@ -2,7 +2,12 @@
 --!optimize 2
 -- Texture conversion: Quake 8-bit palettized pixels -> EditableImages.
 
-local AssetService = game:GetService("AssetService")
+-- lune runs the pure helpers (translatePixels, parsePalette) offline;
+-- there is no `game` there, so resolve AssetService defensively
+local gotSvc, svc = pcall(function()
+	return game:GetService("AssetService")
+end)
+local AssetService = (if gotSvc then svc else nil) :: AssetService
 
 local textures = {}
 

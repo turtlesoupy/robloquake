@@ -4,9 +4,7 @@
 -- down through the world nodes, find the surface under the point, and read
 -- its lightmap (all style layers scaled by the current style values).
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local engine = ReplicatedStorage:WaitForChild("Shared").engine
-local bsp = require(engine.bsp.bsp)
+local bsp = require("../bsp/bsp")
 
 local lightpoint = {}
 

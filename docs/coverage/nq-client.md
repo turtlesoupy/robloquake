@@ -35,7 +35,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_ParseUpdate | cl.luau parseUpdate | VERIFIED | tests/test_loopback.luau: entity positions/visibility through fast updates | `lune run tests/test_loopback.luau` |
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) | `lune run tests/test_loopback.luau` |
 | CL_ParseClientdata | cl.luau parseClientdata | VERIFIED | tests/test_loopback.luau: health 100, shells 25, velocity, onground | `lune run tests/test_loopback.luau` |
-| CL_NewTranslation | textures.translatePixels + entrender translatedSkins cache | PENDING | shirt/pants rows 16-31/96-111 incl. reversed ranges; applied as whole-skin image, not colormap | TBD: write test or tools/verify script + evidence capture |
+| CL_NewTranslation | textures.translatePixels + entrender translatedSkins cache | VERIFIED | test_render_misc translate battery: shirt 16..31 from colors&0xf0, pants 96..111 from (colors&15)<<4, the 128+ "backwards ranges" reversal (cl_parse.c:649 quirk), identity elsewhere. Delta stands: applied as whole-skin image, not colormap. | `lune run tests/test_render_misc.luau` |
 | CL_ParseStatic | cl.luau parseStatic + statics spawn pass | VERIFIED | test_scenario_nq "torch statics parsed on e1m2" (svc_spawnstatic through the wire client; the statics spawn pass renders them Studio-side). | `lune run tests/test_scenario_nq.luau` |
 | CL_ParseStaticSound | cl.luau + sound.static | VERIFIED | tests/test_loopback.luau: "ambient sounds spawned" (>=4) | `lune run tests/test_loopback.luau` |
 | CL_ParseServerMessage | cl.luau parseServerMessage | VERIFIED | tests/test_loopback.luau full protocol path; FIDELITY.md byte-exact protocol 15 layer; delta: svc_stopsound read but discarded, svc_cdtrack stored but unused | `lune run tests/test_loopback.luau` |
@@ -333,11 +333,11 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| R_AnimateLight | 10Hz styleFrame tick in init.client | PENDING | (c-'a')*22 exactly; empty style = 256 ("m"=264 base) | TBD: write test or tools/verify script + evidence capture |
+| R_AnimateLight | 10Hz styleFrame tick in init.client | VERIFIED | Live style-10 value series sampled per-frame tracks the "mmamamm..." map exactly (264/0 alternation, RQDBG_Atlas alpha follows within a tick) — see [evidence/nq-e1m1-flicker.txt](evidence/nq-e1m1-flicker.txt) + the bright/dark capture pair; offline the same formula drives lightpoint (test_render_misc style scaling). | Studio: tools/verify_meshbudget.luau region/alpha probes; `lune run tests/test_render_misc.luau` |
 | R_MarkLights | lightatlas markLights | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: floor surfaces around the impact marked and re-lit. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | R_PushDlights | lightatlas.updateDlights | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the per-frame dlight push drives the marked-region rebake. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
-| RecursiveLightPoint | lightpoint.luau recursiveLightPoint | PENDING | faithful structure incl. mid-plane split and style-layer sum >>8 | TBD: write test or tools/verify script + evidence capture |
-| R_LightPoint | lightpoint.at | PENDING | -2048 downward trace, fullbright when no lightdata; dlight add lives in caller like C | TBD: write test or tools/verify script + evidence capture |
+| RecursiveLightPoint | lightpoint.luau recursiveLightPoint (now shared: src/shared/engine/client/lightpoint.luau) | VERIFIED | test_render_misc on real e1m1 lightdata: lit floor sample, style-scaling to zero, style-10 alcove rides its style layer, mid-split reach from high above. | `lune run tests/test_render_misc.luau` |
+| R_LightPoint | lightpoint.at | VERIFIED | test_render_misc: no-lightdata -> 255 fullbright, -2048 downward reach, -1 -> 0 clamp via the all-dark case. Dlight add lives in the caller like C. | `lune run tests/test_render_misc.luau` |
 
 ## r_misc.c
 
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 84
-- PENDING: 50
+- VERIFIED: 88
+- PENDING: 46
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
