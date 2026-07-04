@@ -22,13 +22,17 @@ local sound = {}
 
 type Region = { s: number, l: number, ls: number? }
 
+type Channel = { part: Part, sound: Sound }
+
 export type System = {
 	assetId: string,
 	regions: { [string]: Region },
 	folder: Folder,
-	-- (entnum*8 + channel) -> playing sound part; new sounds on the same
-	-- entity/channel override, like the C channel allocator
-	channels: { [number]: Part },
+	-- (entnum*8 + channel) -> persistent channel emitter; a new sound on the
+	-- same entity/channel restarts it, like the C channel allocator. The
+	-- Sound instance is reused so rapid refire (super nailgun) never hits a
+	-- fresh instance whose PlaybackRegion hasn't applied yet.
+	channels: { [number]: Channel },
 	missing: { [string]: boolean },
 	enabled: boolean,
 }
@@ -128,37 +132,59 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 		return
 	end
 
-	-- override anything already running on this entity/channel pair
-	local key = entnum * 8 + channel
-	local old = sys.channels[key]
-	if old then
-		old:Destroy()
-		sys.channels[key] = nil
+	if channel ~= 0 then
+		-- entity channels persist: restart (override) in place
+		local key = entnum * 8 + channel
+		local ch = sys.channels[key]
+		if not ch then
+			local part = emitterAt(sys, pos)
+			local snd = bankSound(sys, r, false)
+			snd.Parent = part
+			ch = { part = part, sound = snd }
+			sys.channels[key] = ch
+			-- reclaim emitters that have sat silent for a while
+			local function gc()
+				task.delay(10, function()
+					if sys.channels[key] ~= ch then
+						return
+					end
+					if ch.sound.IsPlaying then
+						gc()
+					else
+						sys.channels[key] = nil
+						ch.part:Destroy()
+					end
+				end)
+			end
+			gc()
+		end
+		ch.sound:Stop()
+		ch.part.Position = qcoords.toRoblox(pos)
+		ch.sound.PlaybackRegion = NumberRange.new(r.s, r.s + r.l)
+		ch.sound.TimePosition = r.s
+		ch.sound.Volume = vol
+		ch.sound.RollOffMaxDistance = rolloffFor(atten)
+		ch.sound:Play()
+		return
 	end
 
+	-- CHAN_AUTO: fire-and-forget, never overrides
 	local part = emitterAt(sys, pos)
 	local s = bankSound(sys, r, false)
 	s.Volume = vol
 	s.RollOffMaxDistance = rolloffFor(atten)
 	s.Parent = part
-	local function cleanup()
+	s.Ended:Once(function()
 		part:Destroy()
-		if sys.channels[key] == part then
-			sys.channels[key] = nil
-		end
-	end
-	s.Ended:Once(cleanup)
+	end)
 	-- regions can misreport Ended while the asset streams in; make sure
 	-- one-shots never linger
 	task.delay(r.l + 2, function()
 		if part.Parent then
-			cleanup()
+			part:Destroy()
 		end
 	end)
 	s:Play()
-	if channel ~= 0 then -- CHAN_AUTO sounds never override
-		sys.channels[key] = part
-	end
 end
 
 -- S_StaticSound (looping ambients from the signon)
