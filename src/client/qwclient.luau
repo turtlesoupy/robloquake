@@ -116,6 +116,7 @@ return function()
 	}
 	local v_dmg_time, v_dmg_roll, v_dmg_pitch = 0, 0, 0
 	local V_KICKTIME, V_KICKROLL, V_KICKPITCH = 0.5, 0.6, 0.6
+	local v_oldz = 0 -- V_CalcRefdef stair-step smoothing state
 
 	local cshiftGui = Instance.new("ScreenGui")
 	cshiftGui.Name = "QuakeCshift"
@@ -1388,6 +1389,21 @@ return function()
 			angles = vector.create(cl.simangles.x + cl.punchangle + kpitch, cl.simangles.y, cl.simangles.z + roll + kroll)
 			gunVisible = true
 		end
+		-- smooth out stair step ups (view.c V_CalcRefdef): oldz glides up
+		-- at 80 u/s and never lags more than 12 units below the real z
+		if cl.intermission == 0 and not trackPs and ownState.onground ~= -1 and cl.simorg.z - v_oldz > 0 then
+			v_oldz += dt * 80
+			if v_oldz > cl.simorg.z then
+				v_oldz = cl.simorg.z
+			end
+			if cl.simorg.z - v_oldz > 12 then
+				v_oldz = cl.simorg.z - 12
+			end
+			eye += vector.create(0, 0, v_oldz - cl.simorg.z)
+		else
+			v_oldz = cl.simorg.z
+		end
+
 		local fwd, right, up = mathlib.angleVectors(angles)
 		camera.CFrame = qcoords.cframe(eye, fwd, right, up)
 		viewmodellib.update(vmgun, camera)

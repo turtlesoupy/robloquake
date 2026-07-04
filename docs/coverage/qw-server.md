@@ -7,9 +7,10 @@ port intentionally reuses NQ-shared modules under `src/shared/engine/{progs,bsp,
 
 Status legend:
 - **VERIFIED** — a passing offline test asserts the behavior (all four QW tests run green as of this audit:
-  `test_qw_pmove` 3/3, `test_qwents` 21/21, `test_qwsv` 25/25, `test_qw_loopback` 26/26).
+  `test_qw_pmove` 6/6, `test_qwents` 21/21, `test_qwsv` 25/25, `test_qw_loopback` 36/36).
   Functions covered by `test_qw_pmove.luau` are checked against `tools/pmove_truth.c`, which `#include`s the
-  VERBATIM C `pmove.c`/`pmovetst.c` (max pos error 0.000122 units over 300 ticks).
+  VERBATIM C `pmove.c`/`pmovetst.c` (max pos error 0.000122 units over 460 ticks across an e1m1
+  flat course and a dm3 staircase course).
 - **PENDING** — ported, no offline test asserts it.
 - **UNIMPLEMENTED** — no port code (or port code that cannot run).
 - **SUBSTITUTED** — intentionally replaced, with a platform justification.
@@ -347,22 +348,25 @@ Shared NQ port: `src/shared/engine/common/mathlib.luau` + native `vector` type.
 ## pmove.c / pmovetst.c (QW/client, executed by the server in SV_RunCmd)
 
 Port file: `src/shared/engine/qw/pmove.luau`. Ground truth: `tools/pmove_truth.c` `#include`s the
-VERBATIM `pmove.c`/`pmovetst.c`; `test_qw_pmove.luau` replays the identical 300-tick script on
-port-loaded e1m1 and matches within 0.000122 units position / 0.000109 velocity, with onground and
-waterlevel agreeing on every tick (fixture covers 238 ground / 62 air ticks; it never enters water).
+VERBATIM `pmove.c`/`pmovetst.c`; `test_qw_pmove.luau` replays two identical scripted courses —
+300 ticks on e1m1 (flat run/strafe/jump/backpedal) and 160 ticks on dm3's staircase at x=-64
+(climb, descend, re-climb, jumping climb, diagonal; risers 56/72/88/104) — matching within
+0.000122 units position / 0.000109 velocity, onground and waterlevel agreeing every tick.
+Terrain covered: flat ground, walls, jumps, air control, 16-unit stair step-ups from every
+approach. Terrain NOT covered: water (waterlevel 0 throughout — PM_WaterMove stays PENDING).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Pmove_Init / PM_InitBoxHull | `hullForBox` (pmove.luau:109) | SUBSTITUTED | Fresh 6-clipnode hull per call instead of a mutated static (no globals on a shared-module platform); identical plane math — covered by the ground truth. | — (substitution; verify justification still holds) |
 | PM_ClipVelocity | `clipVelocity` (pmove.luau:345) | VERIFIED | test_qw_pmove ground truth (slide-along-wall phases in the script). | `lune run tests/test_qw_pmove.luau` |
-| PM_FlyMove | `flyMove` (pmove.luau:371) | VERIFIED | Ground truth incl. air ticks. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PM_GroundMove | `groundMove` (pmove.luau:463) | VERIFIED | Ground truth: 238 ground ticks incl. step-up paths on e1m1. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PM_Friction | `friction` (pmove.luau:538) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Stop phase decelerates identically. | TBD: write test or tools/verify script + evidence capture |
-| PM_Accelerate / PM_AirAccelerate | pmove.luau:584,604 | VERIFIED | Ground truth accel curves. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
+| PM_FlyMove | `flyMove` (pmove.luau:371) | VERIFIED | Ground truth incl. air ticks, both courses. | `lune run tests/test_qw_pmove.luau` |
+| PM_GroundMove | `groundMove` (pmove.luau:463) | VERIFIED | Ground truth: e1m1 flat course PLUS the dm3 staircase course (2026-07-04 playtest finding: the old fixture was flat-only) — step-ups match C to 0.000122 units under straight, re-climb, jumping, and diagonal approaches. | `lune run tests/test_qw_pmove.luau` |
+| PM_Friction | `friction` (pmove.luau:538) | VERIFIED | Friction applies on every ground tick of both truth courses (direction reversals decelerate through it); any divergence would break the 1e-4 position match. | `lune run tests/test_qw_pmove.luau` |
+| PM_Accelerate / PM_AirAccelerate | pmove.luau:584,604 | VERIFIED | Ground truth accel curves, both courses. | `lune run tests/test_qw_pmove.luau` |
 | PM_WaterMove | `waterMove` (pmove.luau:628) | PENDING | Ported; fixture never enters water (waterlevel 0 for all 300 ticks) — no ground-truth coverage. | TBD: write test or tools/verify script + evidence capture |
-| PM_AirMove | `airMove` (pmove.luau:661) | VERIFIED | Ground truth. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): onground agrees every tick; water branches only trivially covered (always empty). | TBD: write test or tools/verify script + evidence capture |
-| JumpButton | `jumpButton` (pmove.luau:745) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Jump phases (ticks 121-160, 201-240) match; oldbuttons latching. | TBD: write test or tools/verify script + evidence capture |
+| PM_AirMove | `airMove` (pmove.luau:661) | VERIFIED | Ground truth, both courses (jump arcs + stair-jump climbs). | `lune run tests/test_qw_pmove.luau` |
+| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | VERIFIED | onground agrees every tick across both courses (460 ticks incl. stair edges and jump apexes); water branches still only trivially covered — the water truth course remains a separate open item (see PM_WaterMove). | `lune run tests/test_qw_pmove.luau` |
+| JumpButton | `jumpButton` (pmove.luau:745) | VERIFIED | Jump phases match in both courses (e1m1 bunny ticks 121-160/201-240; dm3 jumping climb ticks 386-405) incl. oldbuttons latching between held-jump ticks. | `lune run tests/test_qw_pmove.luau` |
 | CheckWaterJump | `checkWaterJump` (pmove.luau:788) | PENDING | Ported; unreachable in the fixture (no water). | TBD: write test or tools/verify script + evidence capture |
 | NudgePosition | `nudgePosition` (pmove.luau:818) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): Runs every tick in both C and port (positions stay equal through it). | TBD: write test or tools/verify script + evidence capture |
 | SpectatorMove | `spectatorMove` (pmove.luau:842) | PENDING | Ported; no spectator test anywhere. | TBD: write test or tools/verify script + evidence capture |

@@ -16,6 +16,7 @@ vec3_t vec3_origin = {0, 0, 0};
 
 /* ==== BSP loading (pattern of move_truth.c) ==== */
 static model_t worldmodel;
+static model_t stairmodel; /* dm3 for the stair-climb course */
 
 static byte *pak_read(const char *pakpath, const char *name, int *lenOut)
 {
@@ -42,7 +43,7 @@ static byte *pak_read(const char *pakpath, const char *name, int *lenOut)
 
 typedef struct { int fileofs, filelen; } lump_t;
 
-static void load_bsp(const char *pak, const char *map)
+static void load_bsp(model_t *model, const char *pak, const char *map)
 {
 	int len;
 	byte *bspdata = pak_read(pak, map, &len);
@@ -81,15 +82,15 @@ static void load_bsp(const char *pak, const char *map)
 	struct dmodel { float mins[3], maxs[3], origin[3]; int headnode[4];
 		int visleafs, firstface, numfaces; } *dmodels = (void *)(bspdata + lumps[14].fileofs);
 
-	worldmodel.hulls[0].clipnodes = h0;
-	worldmodel.hulls[0].planes = planes;
-	worldmodel.hulls[0].firstclipnode = dmodels[0].headnode[0];
-	worldmodel.hulls[0].lastclipnode = numnodes - 1;
+	model->hulls[0].clipnodes = h0;
+	model->hulls[0].planes = planes;
+	model->hulls[0].firstclipnode = dmodels[0].headnode[0];
+	model->hulls[0].lastclipnode = numnodes - 1;
 
-	worldmodel.hulls[1].clipnodes = dclip;
-	worldmodel.hulls[1].planes = planes;
-	worldmodel.hulls[1].firstclipnode = dmodels[0].headnode[1];
-	worldmodel.hulls[1].lastclipnode = numclip - 1;
+	model->hulls[1].clipnodes = dclip;
+	model->hulls[1].planes = planes;
+	model->hulls[1].firstclipnode = dmodels[0].headnode[1];
+	model->hulls[1].lastclipnode = numclip - 1;
 }
 
 /* ==== the scripted run (mirrored in tests/test_qw_pmove.luau) ==== */
@@ -104,9 +105,24 @@ static phase_t script[] = {
 	{300, 400, 0, 0, 180, 10, 0},  /* run west looking down */
 };
 
+/* stair-climb course on dm3's staircase at x=-64 (floor z 40, risers
+   56/72/88/104 heading +y): up, back down, up again, jumping climb,
+   diagonal climb — PM_GroundMove's step-up path under every approach.
+   Mirrored in tests/test_qw_pmove.luau (ticks 301-460). */
+static phase_t stairscript[] = {
+	{30, 400, 0, 0, 90, 0, 0},    /* climb the stairs */
+	{45, 400, 0, 0, 270, 0, 0},   /* turn, descend */
+	{70, 400, 0, 0, 90, 0, 0},    /* climb again */
+	{85, 400, 0, 0, 270, 0, 0},   /* back down */
+	{105, 400, 0, 0, 90, 0, 1},   /* jumping climb */
+	{120, 400, 0, 0, 270, 0, 0},  /* back down */
+	{160, 400, 350, 0, 45, 0, 0}, /* diagonal approach into the rail/wall */
+};
+
 int main(void)
 {
-	load_bsp("external_assets/quake106/extracted/id1/pak0.pak", "maps/e1m1.bsp");
+	load_bsp(&worldmodel, "external_assets/quake106/extracted/id1/pak0.pak", "maps/e1m1.bsp");
+	load_bsp(&stairmodel, "external_assets/quake106/extracted/id1/pak1.pak", "maps/dm3.bsp");
 	Pmove_Init();
 
 	movevars.gravity = 800; movevars.stopspeed = 100; movevars.maxspeed = 320;
@@ -137,6 +153,34 @@ int main(void)
 		PlayerMove();
 
 		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", tick,
+			pmove.origin[0], pmove.origin[1], pmove.origin[2],
+			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
+			onground >= 0 ? 1 : 0, waterlevel);
+	}
+
+	/* course 2: dm3 stairs (ticks 301-460) */
+	memset(&pmove, 0, sizeof(pmove));
+	pmove.numphysent = 1;
+	pmove.physents[0].model = &stairmodel;
+	pmove.origin[0] = -64; pmove.origin[1] = 480; pmove.origin[2] = 44;
+
+	for (int tick = 1; tick <= 160; tick++) {
+		phase_t *ph = &stairscript[0];
+		for (int i = 0; i < (int)(sizeof(stairscript)/sizeof(stairscript[0])); i++)
+			if (tick <= stairscript[i].untilTick) { ph = &stairscript[i]; break; }
+
+		pmove.cmd.msec = 50;
+		pmove.cmd.forwardmove = (short)ph->fwd;
+		pmove.cmd.sidemove = (short)ph->side;
+		pmove.cmd.upmove = (short)ph->upm;
+		pmove.cmd.angles[0] = ph->pitch;
+		pmove.cmd.angles[1] = ph->yaw;
+		pmove.cmd.angles[2] = 0;
+		pmove.cmd.buttons = ph->jump ? 2 : 0;
+
+		PlayerMove();
+
+		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", 300 + tick,
 			pmove.origin[0], pmove.origin[1], pmove.origin[2],
 			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
 			onground >= 0 ? 1 : 0, waterlevel);

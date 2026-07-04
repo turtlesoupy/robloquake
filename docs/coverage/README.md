@@ -52,6 +52,22 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (playtest: harsh stairs in QW)
+- User playtest report: stair climbing "harsh and hard" in the QW boot.
+  Root causes found: (1) qwclient.luau had NO V_CalcRefdef stair-step
+  smoothing (the NQ boot has it; the QW camera snapped a full riser per
+  step) — ported the oldz 80 u/s glide with the 12-unit cap; (2) the
+  pmove VERIFIED rows rested on a flat-only truth course, so the
+  step-up code path had zero C coverage — an evidence-scope bug. Added
+  a second 160-tick course to tools/pmove_truth.c + test_qw_pmove on
+  dm3's staircase at x=-64 (found by hull-trace scan, not memory):
+  climb/descend/re-climb/jumping/diagonal. Result: step-ups match the
+  verbatim C to 0.000122 units — the "hard" half was the missing camera
+  smoothing, not a physics divergence. PM_GroundMove/PM_Friction/
+  PM_CatagorizePosition/JumpButton/PM_FlyMove/PM_AirMove/PM_Accelerate
+  rows now cite the two-course truth run; header notes terrain covered
+  and that water remains uncovered (PM_WaterMove stays PENDING).
+
 ### 2026-07-04 (bucket 1 continuation)
 - qw-client console.c/keys.c (Con_Toggle/MessageMode/Clear/Draw*, Key_Console/Key_Message): UNIMPLEMENTED → PENDING. The QW boot now drives the shared consolelib (tilde toggle, history editor, scrollback, cl.prints into the console), a Cmd_ExecuteString subset (say/say_team, quit/disconnect note, fov via calcFovY, clear, toggleconsole) with Cmd_ForwardToServer fallback to clc_stringcmd, and T-messagemode chat ("say:" confont line, Enter → say "…"); input disabled while typing.
 - qw-client cl_cam.c (Cam_Lock/Cam_Unlock/Cam_CheckHighTarget/Cam_Track/Cam_FinishMove/Cam_DrawPlayer/Cam_DrawViewModel): UNIMPLEMENTED → PENDING; Cam_Reset/CL_InitCam → SUBSTITUTED (cvars fixed on). Spectator autocam in qwclient.luau: highest-frags ptrack, chase-locked camera at the target's predicted origin + viewheight with their viewangles, jump-button cycling, clc_tmove ride-along, tracked model skipped. Flyby search (InitFlyby family) stays UNIMPLEMENTED. Live spectator screenshot still needed for VERIFIED.
