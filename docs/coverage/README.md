@@ -96,3 +96,12 @@ it enters here in the same commit.
 - VERIFIED both engines: live projection measurements (muzzle 83% vs sbar
   top 86%, C-projected 84%) + NQ screenshot with the muzzle visible above
   the HUD. SCR_CalcRefdef rows (both) and qw V_CalcRefdef updated.
+
+### 2026-07-04 (visual pass, continued)
+- qw-client console draw (Con_DrawConsole family): VERIFIED by screenshot —
+  conback, notify area, and prompt render on toggle in Play. Console text
+  ENTRY stays PENDING: key injection loses focus to Roblox CoreGui, so it
+  needs a human-typed verification (or the RQDBG_Console hook).
+- Still PENDING visuals: QW ping scoreboard (TAB cannot be injected —
+  CoreGui-bound key; needs a human TAB or a debug toggle), pain flash,
+  explosion sprite/particles in motion, NQ wall-texture animation cycling.
