@@ -115,3 +115,19 @@ it enters here in the same commit.
   screenshot pair against the user's reference layout; the remaining
   platform delta stays the projection-center offset (world crop shifts
   by sb/2 vs C), documented on the SCR_CalcRefdef rows.
+
+### 2026-07-04 (view-weapon projection, root-caused against WebQuake source)
+- The reference (netquake.io) draws the view model through its OWN
+  projection: WebQuake R.js R_DrawViewModel uses depthRange(0,0.3) and a
+  vertical fov of fov*0.82 independent of window aspect (GLQuake
+  heritage) — while gun PLACEMENT (V.js CalcRefdef) is byte-identical to
+  WinQuake/ours. Emulated in entrender.updateAlias by squashing the view
+  model's transverse vertex components by tan(fovCam/2)/tan(fovGun/2)
+  (=0.632 at 16:9, =1.0 at 4:3 — the 0.82 factor is exactly the 4:3
+  restoration). Verified applied: gun mesh vertex extents measure 0.632x
+  on both transverse axes in Play. Replaces the vrect gun rotation.
+- Remaining look difference vs netquake.io is HUD pixel scale only:
+  they draw the bar at ~3%% of a large window; our SCALE=2 at a small
+  Studio window is 14%% (equal to the Quakespasm scr_sbarscale=3 @1080p
+  convention). scr_sbarscale-style adaptivity journaled as a HUD
+  iteration item — presentation knob, no C truth at modern resolutions.

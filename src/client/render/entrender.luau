@@ -252,8 +252,13 @@ function entrender.updateAlias(
 	local vids = re.vids :: { number }
 	local backVids = re.backVids :: { number }
 
-	if frame ~= re.lastFrame or am.frames[frame + 1] and am.frames[frame + 1].group then
+	-- view models render through their own projection in GL-family
+	-- Quake (fov*0.82 vertical, WebQuake R.js/GLQuake): emulated by
+	-- squashing transverse components by tan(fovCam/2)/tan(fovGun/2)
+	local squash = (re :: any).vmSquash or 1
+	if frame ~= re.lastFrame or (re :: any).lastSquash ~= squash or am.frames[frame + 1] and am.frames[frame + 1].group then
 		re.lastFrame = frame
+		;(re :: any).lastSquash = squash
 		local f = aliasFrame(am, frame, syncbase, time)
 		local verts = f.verts
 		local scale = am.scale
@@ -265,7 +270,7 @@ function entrender.updateAlias(
 			local x = buffer.readu8(verts, o) * scale.x + sorigin.x
 			local y = buffer.readu8(verts, o + 1) * scale.y + sorigin.y
 			local z = buffer.readu8(verts, o + 2) * scale.z + sorigin.z
-			local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE) - centerVec
+			local rp = Vector3.new(x * SCALE, z * SCALE * squash, -y * SCALE * squash) - centerVec
 			em:SetPosition(vids[i], rp)
 			em:SetPosition(backVids[i], rp)
 		end

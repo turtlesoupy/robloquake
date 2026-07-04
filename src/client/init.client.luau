@@ -1537,11 +1537,12 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local ge = gunEnt
 		if ge then
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
-			-- vrect: rotate the view model up by the projection-center
-			-- offset so the sbar doesn't cover it (see qcoords.vrect);
-			-- gunangles.x is pre-negated, so up = add
-			local vrectAngles = vector.create(refdef.gunangles.x + gunVrectPitch, refdef.gunangles.y, refdef.gunangles.z)
-			entrender.updateAlias(ge, def, refdef.gunorg, vrectAngles, refdef.gunframe, 0, 0, c.time)
+			-- GL-family gun projection (WebQuake R.js: fov*0.82 vertical,
+			-- own matrix) emulated via transverse squash
+			local fovGun = math.rad(currentFov * 0.82) / 2
+			local fovCam = math.rad(camera.FieldOfView) / 2
+			;(ge :: any).vmSquash = math.tan(fovCam) / math.tan(fovGun)
+			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
 			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)
 			for _, dl in dlights do
