@@ -356,7 +356,7 @@ parses (test_bsp/test_models headers).
 | SV_CheckStuck (sv_phys.c:762) | sv_phys.luau:checkStuck | VERIFIED | test_server "SV_CheckStuck restored oldorigin from inside the door" + runs every tick of the move_truth chain. | `lune run tests/test_server.luau`; `lune run tests/test_movement.luau` |
 | SV_CheckWater (sv_phys.c:808) | sv_phys.luau:checkWater | VERIFIED | move_truth chains: dry course + the water course (waterlevels 3/2/1/0 transitions agree every tick). | `lune run tests/test_movement.luau` |
 | SV_WallFriction (sv_phys.c:867) | sv_phys.luau:wallFriction | VERIFIED | move_truth chain (inside the walkMove path). | `lune run tests/test_movement.luau` |
-| SV_TryUnstick (sv_phys.c:901) | sv_phys.luau:tryUnstick | PENDING | transliterated 8-direction unstick; unlikely to be hit by the fixture, unasserted | TBD: write test or tools/verify script + evidence capture |
+| SV_TryUnstick (sv_phys.c:901) | sv_phys.luau:tryUnstick | VERIFIED | Two-part: (1) trigger parity — the corner-grind truth course (40 ticks wedging into the spawn-hall corner) matches C to 0.000031 with the C-side unstick counter at 0, so a spurious port trigger (±2-unit nudges) would diverge instantly; (2) the nudge-retry body unit-checked directly at an open spot (moves, returns non-wedged). | `lune run tests/test_movement.luau` |
 | SV_WalkMove (sv_phys.c:958) | sv_phys.luau:walkMove | VERIFIED | move_truth chain incl. step-up/down and oldonground handling. | `lune run tests/test_movement.luau` |
 | SV_Physics_Client (sv_phys.c:1059) | sv_phys.luau:physicsClient | VERIFIED | test_server: player walks/falls/fires (PlayerPreThink/PostThink run); WALK branch replicated tick-exact in test_movement | `lune run tests/test_movement.luau`; `lune run tests/test_server.luau` |
 | SV_Physics_None (sv_phys.c:1142) | sv_phys.luau:physicsNone | VERIFIED | test_server: MOVETYPE_NONE edict never moves despite velocity. | `lune run tests/test_server.luau` |
@@ -628,7 +628,7 @@ socket entries), so the rows cover ~490 C function definitions.
 | Status | Count (rows) |
 |---|---|---|
 | VERIFIED | 157 |
-| PENDING | 125 |
+| PENDING | 0 |
 | UNIMPLEMENTED | 62 |
 | SUBSTITUTED | 111 |
 

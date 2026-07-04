@@ -89,7 +89,7 @@ for line in fixture:gmatch("[^\n]+") do
 	end
 	table.insert(truth, vals)
 end
-t.eq(#truth, 380, "fixture ticks (300 dry + 80 water)")
+t.eq(#truth, 420, "fixture ticks (300 dry + 80 water + 40 corner)")
 
 local maxPosErr, maxVelErr = 0, 0
 local firstBigTick = -1
@@ -219,4 +219,59 @@ t.check(wMaxPos < 0.01, "water-course position matches the verbatim C within 0.0
 t.check(wMaxVel < 0.05, "water-course velocity matches within 0.05")
 t.eq(wMismatch, 0, "waterlevel agrees every tick")
 t.check(seenLevels[3] == true and seenLevels[0] == true, "the course crosses waterlevels 3 down to 0 (the waterjump exits the pool)")
+--------------------------------------------------------------------------
+-- course 3: 40 ticks grinding diagonally into the spawn-hall corner.
+-- SV_TryUnstick's TRIGGER parity is the point: the C counter (column 9)
+-- stays 0 for the whole course, and the port's positions match every
+-- tick — if the port triggered the ±2-unit nudges spuriously, positions
+-- would diverge immediately. The nudge-retry body itself is unit-checked
+-- below at an open spot.
+for _, fld in { ent.velocity, ent.punchangle, ent.v_angle } do
+	vmlib.edSetVector(player, fld, vector.zero)
+end
+vmlib.edSetVector(player, ent.origin, vector.create(480, -352, 88))
+vmlib.edSetVector(player, ent.oldorigin, vector.create(480, -352, 88))
+vmlib.edSetFloat(player, ent.flags, 0)
+vmlib.edSetFloat(player, ent.waterlevel, 0)
+vmlib.edSetFloat(player, ent.watertype, 0)
+world.linkEdict(svr.world, player, false)
+svr.time = 1.0
+vm.time = 1.0
+local cMaxPos = 0
+local cCount = -1
+for i = 0, 39 do
+	client.cmd.forwardmove = 400
+	client.cmd.sidemove = 350
+	client.cmd.upmove = 0
+	vmlib.edSetVector(player, ent.v_angle, vector.create(0, 45, 0))
+	sv_user.clientThink(svr, client)
+	sv_phys.checkVelocity(svr, player)
+	if not sv_phys.checkWater(svr, player) and bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_WATERJUMP) == 0 then
+		sv_phys.addGravity(svr, player)
+	end
+	sv_phys.checkStuck(svr, player)
+	sv_phys.walkMove(svr, player)
+	world.linkEdict(svr.world, player, false)
+	svr.time += svr.frametime
+	vm.time = svr.time
+	local row = truth[380 + i + 1]
+	local org = vmlib.edVector(player, ent.origin)
+	cMaxPos = math.max(cMaxPos, math.max(math.abs(org.x - row[2]), math.abs(org.y - row[3]), math.abs(org.z - row[4])))
+	cCount = row[9]
+end
+print(("course 3 (corner grind): max position error %.6f, C unstick count %d"):format(cMaxPos, cCount))
+t.check(cMaxPos < 0.01, "corner-grind positions match the verbatim C (trigger parity: neither side unsticks)")
+t.eq(cCount, 0, "the C course never triggered TryUnstick (the trigger needs zero step progress)")
+
+-- SV_TryUnstick body: direct unit check at an open spot — the nudge +
+-- retry moves the player and does not return the wedged code (7)
+vmlib.edSetVector(player, ent.origin, vector.create(480, -300, 80))
+vmlib.edSetVector(player, ent.oldorigin, vector.create(480, -300, 80))
+vmlib.edSetVector(player, ent.velocity, vector.zero)
+world.linkEdict(svr.world, player, false)
+local before = vmlib.edVector(player, ent.origin)
+local clip = sv_phys.tryUnstick(svr, player, vector.create(200, 0, 0))
+local after = vmlib.edVector(player, ent.origin)
+t.check(clip ~= 7 and vector.magnitude(after - before) > 1, `tryUnstick nudged and re-moved at an open spot (clip {clip})`)
+
 t.finish("test_movement")

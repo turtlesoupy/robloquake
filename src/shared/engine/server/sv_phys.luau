@@ -894,4 +894,7 @@ function sv_phys.physics(svr: svlib.Server)
 	vm.time = svr.time
 end
 
+-- exported for tests (SV_TryUnstick unit coverage)
+sv_phys.tryUnstick = tryUnstick
+
 return sv_phys

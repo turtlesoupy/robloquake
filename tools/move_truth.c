@@ -559,6 +559,7 @@ void SV_WallFriction(edict_t *ent, trace_t *trace)
     ent->v.velocity[1] = side[1] * (1 + d);
 }
 
+static int unstick_count = 0;
 int SV_TryUnstick(edict_t *ent, vec3_t oldvel)
 {
     int i;
@@ -652,6 +653,7 @@ void SV_WalkMove(edict_t *ent)
 
     if (clip) {
         if (fabs(oldorg[1] - ent->v.origin[1]) < 0.03125 && fabs(oldorg[0] - ent->v.origin[0]) < 0.03125) {
+            unstick_count++;
             clip = SV_TryUnstick(ent, oldvel);
         }
     }
@@ -1141,6 +1143,44 @@ int main(void)
                 player.v.velocity[0], player.v.velocity[1], player.v.velocity[2],
                 (int)player.v.waterlevel);
         }
+    }
+
+    /* course 3 (ticks 380-419): diagonal run into the spawn-hall corner
+       to jam SV_FlyMove on two planes (clip==7) so SV_WalkMove's
+       SV_TryUnstick path runs. Column 9 = cumulative unstick count.
+       Mirrored in tests/test_movement.luau course 3. */
+    memset(&player, 0, sizeof(player));
+    player.v.origin[0] = 480; player.v.origin[1] = -352; player.v.origin[2] = 88;
+    VectorCopy(player.v.origin, player.v.oldorigin);
+    player.v.mins[0] = -16; player.v.mins[1] = -16; player.v.mins[2] = -24;
+    player.v.maxs[0] = 16; player.v.maxs[1] = 16; player.v.maxs[2] = 32;
+    player.v.view_ofs[2] = 22;
+    player.v.movetype = MOVETYPE_WALK;
+    player.v.solid = SOLID_BSP;
+    player.v.health = 100;
+    host_frametime = 0.05;
+    sv_time = 1.0;
+    unstick_count = 0;
+
+    for (tick = 0; tick < 40; tick++) {
+        cmd.forwardmove = 400;
+        cmd.sidemove = 350;
+        cmd.upmove = 0;
+        player.v.v_angle[YAW] = 45; /* into the NE corner of the hall */
+        player.v.v_angle[PITCH] = 0;
+
+        SV_ClientThink();
+        SV_CheckVelocity(&player);
+        if (!SV_CheckWater(&player) && !((int)player.v.flags & FL_WATERJUMP))
+            SV_AddGravity(&player);
+        SV_CheckStuck(&player);
+        SV_WalkMove(&player);
+        sv_time += host_frametime;
+
+        printf("%d %.9g %.9g %.9g %.9g %.9g %.9g %d %d\n", 380 + tick,
+            player.v.origin[0], player.v.origin[1], player.v.origin[2],
+            player.v.velocity[0], player.v.velocity[1], player.v.velocity[2],
+            (int)player.v.waterlevel, unstick_count);
     }
     return 0;
 }
