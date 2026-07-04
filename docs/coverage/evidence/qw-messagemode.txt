@@ -1,0 +1,12 @@
+Evidence: qw-messagemode.jpg — Con_MessageMode "say:" line (QW boot)
+Engine: QuakeWorld boot, game id1 (local dev only); map dm3
+Captured: 2026-07-04, Studio Play (solo), console "messagemode" via the
+  RQDBG_Console harness; recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the messagemode chat line renders at the C position
+(top-left confont row, "say:" prompt) and gameplay input is disabled
+while it is up (Key_Message routing). Caveat: Roblox's own top-left
+chrome partially overlaps the line at this window size — the "sa..:"
+glyphs are visible behind the menu chip. While open, an attempted
+forced attack did NOT fire (input correctly routed to the chat line),
+observed in the same session.

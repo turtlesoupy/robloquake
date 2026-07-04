@@ -1,0 +1,13 @@
+Evidence: qw-rocket-splash.jpg — QW rocket fire + self splash damage
+Engine: QuakeWorld boot, game id1 (local dev only); map dm3
+Staging: RL picked up by walking over its spawn (1520,496,-112);
+  impulse 7; one rocket fired at the floor (pitch 35); paused shortly
+  after (the 0.5s explosion flash had already faded — the pause-freeze
+  window for QW effects needs ~0.25s; journaled for the sprite row)
+Captured: 2026-07-04, Studio Play (solo); recovered from the transcript
+Code state: the commit introducing this file
+What it proves: the full QW rocket round trip — pickup by touch
+(backpack/weapon logic), impulse selection, clc_move attack firing,
+rockets 5 -> 4 on the sbar, T_RadiusDamage splash returning through the
+wire (health 100 -> 44), and the sbar pain face responding to
+svc_damage (Sbar_DrawFace pain state).
