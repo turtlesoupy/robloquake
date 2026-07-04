@@ -1129,12 +1129,9 @@ return function()
 		elseif action == "isopen" then
 			return tostring(con.open)
 		elseif action == "exec" then
-			for piece in (arg :: string):gmatch("[^;]+") do
-				local trimmed = piece:match("^%s*(.-)%s*$")
-				if trimmed ~= "" then
-					execCommand(trimmed)
-				end
-			end
+			-- raw line through execCommand (no pre-splitting; the QW
+			-- subset has no Cbuf, but quoted args must survive intact)
+			execCommand(arg :: string)
 			return "ok"
 		elseif action == "key" then
 			consoleKey((Enum.KeyCode :: any)[arg])

@@ -440,6 +440,34 @@ for _ = 1, 80 do
 end
 t.check(impacted, "spike hit a wall and spike_touch removed it (SV_Impact)")
 
+-- SV_SendNop: a connected-but-unspawned client idle >5s gets a
+-- keepalive svc_nop on its channel
+local nopGot: buffer? = nil
+local c2 = svr.clients[2]
+c2.sendUnreliable = function(d: buffer)
+	nopGot = d
+	return true
+end
+c2.sendReliable = function()
+	return true
+end
+host.connectClient(svr, 2)
+host.frame(svr, 0.05) -- signon burst goes out (sendsignon clears)
+nopGot = nil
+c2.last_message = svr.realtime - 6
+host.frame(svr, 0.05)
+t.check(nopGot ~= nil and buffer.len(nopGot :: buffer) == 1 and buffer.readi8(nopGot :: buffer, 0) == proto.svc_nop, "idle pre-spawn client received a 1-byte svc_nop keepalive")
+svlib.dropClient(svr, c2, false)
+
+-- RadiusFromBounds: model radius = |per-axis max(|mins|,|maxs|)| as C
+local wmodel = svr.worldmodel
+local corner = vector.create(
+	math.max(math.abs(wmodel.mins.x), math.abs(wmodel.maxs.x)),
+	math.max(math.abs(wmodel.mins.y), math.abs(wmodel.maxs.y)),
+	math.max(math.abs(wmodel.mins.z), math.abs(wmodel.maxs.z))
+)
+t.check(math.abs(wmodel.radius - vector.magnitude(corner)) < 0.01, "RadiusFromBounds matches the C corner formula")
+
 svlib.dropClient(svr, client, false)
 t.check(not client.active, "SV_DropClient deactivated the client")
 

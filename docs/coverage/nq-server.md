@@ -220,7 +220,7 @@ parses (test_bsp/test_models headers).
 | Mod_LoadMarksurfaces (model.c:1035) | bsp.luau:loadMarksurfaces | VERIFIED | test_bsp geometry battery (leaf marksurface indices resolve into loaded faces). | `lune run tests/test_bsp.luau` |
 | Mod_LoadSurfedges (model.c:1064) | bsp.luau:loadSurfedges | VERIFIED | test_bsp geometry battery (5618 checks; face extents math depends on surfedges). | `lune run tests/test_bsp.luau` |
 | Mod_LoadPlanes (model.c:1087) | bsp.luau:loadPlanes | VERIFIED | test_bsp: plane100 normal/dist/type/signbits exact | `lune run tests/test_bsp.luau` |
-| RadiusFromBounds (model.c:1125) | bsp.luau:radiusFromBounds | PENDING | no assertion on radius | TBD: write test or tools/verify script + evidence capture |
+| RadiusFromBounds (model.c:1125) | bsp.luau:radiusFromBounds | VERIFIED | test_server: the world model radius equals the C corner formula (per-axis max(|mins|,|maxs|) magnitude). | `lune run tests/test_server.luau` |
 | Mod_LoadBrushModel (model.c:1143) | bsp.luau:load | VERIFIED | test_bsp: 58 models, world mins/maxs (incl. the ±1 spread quirk), every map in pak0 loads | `lune run tests/test_bsp.luau` |
 | Mod_LoadAliasFrame (model.c:1235) | models/mdl.luau:loadFrame | VERIFIED | test_models: frame names, bboxmin/max, vert unpack vs scale/scale_origin | `lune run tests/test_models.luau` |
 | Mod_LoadAliasGroup (model.c:1283) | mdl.luau:load (group branch) | VERIFIED | test_models: all 61 pak0 mdls load (includes grouped flame*.mdl); frames[i].frames[] structure | `lune run tests/test_models.luau` |
@@ -318,7 +318,7 @@ parses (test_bsp/test_models headers).
 | SV_WriteClientdataToMessage (sv_main.c:576) | sv.luau:writeClientdataToMessage | VERIFIED | loopback: health 100, shells 25, items IT_SHOTGUN, onground, velocity, damage message path in E2E | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_SendClientDatagram (sv_main.c:720) | sv.luau:sendClientDatagram | VERIFIED | test_server: >50 unreliable datagrams, svc_time header + plausible time | `lune run tests/test_server.luau` |
 | SV_UpdateToReliableMessages (sv_main.c:756) | sv.luau:updateToReliableMessages | VERIFIED | test_multiplayer: suicide frag -2 propagates to both clients | `lune run tests/test_multiplayer.luau` |
-| SV_SendNop (sv_main.c:798) | sv.luau:sendClientMessages (nop branch) | PENDING | 5s keepalive; no test waits that long | TBD: write test or tools/verify script + evidence capture |
+| SV_SendNop (sv_main.c:798) | sv.luau:sendClientMessages (nop branch) | VERIFIED | test_server: a connected-but-unspawned client idle for >5s receives the 1-byte svc_nop keepalive (last_message gate as C). | `lune run tests/test_server.luau` |
 | SV_SendClientMessages (sv_main.c:819) | sv.luau:sendClientMessages | VERIFIED | signon gating + reliable/unreliable split proven by loopback signon; overflow-drop branch unasserted | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_ModelIndex (sv_main.c:904) | sv.luau:modelIndex | VERIFIED | test_server: player.mdl index > 0; errors on missing precache | `lune run tests/test_server.luau` |
 | SV_CreateBaseline (sv_main.c:925) | sv.luau:createBaseline | VERIFIED | test_server: signon > 1000 bytes; loopback: entities render from baselines | `lune run tests/test_server.luau` |

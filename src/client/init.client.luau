@@ -1096,13 +1096,11 @@ dbgConsole.OnInvoke = function(action: string, arg: string?)
 	elseif action == "isopen" then
 		return tostring(con.open)
 	elseif action == "exec" then
-		-- run command(s) directly, independent of console open state
-		for piece in (arg :: string):gmatch("[^;]+") do
-			local trimmed = piece:match("^%s*(.-)%s*$")
-			if trimmed ~= "" then
-				con.onCommand(trimmed)
-			end
-		end
+		-- run a raw line through the real Cbuf path (con.onCommand =
+		-- execLine): quote-aware ';' splitting and wait deferral behave
+		-- exactly as typed input (the old harness pre-split on ';',
+		-- breaking quoted alias bodies and Cmd_Wait_f)
+		con.onCommand(arg :: string)
 		return "ok"
 	elseif action == "key" then
 		consoleKey((Enum.KeyCode :: any)[arg])
