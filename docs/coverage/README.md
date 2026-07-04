@@ -52,6 +52,19 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (qwworld re-earned at C truth)
+- New tests/test_qwtrace.luau: the compiled-C trace fixture
+  (tools/trace_truth.c) now replays through the QW world module itself
+  — 200 point-contents x 3 hulls and every trace segment match the C —
+  plus a live areanode battery on a booted qwprogs e1m1 (door hit
+  attribution, unlink/relink bit-equal fraction, hull selection by
+  size, SOLID_SLIDEBOX player box with a shooter passedict,
+  testEntityPosition free/solid). 14 qw-server world.c rows re-earned
+  from DEMOTED/PENDING: InitBoxHull, HullForEntity, CreateAreaNode,
+  ClearWorld, UnlinkEdict, LinkEdict, HullPointContents, PointContents,
+  RecursiveHullCheck, ClipMoveToEntity, ClipToLinks, MoveBounds, Move,
+  TestEntityPosition. Documented the authentic owner==0 passedict quirk.
+
 ### 2026-07-04 (scenario S2)
 - NQ campaign loop verified offline end to end (test_scenario_nq, 30
   checks): real walked-over pickup, real monster damage with the pain
