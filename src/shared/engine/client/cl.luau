@@ -114,6 +114,7 @@ export type Client = {
 	onServerInfo: (c: Client) -> (),
 	onDisconnect: (c: Client) -> (),
 	onSound: (c: Client, entnum: number, channel: number, sample: string, pos: vector, vol: number, atten: number) -> (),
+	onStopSound: (c: Client, entnum: number, channel: number) -> (),
 	onStaticSound: (c: Client, pos: vector, sample: string, vol: number, atten: number) -> (),
 	onParticle: (c: Client, org: vector, dir: vector, color: number, count: number) -> (),
 	onTempEntity: (c: Client, te: TempEntityEvent) -> (),
@@ -221,6 +222,7 @@ function cl.new(playerName: string, color: number): Client
 		onServerInfo = nop :: any,
 		onDisconnect = nop :: any,
 		onSound = nop :: any,
+		onStopSound = nop :: any,
 		onStaticSound = nop :: any,
 		onParticle = nop :: any,
 		onTempEntity = nop :: any,
@@ -609,7 +611,9 @@ function cl.parseServerMessage(c: Client, data: buffer)
 		elseif cmd == proto.svc_sound then
 			parseStartSound(c, r)
 		elseif cmd == proto.svc_stopsound then
-			msg.readShort(r) -- entity/channel; sound layer may use later
+			-- S_StopSound (i>>3 = entity, i&7 = channel)
+			local i = msg.readShort(r)
+			c.onStopSound(c, bit32.rshift(i, 3), bit32.band(i, 7))
 		elseif cmd == proto.svc_updatename then
 			local i = msg.readByte(r)
 			c.scores[i + 1].name = msg.readString(r)

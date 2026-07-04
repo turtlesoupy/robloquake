@@ -794,6 +794,9 @@ end
 c.onSound = function(_c, entnum, channel, sample, pos, vol, atten)
 	soundlib.start(snd, entnum, channel, sample, pos, vol, atten)
 end
+c.onStopSound = function(_c, entnum, channel)
+	soundlib.stop(snd, entnum, channel)
+end
 c.onStaticSound = function(_c, pos, sample, vol, atten)
 	soundlib.static(snd, pos, sample, vol, atten)
 end

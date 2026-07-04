@@ -562,6 +562,7 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 			execStufftext(cl)
 		elseif cmd == qwp.svc_damage then
 			cl.damage = { save = msg.readByte(r), take = msg.readByte(r), from = vector.create(msg.readCoord(r), msg.readCoord(r), msg.readCoord(r)) }
+			cl.damageCount = (cl.damageCount or 0) + 1
 		elseif cmd == qwp.svc_serverdata then
 			parseServerData(cl, r)
 		elseif cmd == qwp.svc_setangle then

@@ -27,6 +27,7 @@ local lightpoint = require(script.Parent.render.lightpoint)
 local particleslib = require(script.Parent.render.particles)
 local textures = require(script.Parent.render.textures)
 local worldmesh = require(script.Parent.render.worldmesh)
+local hudlib = require(script.Parent.hud)
 local input = require(script.Parent.input)
 local soundlib = require(script.Parent.sound)
 
@@ -76,6 +77,74 @@ return function()
 
 	local sndsys = soundlib.new(Workspace)
 	local psys = particleslib.new(pal, Workspace)
+
+	-- Sbar: the QW status bar reuses the NQ sbar.c port (hudlib) — the
+	-- main bar is identical in both sbar.c files; hudlib reads an NQ
+	-- cllib.Client shape, so a thin adapter view of qwcl state feeds it.
+	-- (QW's ping-column deathmatch overlay is a journaled refinement.)
+	local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
+	hudlib.setLoading(hud, true)
+	local hudC: any = {
+		stats = cl.stats,
+		items = 0,
+		item_gettime = {},
+		faceanimtime = 0,
+		time = 0,
+		intermission = 0,
+		completed_time = 0,
+		gametype = 1, -- QW is deathmatch-only
+		scores = {},
+		viewentity = 1,
+		levelname = "",
+		paused = false,
+	}
+	local lastDamageCount = 0
+
+	local function updateHudAdapter()
+		hudC.time = cl.time
+		hudC.intermission = cl.intermission
+		hudC.completed_time = cl.completed_time or cl.time
+		hudC.viewentity = cl.playernum + 1
+		hudC.levelname = cl.levelname
+		hudC.paused = cl.paused
+
+		-- CL_SetStat: item pickup flash timestamps on rising bits
+		local newItems = cl.stats[qwp.STAT_ITEMS] or 0
+		if newItems ~= hudC.items then
+			for bitn = 0, 31 do
+				local mask = if bitn < 31 then bit32.lshift(1, bitn) else 0x80000000
+				if bit32.band(newItems, mask) ~= 0 and bit32.band(hudC.items, mask) == 0 then
+					hudC.item_gettime[bitn] = cl.time
+				end
+			end
+			hudC.items = newItems
+		end
+
+		-- V_ParseDamage: pain face for 0.2s after a damage message
+		if (cl.damageCount or 0) ~= lastDamageCount then
+			lastDamageCount = cl.damageCount or 0
+			hudC.faceanimtime = cl.time + 0.2
+		end
+
+		-- Sbar_SortFrags source: scoreboard slots from player infos
+		for i = 0, qwp.MAX_CLIENTS - 1 do
+			local info = cl.players[i]
+			local slot = hudC.scores[i + 1]
+			if not slot then
+				slot = { name = "", frags = 0, colors = 0 }
+				hudC.scores[i + 1] = slot
+			end
+			if info then
+				slot.name = info.name
+				slot.frags = info.frags
+				local top = tonumber(info.userinfo.topcolor) or 0
+				local bottom = tonumber(info.userinfo.bottomcolor) or 0
+				slot.colors = top * 16 + bottom
+			else
+				slot.name = ""
+			end
+		end
+	end
 
 	-- CL_AllocDlight pool
 	local dlights: { lightatlaslib.Dlight } = {}
@@ -577,9 +646,18 @@ return function()
 		[Enum.KeyCode.LeftControl] = "attack",
 		[Enum.KeyCode.LeftShift] = "speed",
 	}
+	local showScoresDown = false
 	local function onKey(io: InputObject, down: boolean)
 		if io.UserInputType == Enum.UserInputType.MouseButton1 then
 			input.setButton("attack", down)
+			return
+		end
+		if io.KeyCode == Enum.KeyCode.Tab then
+			-- +showscores (Roblox also opens its playerlist; documented)
+			if down ~= showScoresDown then
+				showScoresDown = down
+				hudlib.setShowScores(hud, down)
+			end
 			return
 		end
 		local name = keyButtons[io.KeyCode]
@@ -837,16 +915,24 @@ return function()
 		while #cl.centerprints > 0 do
 			local cp = table.remove(cl.centerprints, 1)
 			if cp then
-				print("[qw center] " .. cp:gsub("\n", " "))
+				hudlib.centerPrint(hud, cp, cl.time)
 			end
 		end
 
-		-- chat/print lines to the output for now (QW console follow-up)
+		-- notify lines onto the hud (QW console overlay is follow-up)
 		while #cl.prints > 0 do
 			local p = table.remove(cl.prints, 1)
 			if p then
+				hudlib.print(hud, p.text, cl.time)
 				print("[qw] " .. p.text:gsub("\n$", ""))
 			end
 		end
+
+		-- Sbar_Draw
+		hudlib.setLoading(hud, false)
+		hudlib.setPaused(hud, cl.paused == true)
+		updateHudAdapter()
+		hudlib.updateOverlays(hud, hudC)
+		hudlib.update(hud, hudC)
 	end)
 end
