@@ -16,6 +16,16 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Fixed during the audit
 
+- **Save/load** (`Host_Savegame_f`/`Host_Loadgame_f`): exact .sav text
+  format (version 5, comment with kills, 16 spawn parms, skill, map,
+  time, 64 lightstyles, ED_WriteGlobals, ED_Write per edict with
+  PR_UglyValueString round-tripping function/field/entity values).
+  Deferred load respawns the server and reconnects clients; loadgame
+  pauses until begin. Saves live in memory + ServerStorage.QuakeSaves
+  (place-file persistence; DataStore later for published permanence).
+  The default.cfg F6/F9 quicksave/quickload binds work end to end.
+  Offline round-trip test: tests/test_savegame.luau (13 checks).
+
 - **keys.c / cmd.c**: full bind system — Key_Event with quake key names
   (letters, arrows, modifiers, F-keys, mouse1-3), keyups fire the
   -command, bind/unbind/unbindall/alias/echo/exec/wait, Cbuf semantics
@@ -78,8 +88,12 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.
-8. **Demo playback/recording** (`cl_demo.c`).
-9. **Save/load** (`host_cmd.c` savegames).
+8. **Demo playback/recording** (`cl_demo.c`). Design: record = inbound
+   message buffers + view angles per block in the exact .dem format;
+   playback = feed pak demos (demo1.dem etc) through the parse pipeline
+   with mtime pacing in a no-transmit demoplayback mode; needs a small
+   client->server file request ("rq_need") so demo maps' assets publish
+   on demand.
 
 ## Platform substitutions (cannot be direct ports)
 

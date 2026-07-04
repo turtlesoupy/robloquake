@@ -7,6 +7,7 @@
 -- connections and clc payloads.
 
 local cvarlib = require("../common/cvar")
+local savegamelib = require("./savegame")
 local msg = require("../common/msg")
 local vfslib = require("../common/vfs")
 local modelslib = require("../models/models")
@@ -363,6 +364,11 @@ local function hostColor(svr: svlib.Server, client: svlib.Client, args: string)
 	msg.writeByte(svr.reliable_datagram, playercolor)
 end
 
+local function clientPrint(client: svlib.Client, text: string)
+	msg.writeByte(client.message, proto.svc_print)
+	msg.writeString(client.message, text .. "\n")
+end
+
 local function toggleFlag(svr: svlib.Server, client: svlib.Client, flag: number, onMsg: string, offMsg: string)
 	local flags = vmlib.edFloat(client.edict, ent.flags)
 	flags = bit32.bxor(flags, flag)
@@ -386,6 +392,10 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 	elseif cmd == "spawn" then
 		hostSpawn(svr, client)
 	elseif cmd == "begin" then
+		if (svr :: any).loadgame then
+			(svr :: any).loadgame = false
+			svr.paused = false
+		end
 		hostBegin(client)
 	elseif cmd == "name" then
 		hostName(svr, client, args :: string)
@@ -455,6 +465,30 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 			elseif c0 == "h" then
 				vmlib.edSetFloat(edict, ent.health, n)
 			end
+		end
+	elseif cmd == "save" then
+		-- Host_Savegame_f (storage is the platform layer's concern)
+		local name = (args :: string):match("[%w_%-]+")
+		if not name then
+			clientPrint(client, "save <savename> : save a game")
+		elseif svr.intermission ~= nil and (svr :: any).intermission ~= 0 then
+			clientPrint(client, "Can't save in intermission.")
+		else
+			local sg = (svr :: any)
+			sg.savegames = sg.savegames or {}
+			sg.savegames[name] = savegamelib.write(svr)
+			sg.savegameDirty = name
+			clientPrint(client, `Saving game to {name}.sav...`)
+		end
+	elseif cmd == "load" then
+		local name = (args :: string):match("[%w_%-]+")
+		local sg = (svr :: any)
+		if not name then
+			clientPrint(client, "load <savename> : load a game")
+		elseif not (sg.savegames and sg.savegames[name]) then
+			clientPrint(client, `ERROR: couldn't load {name}.sav`)
+		else
+			sg.loadgameRequest = name -- deferred: can't respawn mid-message
 		end
 	elseif cmd == "status" or cmd == "ping" then
 		-- informational; not needed for gameplay

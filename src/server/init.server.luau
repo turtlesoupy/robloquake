@@ -179,6 +179,20 @@ end
 publishClientAssets()
 print(`[robloquake] client bundle: {publishCount} files published`)
 
+-- saved games persist in the place file (ServerStorage.QuakeSaves)
+do
+	local folder = ServerStorage:FindFirstChild("QuakeSaves")
+	if folder then
+		local sg = (svr :: any)
+		sg.savegames = sg.savegames or {}
+		for _, sv in folder:GetChildren() do
+			if sv:IsA("StringValue") then
+				sg.savegames[sv.Name] = sv.Value
+			end
+		end
+	end
+end
+
 -- player <-> client slot bridging
 local slotByPlayer: { [Player]: number } = {}
 
@@ -411,6 +425,43 @@ RunService.Heartbeat:Connect(function(dt: number)
 				end
 			end
 		end
+	end
+
+	-- deferred loadgame (host clientCommand "load")
+	local sg = (svr :: any)
+	local loadReq = sg.loadgameRequest
+	if loadReq then
+		sg.loadgameRequest = nil
+		local text = sg.savegames and sg.savegames[loadReq]
+		if text then
+			print(`[robloquake] loading {loadReq}.sav`)
+			local savegamelib = require(engine.server.savegame)
+			savegamelib.load(svr, text, function(m: string)
+				host.spawnServer(svr, m)
+			end)
+			publishClientAssets()
+			for _, slot in slotByPlayer do
+				host.connectClient(svr, slot)
+			end
+		end
+	end
+	-- mirror fresh saves into ServerStorage (Studio place persistence)
+	if sg.savegameDirty then
+		local name = sg.savegameDirty
+		sg.savegameDirty = nil
+		local folder = ServerStorage:FindFirstChild("QuakeSaves")
+		if not folder then
+			folder = Instance.new("Folder")
+			folder.Name = "QuakeSaves"
+			folder.Parent = ServerStorage
+		end
+		local sv = folder:FindFirstChild(name)
+		if not sv then
+			sv = Instance.new("StringValue")
+			sv.Name = name
+			sv.Parent = folder
+		end
+		(sv :: StringValue).Value = sg.savegames[name]
 	end
 
 	-- level change requested by QC (trigger_changelevel)

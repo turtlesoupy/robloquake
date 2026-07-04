@@ -548,7 +548,7 @@ execCommand = function(line: string)
 		return -- accepted, fixed on this platform
 	elseif cmd == "sizeup" or cmd == "sizedown" or cmd == "screenshot" then
 		return
-	elseif cmd == "save" or cmd == "load" or cmd == "quit"
+	elseif cmd == "quit"
 		or cmd == "menu_save" or cmd == "menu_load" or cmd == "menu_options"
 		or cmd == "menu_multiplayer" or cmd == "help" then
 		consolelib.print(con, `{cmd}: not implemented yet`)
