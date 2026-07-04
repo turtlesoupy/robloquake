@@ -105,3 +105,13 @@ it enters here in the same commit.
 - Still PENDING visuals: QW ping scoreboard (TAB cannot be injected —
   CoreGui-bound key; needs a human TAB or a debug toggle), pain flash,
   explosion sprite/particles in motion, NQ wall-texture animation cycling.
+
+### 2026-07-04 (viewsize + sbar strip)
+- The status bar is now architecturally "parked below" the view like
+  WinQuake: an opaque full-width strip (world never visible inside it),
+  the inventory row in its own container, and the viewsize cvar
+  (screen.c sb_lines: 100/110/120) driving strip height, HUD rows, and
+  the vrect fov together in both engines. VERIFIED with a vs100/vs110
+  screenshot pair against the user's reference layout; the remaining
+  platform delta stays the projection-center offset (world crop shifts
+  by sb/2 vs C), documented on the SCR_CalcRefdef rows.

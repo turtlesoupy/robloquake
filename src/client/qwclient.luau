@@ -917,10 +917,11 @@ return function()
 	camera.CameraType = Enum.CameraType.Scriptable
 	-- CalcFov over the vrect (window minus sbar), per SCR_CalcRefdef
 	local currentFov = 90
+	local currentViewsize = 100
 	local gunVrectPitch = 0
 	local function applyFov()
 		local vp = camera.ViewportSize
-		local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.SBAR_LINES_PX)
+		local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
 		camera.FieldOfView = fovY
 		gunVrectPitch = gp
 	end
@@ -963,6 +964,14 @@ return function()
 			local v = tonumber(args)
 			if v and v >= 10 and v <= 170 then
 				currentFov = v
+				applyFov()
+			end
+		elseif cmd == "viewsize" then
+			-- screen.c: 100 full HUD, 110 status row only, 120 none
+			local v = tonumber(args)
+			if v then
+				currentViewsize = math.clamp(v, 30, 120)
+				hudlib.setViewsize(hud, currentViewsize)
 				applyFov()
 			end
 		elseif cmd == "clear" then

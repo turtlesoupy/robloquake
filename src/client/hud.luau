@@ -17,8 +17,16 @@ local hud = {}
 
 local SCALE = 2 -- 320-wide virtual canvas scaled up
 
--- sb_lines at viewsize 100 (screen.c): 24+16+8 virtual px of HUD
-hud.SBAR_LINES_PX = 48 * SCALE
+-- screen.c sb_lines: >=120 no bar, >=110 status row only, else full HUD
+function hud.sbarLinesPx(viewsize: number): number
+	if viewsize >= 120 then
+		return 0
+	elseif viewsize >= 110 then
+		return 24 * SCALE
+	end
+	return 48 * SCALE
+end
+hud.SBAR_LINES_PX = hud.sbarLinesPx(100) -- default viewsize
 
 -- item flags (quakedef.h)
 local IT_SHOTGUN = 1
@@ -143,6 +151,16 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	gui.ResetOnSpawn = false
 
 	-- 320x48 canvas (ibar on top of sbar), bottom-centered
+	local strip = Instance.new("Frame")
+	strip.Name = "sbarStrip"
+	strip.BorderSizePixel = 0
+	strip.BackgroundColor3 = Color3.new(0, 0, 0)
+	strip.AnchorPoint = Vector2.new(0, 1)
+	strip.Position = UDim2.new(0, 0, 1, 0)
+	strip.Size = UDim2.new(1, 0, 0, 48 * SCALE)
+	strip.ZIndex = 0
+	strip.Parent = gui
+
 	local canvas = Instance.new("Frame")
 	canvas.Name = "sbarCanvas"
 	canvas.BackgroundTransparency = 1
@@ -153,6 +171,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 
 	local h = {} :: Hud
 	h.gui = gui
+	h.sbarStrip = strip
 	h.canvas = canvas
 	h.pics = {}
 	h.charPics = {}
@@ -170,8 +189,16 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	local ok, conchars = pcall(wadlib.getRaw, w, "conchars")
 	h.conchars = if ok then conchars else nil
 
-	-- static backgrounds: ibar at canvas y=0 (sbar-space -24), sbar at y=24
-	local ibar = makeLabel(canvas, 0, 0, 320, 24)
+	-- static backgrounds: ibar at canvas y=0 (sbar-space -24), sbar at y=24.
+	-- the whole inventory row lives in its own frame: screen.c's
+	-- sb_lines drops it first as viewsize rises
+	local ibarRow = Instance.new("Frame")
+	ibarRow.Name = "ibarRow"
+	ibarRow.BackgroundTransparency = 1
+	ibarRow.Size = UDim2.fromOffset(320 * SCALE, 24 * SCALE)
+	ibarRow.Parent = canvas
+	h.ibarRow = ibarRow
+	local ibar = makeLabel(ibarRow, 0, 0, 320, 24)
 	setPic(h, ibar, "ibar", w)
 	local sbar = makeLabel(canvas, 0, 24, 320, 24)
 	setPic(h, sbar, "sbar", w)
@@ -193,23 +220,23 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	-- ibar row: weapons at y=8 (sbar-space -16), counts at y=0 (-24)
 	h.weaponIcons = {}
 	for i = 0, 6 do
-		h.weaponIcons[i + 1] = makeLabel(canvas, i * 24, 8, 24, 16)
+		h.weaponIcons[i + 1] = makeLabel(ibarRow, i * 24, 8, 24, 16)
 	end
 	h.countDigits = {}
 	for i = 0, 3 do
 		local digits = {}
 		for j = 0, 2 do
-			digits[j + 1] = makeLabel(canvas, (6 * i + 1 + j) * 8 - 2, 0, 8, 8)
+			digits[j + 1] = makeLabel(ibarRow, (6 * i + 1 + j) * 8 - 2, 0, 8, 8)
 		end
 		h.countDigits[i + 1] = digits
 	end
 	h.itemIcons = {}
 	for i = 0, 5 do
-		h.itemIcons[i + 1] = makeLabel(canvas, 192 + i * 16, 8, 16, 16)
+		h.itemIcons[i + 1] = makeLabel(ibarRow, 192 + i * 16, 8, 16, 16)
 	end
 	h.sigilIcons = {}
 	for i = 0, 3 do
-		h.sigilIcons[i + 1] = makeLabel(canvas, 288 + i * 8, 8, 8, 16)
+		h.sigilIcons[i + 1] = makeLabel(ibarRow, 288 + i * 8, 8, 8, 16)
 	end
 
 	-- text overlays in the conchars font
@@ -529,6 +556,18 @@ local function buildIntermission(h: Hud, c: cllib.Client)
 	interBigNum(h, 160, 144, c.stats[14] or 0, 3) -- STAT_MONSTERS
 	interWadPic(h, "num_slash", 232, 144)
 	interBigNum(h, 240, 144, c.stats[12] or 0, 3) -- STAT_TOTALMONSTERS
+end
+
+-- viewsize application (screen.c sb_lines): 100 = full HUD, 110 =
+-- status row only, 120 = none. The boot recomputes the vrect fov with
+-- hud.sbarLinesPx after calling this.
+function hud.setViewsize(h: Hud, viewsize: number)
+	local px = hud.sbarLinesPx(viewsize)
+	h.sbarStrip.Size = UDim2.new(1, 0, 0, px)
+	h.sbarStrip.Visible = px > 0
+	h.ibarRow.Visible = viewsize < 110
+	local canvas = h.ibarRow.Parent :: Frame
+	canvas.Visible = viewsize < 120
 end
 
 function hud.setShowScores(h: Hud, on: boolean)

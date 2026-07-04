@@ -360,6 +360,7 @@ local chase_active = false
 
 local camera = Workspace.CurrentCamera
 local currentFov = 90 -- fov cvar (horizontal, CalcFov semantics)
+local currentViewsize = 100 -- screen.c viewsize (sb_lines)
 local gunVrectPitch = 0 -- vrect view-model raise (see qcoords.vrect)
 local applyFov: () -> () = function() end
 local refreshInputMode: () -> () = function() end
@@ -589,8 +590,17 @@ execCommand = function(line: string)
 	elseif cmd == "fov" then
 		local v = tonumber(args)
 		if v and v >= 10 and v <= 170 then
-			-- quake fov is horizontal for 4:3; convert to vertical
+			-- quake fov is horizontal; CalcFov derives the vertical
 			currentFov = v
+			applyFov()
+		end
+		return
+	elseif cmd == "viewsize" then
+		-- screen.c: 100 full HUD, 110 status row only, 120 none
+		local v = tonumber(args)
+		if v then
+			currentViewsize = math.clamp(v, 30, 120)
+			hudlib.setViewsize(hud, currentViewsize)
 			applyFov()
 		end
 		return
@@ -995,7 +1005,7 @@ currentFov = 90
 applyFov = function()
 	-- CalcFov over the vrect (window minus sbar), per SCR_CalcRefdef
 	local vp = camera.ViewportSize
-	local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.SBAR_LINES_PX)
+	local fovY, gp = qcoords.vrect(currentFov, vp.X, vp.Y, hudlib.sbarLinesPx(currentViewsize))
 	camera.FieldOfView = fovY
 	gunVrectPitch = gp
 end
