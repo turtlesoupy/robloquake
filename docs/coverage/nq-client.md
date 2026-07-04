@@ -123,16 +123,16 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawCharacter / Sbar_DrawString | confont rows | SUBSTITUTED | conchars glyph labels | — (substitution; verify justification still holds) |
 | Sbar_itoa | string.format | SUBSTITUTED | trivial | — (substitution; verify justification still holds) |
 | Sbar_DrawNum | hud drawNum | VERIFIED | [evidence/nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg) (gold 49/99) + [nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg) (red variant at 5) + 100/200 ammo rows in [nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg); right-justified slots visible throughout. | Stage per evidence/nq-sbar-faces.txt, capture, compare |
-| Sbar_SortFrags | buildRankings sort | PENDING | delta: skips empty names then sorts by frags (C insertion sort, same order) | TBD: write test or tools/verify script + evidence capture |
+| Sbar_SortFrags | buildRankings sort | VERIFIED | The empty-name skip is now C-exact and visible: one row for one player, no phantom slots ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). FIDELITY FIX in the same commit: sv.newClient pre-stamped "unconnected" on every slot — C leaves never-connected slots "" so SortFrags skips them. | Stage per the evidence file |
 | Sbar_UpdateScoreboard | sig-string rebuild in updateOverlays | SUBSTITUTED | rebuild-on-change replaces per-frame scratch build | — (substitution; verify justification still holds) |
 | Sbar_SoloScoreboard | hud soloRows | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): exact C fields — Monsters 0/23, Secrets 0/6, Time, level name over the status row. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
-| Sbar_DrawScoreboard | updateOverlays dispatch | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Sbar_DrawScoreboard | updateOverlays dispatch | VERIFIED | Dispatch shown across the committed set: solo overlay in single player (nq-solo-scoreboard, nq-death-cam) and the deathmatch overlay under deathmatch 1 ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
 | Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | VERIFIED | [evidence/nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg): all weapon icons post-impulse-9 with current-weapon variant, ammo counts 100/200/100/200 as conchars over the row, keys/items column. Flashon formula in code; flash frames present in the capture taken within the pickup window, and the all-slots inv2_ flash state is committed separately ([nq-inventory-flash.jpg](evidence/nq-inventory-flash.jpg)). | Stage per evidence/nq-sbar-faces.txt (impulse 9, capture immediately) |
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn | — (implement first) |
 | Sbar_DrawFace | hud face branch | VERIFIED | Health bands shown across committed captures: 100 (S3 anchor), 49 = band 3 ([nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg)), 5 = band 5 ([nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg)). Not yet shown visually: 0.2s pain frame and invis/invuln/quad specials (no artifacts near the e1m1 start) — formulas match C in code; re-stage on a powerup map to close. | Stage per evidence/nq-sbar-faces.txt |
 | Sbar_Draw | hud.update | VERIFIED | Full sbar layout (inventory row, armor/face/health/ammo bar) live in the battery captures and the S3 anchor. Delta stands: no viewsize/lineadj interaction. | Stage per evidence/nq-sbar-faces.txt; S3 anchor diff |
 | Sbar_IntermissionNumber | interBigNum | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg): big digits for Time/Secrets/Kills at the C coordinates. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
-| Sbar_DeathmatchOverlay | buildRankings | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: ranking.lmp, colour bars, frags, self marker char 12 | TBD: write test or tools/verify script + evidence capture |
+| Sbar_DeathmatchOverlay | buildRankings | VERIFIED | [evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt)): ranking.lmp plaque, per-player colour bar, frags, name under deathmatch 1. Char-12 self marker not discernible at capture size (single player is trivially self) — re-stage with two loopback players to close that sub-aspect. | Stage per the evidence file |
 | Sbar_MiniDeathmatchOverlay | — | UNIMPLEMENTED | small mid-game DM list absent | — (implement first) |
 | Sbar_IntermissionOverlay | buildIntermission | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg) + .txt: complete.lmp plaque + inter.lmp labels + big numbers over the info_intermission vantage. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
 | Sbar_FinaleOverlay | finale.lmp branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md finale record | TBD: write test or tools/verify script + evidence capture |
@@ -240,7 +240,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Draw_ConsoleBackground | conback ImageLabel in console.create | VERIFIED | The conback art fills the console in evidence/nq-console-open.jpg. Delta stands: the frame slides instead of cropping the pic. | RQDBG_Console "toggle", capture |
 | R_DrawRect8 / R_DrawRect16 | — | SUBSTITUTED | framebuffer rect blits; GPU composites GUI | — (substitution; verify justification still holds) |
 | Draw_TileClear | — | SUBSTITUTED | no vrect borders — 3D view is full-window | — (substitution; verify justification still holds) |
-| Draw_Fill | hud interFill (palette-indexed Frames) | PENDING | used for scoreboard colour bars | TBD: write test or tools/verify script + evidence capture |
+| Draw_Fill | hud interFill (palette-indexed Frames) | VERIFIED | The scoreboard colour bar behind the frag count is the Draw_Fill path ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
 | Draw_FadeScreen | — | UNIMPLEMENTED | menu backdrop dim absent | — (implement first) |
 | Draw_BeginDisc / Draw_EndDisc | — | UNIMPLEMENTED | disc I/O icon absent | — (implement first) |
 
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 116
-- PENDING: 16
+- VERIFIED: 120
+- PENDING: 12
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

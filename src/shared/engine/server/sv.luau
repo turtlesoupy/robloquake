@@ -725,7 +725,11 @@ function sv.newClient(num: number): Client
 		spawned = false,
 		sendsignon = false,
 		dropasap = false,
-		name = "unconnected",
+		-- C leaves never-connected slots at "" (hunk-zeroed); "unconnected"
+		-- is stamped by SV_ConnectClient only. Sbar_SortFrags skips empty
+		-- names, so pre-stamping every slot made the DM overlay list 15
+		-- phantom "unconnected" rows.
+		name = "",
 		colors = 0,
 		edict = nil :: any,
 		message = msg.newBuf(qd.MAX_MSGLEN, true),

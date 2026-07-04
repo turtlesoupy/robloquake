@@ -1,0 +1,27 @@
+nq-dm-rankings.jpg / nq-dm-rankings-before.jpg (2026-07-04)
+============================================================
+
+Engine: NQ boot, map start ("Introduction"), deathmatch 1
+(ServerStorage.QuakeAssets attribute), id1 registered 1.06, viewsize
+100. Staging: RQDBG_Console exec "+showscores", capture, "-showscores".
+
+nq-dm-rankings.jpg (AFTER the fix in this commit): the
+Sbar_DeathmatchOverlay path — ranking.lmp plaque, one row for the one
+connected player: colour bar (Draw_Fill from the player's shirt/pants
+colours), frags 0, name. Exactly C's Sbar_SortFrags behaviour (skip
+slots with empty names).
+
+nq-dm-rankings-before.jpg (the same overlay BEFORE the fix): 15
+phantom "unconnected" rows. Root cause: sv.newClient pre-stamped every
+slot's name "unconnected", but C leaves never-connected slots at ""
+(hunk-zeroed) and stamps "unconnected" only in SV_ConnectClient
+(sv_main.c:268) — so C's name[0] check skips them and the port's
+didn't. Fixed by initialising slots to "" and matching
+host_cmd.c:935's rename-print guard.
+
+Not discernible at this capture size: the char-12 self marker (single
+player is trivially self). Re-stage with two loopback players when the
+marker row is revisited.
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.

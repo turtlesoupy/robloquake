@@ -322,7 +322,7 @@ local function hostName(svr: svlib.Server, client: svlib.Client, newName: string
 		newName = newName:sub(2, -2)
 	end
 	newName = newName:sub(1, 15)
-	if client.name ~= "unconnected" and client.name ~= newName then
+	if client.name ~= "" and client.name ~= "unconnected" and client.name ~= newName then
 		svr.print(`{client.name} renamed to {newName}`)
 	end
 	client.name = newName
