@@ -481,8 +481,24 @@ end
 -- forwarded back to the server (that's how the server drives the
 -- handshake); everything else accumulates for the console layer
 local function execStufftext(cl: any)
+	-- only complete (newline-terminated) lines execute; a partial tail
+	-- waits for the next svc_stufftext, like Cbuf accumulation
+	local buf = cl.stufftext
+	local lastNL = buf:find("\n[^\n]*$")
+	local tail = ""
+	if not buf:find("\n") then
+		return -- nothing complete yet
+	end
+	if not buf:match("\n$") then
+		local cut = buf:match("()[^\n]*$")
+		tail = buf:sub(cut)
+		buf = buf:sub(1, cut - 1)
+	end
+	cl.stufftext = ""
 	local rest = {}
-	for line in cl.stufftext:gmatch("[^\n]+") do
+	-- honor ';' separators within a line
+	buf = buf:gsub(";", "\n")
+	for line in buf:gmatch("[^\n]+") do
 		local cmdArgs = line:match("^cmd%s+(.*)$")
 		if cmdArgs then
 			sendStringCmd(cl, cmdArgs)
@@ -499,7 +515,8 @@ local function execStufftext(cl: any)
 			table.insert(rest, line)
 		end
 	end
-	cl.stufftext = if #rest > 0 then table.concat(rest, "\n") .. "\n" else ""
+	cl.rawStufftext = (cl.rawStufftext or "") .. (if #rest > 0 then table.concat(rest, "\n") .. "\n" else "")
+	cl.stufftext = tail
 end
 
 -- CL_ParseServerMessage
@@ -509,6 +526,16 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 	local frame: Frame = cl.frames[bit32.band(cl.parsecount, UPDATE_MASK)]
 	frame.receivedtime = cl.realtime
 	cl.parsecounttime = frame.senttime
+
+	-- drift the average latency towards the observed latency
+	local latency = frame.receivedtime - frame.senttime
+	if latency >= 0 and latency <= 1.0 then
+		if latency < cl.latency then
+			cl.latency = latency
+		else
+			cl.latency += 0.001 -- drift up, so corrections are needed
+		end
+	end
 	cl.nails = {} -- CL_ClearProjectiles: nails live one message
 
 	while true do
@@ -567,16 +594,16 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 			info.userid = msg.readLong(r)
 			info.userinfo = parseUserinfoString(msg.readString(r))
 			info.name = info.userinfo.name or ""
-			info.spectator = info.userinfo.spectator == "1"
+			info.spectator = (info.userinfo["*spectator"] or "") ~= "" or info.userinfo.spectator == "1"
 		elseif cmd == qwp.svc_setinfo then
 			local i = msg.readByte(r)
 			local key = msg.readString(r)
 			local value = msg.readString(r)
 			local info = playerInfo(cl, i)
 			info.userinfo[key] = value
-			if key == "name" then
-				info.name = value
-			end
+			-- CL_ProcessUserInfo re-derives on every setinfo
+			info.name = info.userinfo.name or info.name
+			info.spectator = (info.userinfo["*spectator"] or "") ~= "" or info.userinfo.spectator == "1"
 		elseif cmd == qwp.svc_serverinfo then
 			local key = msg.readString(r)
 			cl.serverinfo[key] = msg.readString(r)
@@ -624,7 +651,11 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 		elseif cmd == qwp.svc_nails then
 			parseNails(cl, r)
 		elseif cmd == qwp.svc_chokecount then
-			msg.readByte(r)
+			-- mark the intervening frames as choked for the netgraph
+			local n = msg.readByte(r)
+			for j = 0, n - 1 do
+				cl.frames[bit32.band(cl.netchan.incoming_acknowledged - 1 - j, UPDATE_MASK)].receivedtime = -2
+			end
 		elseif cmd == qwp.svc_modellist then
 			parseModellist(cl, r)
 		elseif cmd == qwp.svc_soundlist then
@@ -647,6 +678,8 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 		for i, name in cl.model_name do
 			if name == "progs/player.mdl" then
 				cl.playerindex = i -- precache slot, 1-based like C
+			elseif name == "progs/flag.mdl" then
+				cl.flagindex = i -- CTF flag attachment
 			end
 		end
 	end
@@ -668,8 +701,37 @@ end
 --------------------------------------------------------------------------
 -- move sending (cl_input.c CL_SendCmd)
 
+-- CL_FinishMove's MakeChar: moves travel as signed chars of 4-unit steps
+local function makeChar(i: number): number
+	i = bit32.band(i // 1, bit32.bnot(3)) -- &~3 on the int
+	if i >= 0x80000000 then
+		i -= 0x100000000 -- undo bit32's unsigned view for negatives
+	end
+	return math.clamp(i, -127 * 4, 127 * 4)
+end
+
+-- quantize to the angle16 wire value so prediction replays exactly
+-- what the server receives
+local function quantAngle(f: number): number
+	local v = f * 65536 / 360
+	v = if v >= 0 then math.floor(v) else -math.floor(-v)
+	v = bit32.band(v, 65535)
+	if v >= 32768 then
+		v -= 65536 -- signed short on the read side
+	end
+	return v * (360 / 65536)
+end
+
 function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	local chan = cl.netchan
+
+	-- CL_FinishMove: chop moves and quantize angles BEFORE storing, so
+	-- the predicted cmd equals the wire cmd
+	cmd = table.clone(cmd)
+	cmd.forwardmove = makeChar(cmd.forwardmove)
+	cmd.sidemove = makeChar(cmd.sidemove)
+	cmd.upmove = makeChar(cmd.upmove)
+	cmd.angles = vector.create(quantAngle(cmd.angles.x), quantAngle(cmd.angles.y), quantAngle(cmd.angles.z))
 
 	-- save this command off for prediction
 	local i = bit32.band(chan.outgoing_sequence, UPDATE_MASK)
@@ -677,6 +739,13 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	frame.cmd = cmd
 	frame.senttime = cl.realtime
 	frame.receivedtime = -1
+
+	-- don't send too soon after connecting: the first two moves flush
+	-- stale pre-spawn input state (C: cl.movemessages <= 2)
+	cl.movemessages = (cl.movemessages or 0) + 1
+	if cl.movemessages <= 2 then
+		return
+	end
 
 	local buf = msg.newBuf(128)
 	msg.writeByte(buf, qwp.clc_move)
@@ -727,7 +796,9 @@ local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysE
 		end
 	end
 	if includePlayers then
-		-- CL_SetSolidPlayers: other players block movement
+		-- CL_SetSolidPlayers: other players block movement, at their
+		-- PREDICTED positions
+		local predicted = qwcl.predictedPlayerOrigins(cl)
 		for num, ps in frame.playerstate do
 			if num == cl.playernum or ps.messagenum ~= cl.parsecount then
 				continue
@@ -736,7 +807,7 @@ local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysE
 				continue -- dead players aren't solid
 			end
 			table.insert(physents, {
-				origin = ps.origin,
+				origin = predicted[num] or ps.origin,
 				mins = pmovelib.PLAYER_MINS,
 				maxs = pmovelib.PLAYER_MAXS,
 			})
@@ -782,6 +853,46 @@ function qwcl.predictUsercmd(cl: any, from: PlayerState, to: PlayerState, u: qwe
 	to.velocity = pm.velocity
 	to.onground = pm.onground
 	to.weaponframe = from.weaponframe
+end
+
+-- CL_SetUpPlayerPrediction + CL_LinkPlayers extrapolation: predicted
+-- origins for the other players (half the elapsed move, capped 255ms).
+-- Returns { [playernum]: origin }; the renderer and the solid-player
+-- physents both consume it.
+function qwcl.predictedPlayerOrigins(cl: any): { [number]: vector }
+	local out: { [number]: vector } = {}
+	local playertime = cl.realtime - cl.latency + 0.02
+	if playertime > cl.realtime then
+		playertime = cl.realtime
+	end
+	local frame: Frame = cl.frames[bit32.band(cl.parsecount, UPDATE_MASK)]
+	-- players predict against world + solid entities only (C runs this
+	-- after CL_SetSolidEntities, before players are added)
+	local saved = cl.predictPhysents
+	cl.predictPhysents = buildPhysents(cl, false)
+	for num, state in frame.playerstate do
+		if state.messagenum ~= cl.parsecount or state.modelindex == 0 then
+			continue
+		end
+		if num == cl.playernum then
+			-- the local player moves locally: last predicted position
+			out[num] = cl.frames[bit32.band(cl.netchan.outgoing_sequence, UPDATE_MASK)].playerstate[num].origin
+			continue
+		end
+		-- only predict half the move to minimize overruns
+		local msec = 500 * (playertime - state.state_time)
+		if msec <= 0 then
+			out[num] = state.origin
+		else
+			local cmd = table.clone(state.command)
+			cmd.msec = math.min(msec // 1, 255)
+			local exact = newPlayerState()
+			qwcl.predictUsercmd(cl, state, exact, cmd, false)
+			out[num] = exact.origin
+		end
+	end
+	cl.predictPhysents = saved
+	return out
 end
 
 -- CL_PredictMove

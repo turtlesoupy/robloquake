@@ -267,7 +267,31 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			entrender.prepareImages(def, pal)
 		end
 	elseif name:sub(-4) == ".bsp" then
-		def = { kind = "none", flags = 0 } -- the world itself
+		if modelindex == 1 then
+			def = { kind = "none", flags = 0 } -- the world itself
+		else
+			-- standalone brush models: ammo/health boxes (b_*.bsp)
+			demandFile(name)
+			local buf = vfslib.loadFile(fs, name, true)
+			local template = brushTemplates[name]
+			if not template and buf then
+				local models = bsplib.load(name, buf)
+				local anim
+				template, anim = worldmesh.build(models[1], pal, nil :: any, name)
+				for _, e in anim do
+					table.insert(lightAnim, e)
+				end
+				for _, ta in worldmesh.takeTextureAnims() do
+					table.insert(textureAnims, ta)
+				end
+				brushTemplates[name] = template
+			end
+			if template then
+				def = { kind = "brush", flags = 0, brushModel = template }
+			else
+				def = { kind = "none", flags = 0 }
+			end
+		end
 	else
 		def = { kind = "none", flags = 0 }
 	end
