@@ -71,3 +71,12 @@ it enters here in the same commit.
   reissues serverdata to every connected client (they redo the full
   handshake; the QW client's CL_ClearState path rebuilds the renderer).
   PENDING (needs a live two-map rotation check).
+
+### 2026-07-04 (visual pass)
+- qw-client sbar.c main bar (Sbar_Draw/DrawInventory/DrawNum/DrawFace/
+  DrawNormal via the hudlib adapter): PENDING -> VERIFIED. Studio Play
+  screenshot (engine=qw, dm3): full status bar renders with live stats —
+  shells 25 in the ammo row, armor 0, face, health 100, ammo 25.
+  Remaining sbar overlays (ping scoreboard), console, cshift flash, and NQ
+  wall-texture animation still need their own captures (tool recovered
+  after a Studio play restart; next session can finish the pass).
