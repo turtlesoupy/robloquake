@@ -36,6 +36,20 @@ Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
 it enters here in the same commit.
 
+## Scenarios
+
+Interaction coverage the per-function grid cannot express (proven by the
+vrect/view-weapon saga: every function was individually right and the
+composite was wrong). These rows hold the same evidence bar as function
+rows.
+
+| # | Scenario | Status | Evidence | How to verify |
+|---|---|---|---|---|
+| S1 | QW two-client loopback: connect, duel, frag on BOTH scoreboards, death/respawn, changelevel inventory carry | VERIFIED | tests/test_scenario_qw.luau (25 checks): shotgun duel over the wire, frag rebroadcast to both clients, DEAD_DEAD→respawn at full health, SetChangeParms carry incl. the authentic shells-floor-25 | `lune run tests/test_scenario_qw.luau` |
+| S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | PENDING | — | TBD |
+| S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | PENDING | — | TBD |
+| S4 | QW visual anchor: same vantage discipline, QW engine | PENDING | — | TBD |
+
 ## Changelog
 
 ### 2026-07-04 (bucket 1 continuation)
