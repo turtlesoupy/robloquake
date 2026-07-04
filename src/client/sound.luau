@@ -33,6 +33,7 @@ export type System = {
 	-- Sound instance is reused so rapid refire (super nailgun) never hits a
 	-- fresh instance whose PlaybackRegion hasn't applied yet.
 	channels: { [number]: Channel },
+	ambients: { { sound: Sound?, vol: number } }?,
 	missing: { [string]: boolean },
 	enabled: boolean,
 }
@@ -204,9 +205,54 @@ function sound.static(sys: System, pos: vector, sample: string, vol: number, att
 	s:Play()
 end
 
+-- S_UpdateAmbientSounds: the water/sky ambient loops whose volumes come
+-- from the ambient levels stored in the listener's BSP leaf, faded at
+-- ambient_fade (100/sec) toward ambient_level (0.3) * leaf level
+local AMBIENT_SAMPLES = { "ambience/water1.wav", "ambience/wind2.wav" }
+
+function sound.updateAmbients(sys: System, leafAmbient: { number }?, dt: number)
+	if not sys.enabled then
+		return
+	end
+	local amb = sys.ambients
+	if not amb then
+		amb = {}
+		for i = 1, #AMBIENT_SAMPLES do
+			local r = sys.regions[AMBIENT_SAMPLES[i]]
+			local snd: Sound? = nil
+			if r then
+				snd = bankSound(sys, r, true)
+				snd.Volume = 0
+				snd.Parent = sys.folder -- no Part: unspatialized, like channels 0-1
+				snd:Play()
+			end
+			amb[i] = { sound = snd, vol = 0 }
+		end
+		sys.ambients = amb
+	end
+	for i, a in amb do
+		if a.sound then
+			local target = 0
+			if leafAmbient and leafAmbient[i] then
+				target = 0.3 * leafAmbient[i] -- ambient_level.value
+				if target < 8 then
+					target = 0
+				end
+			end
+			if a.vol < target then
+				a.vol = math.min(a.vol + dt * 100, target) -- ambient_fade.value
+			elseif a.vol > target then
+				a.vol = math.max(a.vol - dt * 100, target)
+			end
+			a.sound.Volume = a.vol / 255
+		end
+	end
+end
+
 function sound.clear(sys: System)
 	sys.folder:ClearAllChildren()
 	table.clear(sys.channels)
+	sys.ambients = nil
 end
 
 return sound

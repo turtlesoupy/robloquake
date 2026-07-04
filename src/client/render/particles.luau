@@ -132,6 +132,73 @@ function particles.runEffect(sys: System, org: vector, dir: vector, color: numbe
 	end
 end
 
+-- R_RocketTrail: type 0 rocket, 1 grenade smoke, 2 blood, 3/5 tracer,
+-- 4 slight blood, 6 voor trail
+local tracercount = 0
+function particles.rocketTrail(sys: System, start: vector, endp: vector, ttype: number, time: number)
+	local vec = endp - start
+	local len = vector.magnitude(vec)
+	if len > 0 then
+		vec = vec / len
+	end
+	local dec = 3
+	if ttype >= 128 then
+		dec = 1
+		ttype -= 128
+	end
+
+	while len > 0 do
+		len -= dec
+
+		local p = alloc(sys)
+		p.vel = vector.zero
+		p.die = time + 2
+
+		if ttype == 0 then -- rocket trail
+			p.ramp = bit32.band(rand(), 3)
+			p.color = ramp3[p.ramp + 1]
+			p.type = pt_fire
+			p.org = start + vector.create(rand() % 6 - 3, rand() % 6 - 3, rand() % 6 - 3)
+		elseif ttype == 1 then -- smoke smoke
+			p.ramp = bit32.band(rand(), 3) + 2
+			p.color = ramp3[p.ramp + 1]
+			p.type = pt_fire
+			p.org = start + vector.create(rand() % 6 - 3, rand() % 6 - 3, rand() % 6 - 3)
+		elseif ttype == 2 then -- blood
+			p.type = pt_grav
+			p.color = 67 + bit32.band(rand(), 3)
+			p.org = start + vector.create(rand() % 6 - 3, rand() % 6 - 3, rand() % 6 - 3)
+		elseif ttype == 3 or ttype == 5 then -- tracer
+			p.die = time + 0.5
+			p.type = pt_static
+			if ttype == 3 then
+				p.color = 52 + bit32.lshift(bit32.band(tracercount, 4), 1)
+			else
+				p.color = 230 + bit32.lshift(bit32.band(tracercount, 4), 1)
+			end
+			tracercount += 1
+			p.org = start
+			if bit32.band(tracercount, 1) ~= 0 then
+				p.vel = vector.create(30 * vec.y, 30 * -vec.x, 0)
+			else
+				p.vel = vector.create(30 * -vec.y, 30 * vec.x, 0)
+			end
+		elseif ttype == 4 then -- slight blood
+			p.type = pt_grav
+			p.color = 67 + bit32.band(rand(), 3)
+			p.org = start + vector.create(rand() % 6 - 3, rand() % 6 - 3, rand() % 6 - 3)
+			len -= 3
+		elseif ttype == 6 then -- voor trail
+			p.color = 9 * 16 + 8 + bit32.band(rand(), 3)
+			p.type = pt_static
+			p.die = time + 0.3
+			p.org = start + vector.create(rand() % 16 - 8, rand() % 16 - 8, rand() % 16 - 8)
+		end
+
+		start += vec
+	end
+end
+
 -- R_TeleportSplash
 function particles.teleportSplash(sys: System, org: vector, time: number)
 	for i = -16, 12, 4 do

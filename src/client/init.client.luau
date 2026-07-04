@@ -693,6 +693,31 @@ RunService.Heartbeat:Connect(function(dt: number)
 			end
 			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
 			entrender.setLight(rr, lightpoint.at(worldModels[1], e.origin, styleValueFor))
+
+			-- CL_RelinkEntities: model-flag particle trails (rockets, smoke,
+			-- gibs, tracers) from last frame's origin to this one
+			local mflags = def.flags
+			if mflags ~= 0 then
+				local oldorg = (rr :: any).trailOrg or e.origin
+				if oldorg ~= e.origin then
+					if bit32.band(mflags, 4) ~= 0 then -- EF_GIB
+						particleslib.rocketTrail(psys, oldorg, e.origin, 2, c.time)
+					elseif bit32.band(mflags, 32) ~= 0 then -- EF_ZOMGIB
+						particleslib.rocketTrail(psys, oldorg, e.origin, 4, c.time)
+					elseif bit32.band(mflags, 16) ~= 0 then -- EF_TRACER
+						particleslib.rocketTrail(psys, oldorg, e.origin, 3, c.time)
+					elseif bit32.band(mflags, 64) ~= 0 then -- EF_TRACER2
+						particleslib.rocketTrail(psys, oldorg, e.origin, 5, c.time)
+					elseif bit32.band(mflags, 1) ~= 0 then -- EF_ROCKET
+						particleslib.rocketTrail(psys, oldorg, e.origin, 0, c.time)
+					elseif bit32.band(mflags, 2) ~= 0 then -- EF_GRENADE
+						particleslib.rocketTrail(psys, oldorg, e.origin, 1, c.time)
+					elseif bit32.band(mflags, 128) ~= 0 then -- EF_TRACER3
+						particleslib.rocketTrail(psys, oldorg, e.origin, 6, c.time)
+					end
+				end
+			end;
+			(rr :: any).trailOrg = e.origin
 		elseif rr.kind == "sprite" then
 			entrender.updateSprite(rr, def, e.origin, e.frame)
 		elseif rr.kind == "brush" then
@@ -741,10 +766,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 	c.cshift_bonus_percent = math.max(c.cshift_bonus_percent - dt * 100, 0)
 
 	local shifts: { { number } } = {} -- {r,g,b,percent}
+	local viewLeaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
 	do
 		-- contents shift from the view leaf (V_SetContentsColor)
-		local leaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
-		local cont = leaf.contents
+		local cont = viewLeaf.contents
 		if cont == -3 then -- water
 			table.insert(shifts, { 130, 80, 50, 128 })
 		elseif cont == -4 then -- slime
@@ -753,15 +778,17 @@ RunService.Heartbeat:Connect(function(dt: number)
 			table.insert(shifts, { 255, 80, 0, 150 })
 		end
 	end
-	-- powerups (V_CalcPowerupCshift)
-	if bit32.band(c.items, 4194304) ~= 0 then -- IT_INVULNERABILITY
-		table.insert(shifts, { 255, 255, 0, 30 })
-	elseif bit32.band(c.items, 2097152) ~= 0 then -- IT_QUAD
+	-- S_UpdateAmbientSounds: leaf-based water/sky ambience
+	soundlib.updateAmbients(snd, viewLeaf.ambient, dt)
+	-- powerups (V_CalcPowerupCshift; quad wins over suit/ring/pent like the C)
+	if bit32.band(c.items, 2097152) ~= 0 then -- IT_QUAD
 		table.insert(shifts, { 0, 0, 255, 30 })
 	elseif bit32.band(c.items, 1048576) ~= 0 then -- IT_SUIT
 		table.insert(shifts, { 0, 255, 0, 20 })
 	elseif bit32.band(c.items, 524288) ~= 0 then -- IT_INVISIBILITY
 		table.insert(shifts, { 100, 100, 100, 100 })
+	elseif bit32.band(c.items, 4194304) ~= 0 then -- IT_INVULNERABILITY
+		table.insert(shifts, { 255, 255, 0, 30 })
 	end
 	if c.cshift_damage_percent > 0 then
 		local dc = c.cshift_damage_color
