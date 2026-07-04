@@ -353,7 +353,8 @@ VERBATIM `pmove.c`/`pmovetst.c`; `test_qw_pmove.luau` replays two identical scri
 (climb, descend, re-climb, jumping climb, diagonal; risers 56/72/88/104) — matching within
 0.000122 units position / 0.000109 velocity, onground and waterlevel agreeing every tick.
 Terrain covered: flat ground, walls, jumps, air control, 16-unit stair step-ups from every
-approach. Terrain NOT covered: water (waterlevel 0 throughout — PM_WaterMove stays PENDING).
+approach, spectator flight, and the e1m1 water pool (waterlevels 1/2/3, swim, waterjump
+approach) — four courses, 600 ticks total.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
@@ -363,11 +364,11 @@ approach. Terrain NOT covered: water (waterlevel 0 throughout — PM_WaterMove s
 | PM_GroundMove | `groundMove` (pmove.luau:463) | VERIFIED | Ground truth: e1m1 flat course PLUS the dm3 staircase course (2026-07-04 playtest finding: the old fixture was flat-only) — step-ups match C to 0.000122 units under straight, re-climb, jumping, and diagonal approaches. | `lune run tests/test_qw_pmove.luau` |
 | PM_Friction | `friction` (pmove.luau:538) | VERIFIED | Friction applies on every ground tick of both truth courses (direction reversals decelerate through it); any divergence would break the 1e-4 position match. | `lune run tests/test_qw_pmove.luau` |
 | PM_Accelerate / PM_AirAccelerate | pmove.luau:584,604 | VERIFIED | Ground truth accel curves, both courses. | `lune run tests/test_qw_pmove.luau` |
-| PM_WaterMove | `waterMove` (pmove.luau:628) | PENDING | Ported; fixture never enters water (waterlevel 0 for all 300 ticks) — no ground-truth coverage. | TBD: write test or tools/verify script + evidence capture |
+| PM_WaterMove | `waterMove` (pmove.luau:628) | VERIFIED | Water truth course (ticks 521-600, e1m1 pool): 80 wet ticks across waterlevels 1/2/3 match the verbatim C to 0.000122 units (swim accel, water friction, surface/sink transitions). | `lune run tests/test_qw_pmove.luau` |
 | PM_AirMove | `airMove` (pmove.luau:661) | VERIFIED | Ground truth, both courses (jump arcs + stair-jump climbs). | `lune run tests/test_qw_pmove.luau` |
-| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | VERIFIED | onground agrees every tick across both courses (460 ticks incl. stair edges and jump apexes); water branches still only trivially covered — the water truth course remains a separate open item (see PM_WaterMove). | `lune run tests/test_qw_pmove.luau` |
+| PM_CatagorizePosition | `catagorizePosition` (pmove.luau:697) | VERIFIED | onground/waterlevel agree every tick across all four courses (600 ticks incl. stair edges, jump apexes, and the water pool with levels 1/2/3). | `lune run tests/test_qw_pmove.luau` |
 | JumpButton | `jumpButton` (pmove.luau:745) | VERIFIED | Jump phases match in both courses (e1m1 bunny ticks 121-160/201-240; dm3 jumping climb ticks 386-405) incl. oldbuttons latching between held-jump ticks. | `lune run tests/test_qw_pmove.luau` |
-| CheckWaterJump | `checkWaterJump` (pmove.luau:788) | PENDING | Ported; unreachable in the fixture (no water). | TBD: write test or tools/verify script + evidence capture |
+| CheckWaterJump | `checkWaterJump` (pmove.luau:788) | VERIFIED | Water course jump-held wall approach (ticks 556-575): evaluated every wet tick; a divergent fire/decline would break the 1e-4 position match. waterjumptime carried through the ring as C. | `lune run tests/test_qw_pmove.luau` |
 | NudgePosition | `nudgePosition` (pmove.luau:818) | VERIFIED | Two-course pmove ground truth: runs every tick in both C and port; positions stay equal to 0.000122 through it. The 1/8 truncation inside is dead code in C (base copied pre-truncation) — do not "fix" it. | `lune run tests/test_qw_pmove.luau` |
 | SpectatorMove | `spectatorMove` (pmove.luau:842) | VERIFIED | Two-phase spectator flight course (ticks 461-520) matches the verbatim C to 0.000122 units — accel, friction coast-to-stop, no gravity. | `lune run tests/test_qw_pmove.luau` |
 | PlayerMove | `pmove.playerMove` (pmove.luau:894) | VERIFIED | The top-level function the ground-truth test calls 300 times. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |

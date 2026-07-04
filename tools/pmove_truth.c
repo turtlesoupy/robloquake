@@ -187,7 +187,8 @@ int main(void)
 			onground >= 0 ? 1 : 0, waterlevel);
 	}
 
-	/* course 3: spectator flight on e1m1 (ticks 461-520) — SpectatorMove
+	/* course 4 runs after course 3 — see below.
+	   course 3: spectator flight on e1m1 (ticks 461-520) — SpectatorMove
 	   accel/friction, no gravity, flying through the void */
 	memset(&pmove, 0, sizeof(pmove));
 	pmove.numphysent = 1;
@@ -218,6 +219,43 @@ int main(void)
 		PlayerMove();
 
 		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", 460 + tick,
+			pmove.origin[0], pmove.origin[1], pmove.origin[2],
+			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
+			onground >= 0 ? 1 : 0, waterlevel);
+	}
+
+	/* course 4: the e1m1 water pool at (560-800, 800-1000, z -352..-304)
+	   — PM_WaterMove swim accel/friction, waterlevel transitions, and a
+	   CheckWaterJump attempt against the pool wall (ticks 521-600) */
+	memset(&pmove, 0, sizeof(pmove));
+	pmove.numphysent = 1;
+	pmove.physents[0].model = &worldmodel;
+	pmove.spectator = 0;
+	pmove.origin[0] = 656; pmove.origin[1] = 992; pmove.origin[2] = -330;
+
+	static phase_t waterscript[] = {
+		{20, 400, 0, 0, 90, 30, 0},    /* swim forward pitched down */
+		{35, 400, 0, 200, 270, -45, 0},/* swim up-back */
+		{55, 400, 0, 0, 0, -20, 1},    /* toward the +x wall, jump held: CheckWaterJump */
+		{80, 0, 0, -200, 180, 0, 0},   /* sink back */
+	};
+	for (int tick = 1; tick <= 80; tick++) {
+		phase_t *ph = &waterscript[0];
+		for (int i = 0; i < (int)(sizeof(waterscript)/sizeof(waterscript[0])); i++)
+			if (tick <= waterscript[i].untilTick) { ph = &waterscript[i]; break; }
+
+		pmove.cmd.msec = 50;
+		pmove.cmd.forwardmove = (short)ph->fwd;
+		pmove.cmd.sidemove = (short)ph->side;
+		pmove.cmd.upmove = (short)ph->upm;
+		pmove.cmd.angles[0] = ph->pitch;
+		pmove.cmd.angles[1] = ph->yaw;
+		pmove.cmd.angles[2] = 0;
+		pmove.cmd.buttons = ph->jump ? 2 : 0;
+
+		PlayerMove();
+
+		printf("%d %.6f %.6f %.6f %.6f %.6f %.6f %d %d\n", 520 + tick,
 			pmove.origin[0], pmove.origin[1], pmove.origin[2],
 			pmove.velocity[0], pmove.velocity[1], pmove.velocity[2],
 			onground >= 0 ? 1 : 0, waterlevel);

@@ -171,5 +171,42 @@ runCourse(specPm, specScript, 60, 460)
 print(("course 3 (spectator flight): max position error %.6f overall"):format(maxPosErr))
 t.check(maxPosErr < 0.01, "spectator course matches the verbatim QW C within 0.01 units")
 t.check(specPm.origin.z > 150, `spectator flew (final z {string.format("%.0f", specPm.origin.z)})`)
-t.eq(groundMismatch, 0, "onground/waterlevel agree every tick, both courses")
+-- course 4: the e1m1 water pool — PM_WaterMove swim accel/friction,
+-- waterlevel transitions, CheckWaterJump attempt. Mirrored in
+-- tools/pmove_truth.c ticks 521-600.
+local waterScript = {
+	{ 20, 400, 0, 0, 90, 30, false },
+	{ 35, 400, 0, 200, 270, -45, false },
+	{ 55, 400, 0, 0, 0, -20, true },
+	{ 80, 0, 0, -200, 180, 0, false },
+}
+local waterPm: pmovelib.PlayerMove = {
+	origin = vector.create(656, 992, -330),
+	angles = vector.zero,
+	velocity = vector.zero,
+	oldbuttons = 0,
+	waterjumptime = 0,
+	dead = false,
+	spectator = false,
+	physents = { { model = world, origin = vector.zero } },
+	cmd = { angles = vector.zero, forwardmove = 0, sidemove = 0, upmove = 0, buttons = 0, msec = 50 },
+	numtouch = 0,
+	touchindex = {},
+	onground = -1,
+	waterlevel = 0,
+	watertype = -1,
+}
+runCourse(waterPm, waterScript, 80, 520)
+print(("course 4 (water): max position error %.6f overall"):format(maxPosErr))
+t.check(maxPosErr < 0.01, "water course matches the verbatim QW C within 0.01 units")
+local waterTicks, levelKinds = 0, {}
+for tick = 521, 600 do
+	if truth[tick][9] > 0 then
+		waterTicks += 1
+	end
+	levelKinds[truth[tick][9]] = true
+end
+t.check(waterTicks >= 60 and levelKinds[1] and levelKinds[2] and levelKinds[3], `truth course covers waterlevels 1/2/3 over {waterTicks} wet ticks`)
+
+t.eq(groundMismatch, 0, "onground/waterlevel agree every tick, all courses")
 t.finish("test_qw_pmove")
