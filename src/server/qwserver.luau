@@ -123,6 +123,27 @@ return function(ctx: Ctx)
 		end
 		qwsv.frame(svr, math.clamp(dt, 0.001, 0.1))
 
+		-- level change requested by qwprogs (fraglimit/timelimit/
+		-- changelevel): respawn the server, republish the bundle, and
+		-- send every connected client a fresh serverdata — they redo
+		-- the soundlist/modellist/prespawn/spawn/begin handshake
+		local nextLevel = svr.changelevelTo
+		if nextLevel then
+			svr.changelevelTo = nil
+			print(`[robloquake] qw changelevel to {nextLevel}`)
+			qwsv.spawnServer(svr, nextLevel)
+			bundle.publishAll(svr)
+			for i = 1, svr.maxclients do
+				local client = svr.clients[i]
+				if client.active and client.send then
+					client.spawned = false
+					qwsv.newF(svr, client)
+					client.send_message = true
+					qwsv.replyToClient(svr, client)
+				end
+			end
+		end
+
 		diagAccum += dt
 		if diagAccum > 0.5 then
 			diagAccum = 0

@@ -80,6 +80,16 @@ function qwdefs.build(progs: progslib.Progs): QwDefs
 		ent[name] = d.ofs
 	end
 
+	-- GetEdictFieldValue lookups: QC-defined fields the server reads
+	-- opportunistically (nil when the progs don't define them)
+	local optfield: { [string]: number } = {}
+	for _, name in { "gravity", "maxspeed" } do
+		local d = progs.fielddefsByName[name]
+		if d then
+			optfield[name] = d.ofs
+		end
+	end
+
 	for _, name in REQUIRED_FUNCS do
 		local fnum = progs.functionsByName[name]
 		if not fnum then
@@ -94,7 +104,7 @@ function qwdefs.build(progs: progslib.Progs): QwDefs
 		end
 	end
 
-	return { glob = glob, ent = ent, func = func }
+	return { glob = glob, ent = ent, func = func, optfield = optfield }
 end
 
 return qwdefs

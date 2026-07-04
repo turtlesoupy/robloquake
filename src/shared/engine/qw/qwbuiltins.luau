@@ -6,6 +6,7 @@
 -- globals ABI is injected (qwdefs); the server object mirrors the NQ
 -- field names this file touches.
 
+local bsplib = require("../bsp/bsp")
 local com = require("../common/com")
 local cvarlib = require("../common/cvar")
 local mathlib = require("../common/mathlib")
@@ -451,7 +452,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		local oldf = vm.xfunction
 		local oldself = vmlib.globalInt(vm, glob.self)
 
-		vmlib.setGlobalFloat(vm, OFS_RETURN, if sv_move.movestep(svr, edict, move, true) then 1 else 0)
+		error("walkmove: QW port of sv_move pending (stock qwprogs never calls this)")
 
 		-- restore program state
 		vm.xfunction = oldf
@@ -491,15 +492,15 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		-- change the string in sv
 		svr.lightstyles[style] = val
 
-		-- send message to all clients on this server
-		if svr.state ~= svr.ss_active then
+		-- send message to all clients on this server (ss_active == 2)
+		if svr.state ~= 2 then
 			return
 		end
 		for _, client in svr.clients do
 			if client.active or client.spawned then
-				msg.writeByte(client.message, proto.svc_lightstyle)
-				msg.writeByte(client.message, style)
-				msg.writeString(client.message, val)
+				msg.writeByte(client.netchan.message, proto.svc_lightstyle)
+				msg.writeByte(client.netchan.message, style)
+				msg.writeString(client.netchan.message, val)
 			end
 		end
 	end)
@@ -518,7 +519,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 
 	def(40, "checkbottom", function()
 		local edict = vmlib.globalEdict(vm, OFS_PARM0)
-		vmlib.setGlobalFloat(vm, OFS_RETURN, if sv_move.checkBottom(svr, edict) then 1 else 0)
+		error("checkbottom: QW port of sv_move pending (stock qwprogs never calls this)")
 	end)
 
 	def(41, "pointcontents", function()
@@ -641,7 +642,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(49, "changeyaw", function()
-		sv_move.changeYaw(svr)
+		error("changeyaw: QW port of sv_move pending (stock qwprogs never calls this)")
 	end)
 
 	def(51, "vectoangles", function()
@@ -676,11 +677,13 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		if dest == MSG_BROADCAST then
 			return svr.datagram
 		elseif dest == MSG_ONE then
+			-- ClientReliableWrite: straight onto the client's reliable
+			-- netchan stream (centerprint, sellscreen, etc.)
 			local entnum = vmlib.globalInt(vm, glob.msg_entity)
 			if entnum < 1 or entnum > svr.maxclients then
 				error("WriteDest: not a client")
 			end
-			return svr.clients[entnum].message
+			return svr.clients[entnum].netchan.message
 		elseif dest == MSG_ALL then
 			return svr.reliable_datagram
 		elseif dest == MSG_INIT then
@@ -717,7 +720,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(67, "movetogoal", function()
-		sv_move.moveToGoal(svr)
+		error("movetogoal: QW port of sv_move pending (stock qwprogs never calls this)")
 	end)
 
 	def(68, "precache_file", function()

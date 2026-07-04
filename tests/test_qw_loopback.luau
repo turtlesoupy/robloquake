@@ -172,6 +172,16 @@ end
 t.check(heardFire, "svc_sound guncock arrived through the PHS multicast")
 t.check(cl.stats[qwp.STAT_SHELLS] < 25 or cl.stats[qwp.STAT_AMMO] < 25, "ammo stat dropped after firing")
 
+-- SV_UpdateToReliableMessages: a suicide must reach the client's
+-- scoreboard through the per-frame frag rebroadcast
+local fragsBefore = cl.players[0] and cl.players[0].frags or 0
+qwcl.sendStringCmd(cl, "kill")
+qwcl.flush(cl)
+for _ = 1, 3 do
+	tick(0)
+end
+t.check(cl.players[0].frags < fragsBefore, `frag change rebroadcast ({cl.players[0].frags})`)
+
 -- packet entities carry the world items
 local lastFrame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_MASK)]
 t.check(#lastFrame.packet_entities > 0, `packet entities present ({#lastFrame.packet_entities})`)

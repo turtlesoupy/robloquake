@@ -1939,23 +1939,80 @@ function qwsv.frame(svr: any, dt: number)
 	svr.vm.time = svr.time
 	qwphys.physics(svr)
 
-	-- append sv.reliable_datagram to every client's reliable stream
-	-- (userinfo/frag/disconnect broadcasts), then clear — C does this
-	-- once per frame in SV_SendClientMessages
-	local rd = svr.reliable_datagram
-	if rd.cursize > 0 then
-		for i = 1, svr.maxclients do
-			local cl: Client = svr.clients[i]
-			if cl.active and cl.send then
-				local out = cl.netchan.message
-				if out.cursize + rd.cursize <= out.maxsize then
-					buffer.copy(out.data, out.cursize, rd.data, 0, rd.cursize)
-					out.cursize += rd.cursize
+	qwsv.updateToReliableMessages(svr)
+end
+
+-- SV_UpdateToReliableMessages: per-frame reliable-state sync — frag
+-- changes rebroadcast to everyone, per-client entgravity/maxspeed when
+-- QC changed them, then sv.reliable_datagram to every connected client
+-- and sv.datagram to every spawned client, both cleared
+function qwsv.updateToReliableMessages(svr: any)
+	local ent = svr.qdefs.ent
+	local fields = svr.qdefs.optfield or {}
+
+	for i = 1, svr.maxclients do
+		local hc: Client = svr.clients[i]
+		if not (hc.active and hc.spawned) then
+			continue
+		end
+		local frags = trunc(vmlib.edFloat(hc.edict, ent.frags))
+		if (hc :: any).old_frags ~= frags then
+			for j = 1, svr.maxclients do
+				local cl: Client = svr.clients[j]
+				if cl.active then
+					local out = cl.netchan.message
+					msg.writeByte(out, qwp.svc_updatefrags)
+					msg.writeByte(out, i - 1)
+					msg.writeShort(out, frags)
 				end
 			end
+			(hc :: any).old_frags = frags
 		end
-		msg.clear(rd)
+
+		-- maxspeed/entgravity changes (QC "gravity"/"maxspeed" fields)
+		if fields.gravity then
+			local v = vmlib.edFloat(hc.edict, fields.gravity)
+			if hc.entgravity ~= v and v ~= 0 then
+				hc.entgravity = v
+				msg.writeByte(hc.netchan.message, qwp.svc_entgravity)
+				msg.writeFloat(hc.netchan.message, v)
+			end
+		end
+		if fields.maxspeed then
+			local v = vmlib.edFloat(hc.edict, fields.maxspeed)
+			if hc.maxspeed ~= v and v ~= 0 then
+				hc.maxspeed = v
+				msg.writeByte(hc.netchan.message, qwp.svc_maxspeed)
+				msg.writeFloat(hc.netchan.message, v)
+			end
+		end
 	end
+
+	local rd = svr.reliable_datagram
+	local dg = svr.datagram
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if not cl.active then
+			continue
+		end
+		if rd.cursize > 0 and cl.send then
+			local out = cl.netchan.message
+			if out.cursize + rd.cursize <= out.maxsize then
+				buffer.copy(out.data, out.cursize, rd.data, 0, rd.cursize)
+				out.cursize += rd.cursize
+			end
+		end
+		-- datagrams only go to spawned
+		if dg.cursize > 0 and cl.spawned then
+			local cdg = cl.datagram
+			if cdg.cursize + dg.cursize <= cdg.maxsize then
+				buffer.copy(cdg.data, cdg.cursize, dg.data, 0, dg.cursize)
+				cdg.cursize += dg.cursize
+			end
+		end
+	end
+	msg.clear(rd)
+	msg.clear(dg)
 end
 
 return qwsv

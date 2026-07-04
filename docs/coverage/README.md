@@ -35,3 +35,37 @@ runtime.
 Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
 it enters here in the same commit.
+
+## Changelog
+
+### 2026-07-04 (post-manifest fixes, same day)
+- qw-client sbar.c (Sbar_Draw/DrawInventory/DrawFrags/DrawFace/DrawNum,
+  intermission + DM overlays): UNIMPLEMENTED → PENDING. The QW boot now
+  drives the NQ sbar.c port (hudlib) via a qwcl adapter (main bars are
+  identical between the two sbar.c files; QW's ping-column DM overlay
+  still pending). Structurally confirmed live (16 visible HUD elements);
+  screenshot proof pending a Studio capture-tool recovery.
+- nq-client S_StopSound: UNIMPLEMENTED → PENDING (svc_stopsound now
+  routed through c.onStopSound → sound.stop; no offline assertion yet).
+- qw-server PF_checkclient (builtin 17): dangling bsplib require fixed —
+  PENDING (was a guaranteed runtime error).
+- qw-server walkmove/checkbottom/changeyaw/movetogoal (builtins
+  32/40/49/67): now fail with a diagnosable message instead of a nil
+  call; remain UNIMPLEMENTED (stock qwprogs never calls them — they need
+  a QW transform of sv_move.luau for mod support).
+- qw-server WriteDest MSG_ONE: now writes to the target client's
+  reliable netchan stream (was an unflushed buffer — centerprints were
+  silently dropped). PENDING.
+- qw-server SV_UpdateToReliableMessages: fully ported (frag rebroadcast,
+  per-client svc_entgravity/svc_maxspeed on QC field change,
+  reliable_datagram → all connected, sv.datagram → all spawned).
+  VERIFIED for the frag path: test_qw_loopback "frag change rebroadcast"
+  drives a kill over the wire and asserts the scoreboard update arrives.
+- qw-server PF_lightstyle live broadcast: dead `svr.ss_active` compare
+  and unflushed client.message fixed (ss_active == 2, netchan stream).
+  PENDING.
+- qw-server SV_SpawnServer changelevel: the QW boot now consumes
+  svr.changelevelTo — respawns the server, republishes the bundle, and
+  reissues serverdata to every connected client (they redo the full
+  handshake; the QW client's CL_ClearState path rebuilds the renderer).
+  PENDING (needs a live two-map rotation check).
