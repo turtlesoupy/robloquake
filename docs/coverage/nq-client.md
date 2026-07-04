@@ -70,11 +70,11 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| CL_InitTEnts | lazy beamModelDef + soundbank regions | PENDING | delta: bolt models/sfx loaded on first use instead of precached | TBD: write test or tools/verify script + evidence capture |
-| CL_ParseBeam | init.client parseBeam (via cl.luau TE event) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md lightning beams record; entity-override + free-slot scan kept, MAX_BEAMS 24 | TBD: write test or tools/verify script + evidence capture |
+| CL_InitTEnts | lazy beamModelDef + soundbank regions | VERIFIED | Bolt model + lightning sound resolved on first LG fire in the live battery ([evidence/nq-lightning-beam.jpg](evidence/nq-lightning-beam.jpg) + [.txt](evidence/nq-lightning-beam.txt)). Delta stands: loaded lazily instead of precached. | Stage per evidence/nq-lightning-beam.txt |
+| CL_ParseBeam | init.client parseBeam (via cl.luau TE event) | VERIFIED | Player-tracked TE_LIGHTNING1 beam rendered live ([evidence/nq-lightning-beam.jpg](evidence/nq-lightning-beam.jpg) + [.txt](evidence/nq-lightning-beam.txt)); entity-override + free-slot scan, MAX_BEAMS 24 in code. | Stage per evidence/nq-lightning-beam.txt |
 | CL_ParseTEnt | cl.luau parseTEnt + init.client onTempEntity | VERIFIED | FIDELITY.md impact sounds (fd28443); TE_TAREXPLOSION → blobExplosion (no dlight) and TE_EXPLOSION2 → particleExplosion2(colorStart/Length) + dlight now match cl_tent.c; spawners proven in tests/test_particles2.luau (routing itself unexercised by tests) | `lune run tests/test_particles2.luau` |
-| CL_NewTempEntity | beamPool pooled render entities | PENDING | delta: pooled per model name, capped 40 segments/beam | TBD: write test or tools/verify script + evidence capture |
-| CL_UpdateTEnts | init.client updateBeams | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: 30-unit segments, random roll, player-tracked start, 0.2s life; delta: C int-truncates yaw/pitch, port keeps float | TBD: write test or tools/verify script + evidence capture |
+| CL_NewTempEntity | beamPool pooled render entities | VERIFIED | Pooled bolt segments visible along the beam ([evidence/nq-lightning-beam.jpg](evidence/nq-lightning-beam.jpg) + [.txt](evidence/nq-lightning-beam.txt)). Delta stands: pooled per model name, 40-segment cap. | Stage per evidence/nq-lightning-beam.txt |
+| CL_UpdateTEnts | init.client updateBeams | VERIFIED | 30-unit segments with random roll marching player-muzzle-to-impact, live while held ([evidence/nq-lightning-beam.jpg](evidence/nq-lightning-beam.jpg) + [.txt](evidence/nq-lightning-beam.txt)). Delta stands: C int-truncates yaw/pitch, port keeps float. | Stage per evidence/nq-lightning-beam.txt |
 
 ## chase.c
 
@@ -287,7 +287,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport | — (substitution; verify justification still holds) |
 | R_MarkLeaves | — | UNIMPLEMENTED | no PVS culling — whole map stays resident; GPU frustum-culls (perf, not correctness) | — (implement first) |
 | R_DrawEntitiesOnList | heartbeat entity update loop | PENDING | statics re-posed every frame like C (FIDELITY torch record covers the static case) | TBD: write test or tools/verify script + evidence capture |
-| R_DrawViewModel | gun entity branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: light floor 24; hidden when dead/intermission/chase like C | TBD: write test or tools/verify script + evidence capture |
+| R_DrawViewModel | gun entity branch | VERIFIED | View model present in every live capture (axe/shotgun/RL/LG across the committed set) and ABSENT in [evidence/nq-death-cam.jpg](evidence/nq-death-cam.jpg) while dead — C's health<=0 gate; chase-cam hide in nq-chase-cam.jpg. Light floor 24 in code. | Compare captures; stage death per evidence/nq-lightning-beam.txt |
 | R_BmodelCheckBBox | — | SUBSTITUTED | no per-frame brush accept/reject needed | — (substitution; verify justification still holds) |
 | R_DrawBEntitiesOnList | entrender.updateBrush | SUBSTITUTED | brush ents are cloned Models moved by CFrame; delta: no rotation support (id1 unused) | — (substitution; verify justification still holds) |
 | R_EdgeDrawing / R_RenderView_ / R_RenderView | camera CFrame + Roblox render | SUBSTITUTED | rasterization replaced wholesale | — (substitution; verify justification still holds) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 88
-- PENDING: 46
+- VERIFIED: 93
+- PENDING: 41
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

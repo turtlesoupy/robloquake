@@ -1,0 +1,22 @@
+nq-lightning-beam.jpg / nq-death-cam.jpg (2026-07-04)
+======================================================
+
+Engine: NQ boot, e1m1, id1 (registered 1.06), viewsize 100.
+
+nq-lightning-beam.jpg — staging: RQDBG_Console exec "impulse 9" then
+"impulse 8" (lightning gun), RQ_ForcePitch 10 + RQ_ForceAttack held.
+Shows the TE_LIGHTNING1-family pipeline live: CL_ParseBeam beam from
+the player entity, CL_UpdateTEnts 30-unit bolt segments with random
+roll marching to the impact point, CL_NewTempEntity pooled bolt models
+(beamPool), the LG view model, and cells draining on the sbar (109).
+
+nq-death-cam.jpg — the slime-pool drowning death from the sbar battery
+("turtlesoupy sleeps with the fishes" death message via c.print):
+dead-view state with the VIEW MODEL HIDDEN (R_DrawViewModel's
+health<=0 gate), slime-brown submerged view, and Sbar_SoloScoreboard
+(monsters/secrets/time/level plaque) replacing the inventory row while
+scores show.
+
+Re-stage: tools/verify_input_nq.luau conventions (attrs + RQDBG exec).
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.
