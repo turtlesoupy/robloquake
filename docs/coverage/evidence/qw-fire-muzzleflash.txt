@@ -1,0 +1,12 @@
+Evidence: qw-fire-muzzleflash.jpg — QW firing effects
+Engine: QuakeWorld boot (engine="qw"), game id1 (local dev only)
+Map: dm3, deathmatch 1
+Position: (713, 137, 56), yaw 78 pitch 2, RQ_ForceAttack sustained fire
+Captured: 2026-07-04, Studio Play (solo), MCP screen_capture,
+  recovered from the session transcript
+Code state: the commit introducing this file
+What it proves: during shotgun fire the muzzleflash renders (orange
+  flash at the gun through svc_muzzleflash -> dlight + flash), the
+  TE_GUNSHOT impact particle puff appears at the wall hit point
+  (CL_ParseTEnt path), and the shells count on the sbar dropped
+  25 -> 2 across the burst (clc_move attack bit through the wire).

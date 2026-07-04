@@ -56,6 +56,17 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (QW client visual evidence pass)
+- qw-client DEMOTED cleared. CL_LinkPacketEntities/CL_EmitEntities via
+  evidence/qw-dm3-packetents.jpg (a wire packet entity rendered at a
+  deterministic vantage); CL_MuzzleFlash + CL_ParseTEnt via
+  evidence/qw-fire-muzzleflash.jpg (flash + TE_GUNSHOT puff during a
+  sustained forced-fire burst, shells 25->2). DropPunchAngle earned by
+  faithfulness-by-absence (tools/verify_punchangle_qw.luau): zero pitch
+  deflection over 55 samples matches the C order — DropPunchAngle
+  clamps the negative svc_smallkick before V_CalcRefdef reads it, so
+  gun kicks genuinely do not display in authentic QuakeWorld.
+
 ### 2026-07-04 (playtest: QW sky black artifacts)
 - User playtest report: sky "busted with weird black artifacts" in the
   QW boot. Root cause: qwclient.luau never consumed

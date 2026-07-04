@@ -1,0 +1,11 @@
+Evidence: qw-dm3-packetents.jpg — QW packet entities rendered
+Engine: QuakeWorld boot (engine="qw"), game id1 (local dev only)
+Map: dm3, deathmatch 1
+Position: (713, 137, 56) via SVDBG_SetOrigin, yaw 78 pitch 2
+Captured: 2026-07-04, Studio Play (solo), MCP screen_capture,
+  recovered from the session transcript
+Code state: the commit introducing this file
+What it proves: a b_nail0.bsp ammo box (a plain packet entity from
+  svc_packetentities, not a baseline static) renders at its wire
+  position through CL_LinkPacketEntities/CL_EmitEntities in the
+  qwclient relinkEntities loop, at a deterministic vantage.
