@@ -106,7 +106,10 @@ return function(ctx: Ctx)
 		local client = svr.clients[slot]
 		if client.active then
 			-- QW processes client packets on arrival (SV_ReadPackets)
+			-- and replies immediately — exactly one reply per packet,
+			-- which the delta/prediction sequence lockstep requires
 			qwsv.executeClientMessage(svr, client, data :: buffer)
+			qwsv.replyToClient(svr, client)
 		end
 	end
 	ctx.reliable.OnServerEvent:Connect(onInbound)
@@ -119,7 +122,6 @@ return function(ctx: Ctx)
 			return
 		end
 		qwsv.frame(svr, math.clamp(dt, 0.001, 0.1))
-		qwsv.sendClientMessages(svr)
 
 		diagAccum += dt
 		if diagAccum > 0.5 then
@@ -128,6 +130,12 @@ return function(ctx: Ctx)
 			ServerStorage:SetAttribute("SV_Time", svr.time)
 			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
 			ServerStorage:SetAttribute("SV_Engine", "qw")
+			local c1 = svr.clients[1]
+			if c1 and c1.spawned then
+				local vmlib = require(engine.progs.vm)
+				local o = vmlib.edVector(c1.edict, svr.qdefs.ent.origin)
+				ServerStorage:SetAttribute("SV_Origin", Vector3.new(o.x, o.y, o.z))
+			end
 		end
 	end)
 end

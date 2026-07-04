@@ -251,6 +251,41 @@ return function()
 	input.lockMouse()
 	input.setEnabled(true)
 
+	-- direct key wiring (the NQ boot routes through its bind system;
+	-- QW console/bind integration is journaled follow-up work)
+	local UserInputService = game:GetService("UserInputService")
+	local keyButtons: { [Enum.KeyCode]: string } = {
+		[Enum.KeyCode.W] = "forward",
+		[Enum.KeyCode.Up] = "forward",
+		[Enum.KeyCode.S] = "back",
+		[Enum.KeyCode.Down] = "back",
+		[Enum.KeyCode.A] = "moveleft",
+		[Enum.KeyCode.D] = "moveright",
+		[Enum.KeyCode.Space] = "jump",
+		[Enum.KeyCode.LeftControl] = "attack",
+		[Enum.KeyCode.LeftShift] = "speed",
+	}
+	local function onKey(io: InputObject, down: boolean)
+		if io.UserInputType == Enum.UserInputType.MouseButton1 then
+			input.setButton("attack", down)
+			return
+		end
+		local name = keyButtons[io.KeyCode]
+		if name then
+			input.setButton(name, down)
+		elseif down and io.KeyCode.Value >= Enum.KeyCode.One.Value and io.KeyCode.Value <= Enum.KeyCode.Eight.Value then
+			input.setImpulse(io.KeyCode.Value - Enum.KeyCode.Zero.Value)
+		end
+	end
+	UserInputService.InputBegan:Connect(function(io, processed)
+		if not processed then
+			onKey(io, true)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(io, _processed)
+		onKey(io, false)
+	end)
+
 	local sndDrained = 0
 	local accum = 0
 	RunService.Heartbeat:Connect(function(dt: number)
@@ -326,6 +361,18 @@ return function()
 
 		relinkEntities(cl.time)
 		updateLightstyles(cl.realtime)
+
+		-- studio diagnostics + command hook (console overlay is follow-up)
+		local pendingCmd = Workspace:GetAttribute("QW_Cmd")
+		if typeof(pendingCmd) == "string" and pendingCmd ~= "" then
+			Workspace:SetAttribute("QW_Cmd", "")
+			qwcl.sendStringCmd(cl, pendingCmd)
+		end
+		Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
+		Workspace:SetAttribute("QW_State", cl.state)
+		Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
+		Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
+		Workspace:SetAttribute("QW_Valid", cl.validsequence)
 
 		-- sounds
 		for i = sndDrained + 1, #cl.sounds do

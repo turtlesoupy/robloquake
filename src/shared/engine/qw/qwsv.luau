@@ -1203,22 +1203,33 @@ function qwsv.sendClientDatagram(svr: any, client: Client)
 	end
 end
 
+-- one reply for one received packet: the strict 1:1 exchange keeps the
+-- two sequence spaces identical (server frames are keyed by the client
+-- packet seq; the client acks with the server packet seq — the delta
+-- lookup depends on those being the same number, as in the C netchan)
+function qwsv.replyToClient(svr: any, client: Client)
+	if not client.send_message or not client.send then
+		return
+	end
+	client.send_message = false
+	local send = client.send
+	if client.spawned then
+		qwsv.sendClientDatagram(svr, client)
+	else
+		-- handshake replies (or an empty keepalive to stay 1:1)
+		local packet = qwnetchan.transmit(client.netchan, nil)
+		if send then
+			send(packet)
+		end
+	end
+end
+
 -- SV_SendClientMessages
 function qwsv.sendClientMessages(svr: any)
 	for i = 1, svr.maxclients do
 		local client: Client = svr.clients[i]
-		if not client.active or not client.send or not client.send_message then
-			continue
-		end
-		client.send_message = false
-		if client.spawned then
-			qwsv.sendClientDatagram(svr, client)
-		elseif client.netchan.message.cursize > 0 then
-			local packet = qwnetchan.transmit(client.netchan, nil)
-			local send = client.send
-			if send then
-				send(packet)
-			end
+		if client.active then
+			qwsv.replyToClient(svr, client)
 		end
 	end
 end
