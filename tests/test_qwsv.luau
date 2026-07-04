@@ -44,7 +44,7 @@ t.check(vector.magnitude(org0) > 0, `spawned somewhere ({org0})`)
 -- run movement: forward along the spawn point's own facing
 local spawnYaw = vmlib.edVector(player, ent.angles).y
 for i = 1, 40 do
-	qwsv.runCmd(svr, client, {
+	qwsv.executeCmd(svr, client, {
 		angles = vector.create(0, spawnYaw, 0),
 		forwardmove = 400,
 		sidemove = 0,
@@ -60,7 +60,7 @@ t.check(moved > 100, `player moved {math.floor(moved)} units via pmove`)
 
 -- stand still until settled, then the player is grounded or swimming
 for i = 1, 20 do
-	qwsv.runCmd(svr, client, {
+	qwsv.executeCmd(svr, client, {
 		angles = vector.create(0, spawnYaw, 0),
 		forwardmove = 0,
 		sidemove = 0,
@@ -76,7 +76,7 @@ t.check(grounded or wl > 0, `settled (onground={tostring(grounded)} waterlevel={
 
 -- fire the shotgun: button0 held one cmd
 local shellsBefore = vmlib.edFloat(player, ent.ammo_shells)
-qwsv.runCmd(svr, client, {
+qwsv.executeCmd(svr, client, {
 	angles = vector.create(0, spawnYaw, 0),
 	forwardmove = 0,
 	sidemove = 0,
@@ -96,5 +96,120 @@ t.check(sawFire, "guncock sound emitted")
 
 -- world runs: lightstyles registered, time advances
 t.check(svr.lightstyles[0] ~= nil or svr.time > 1, "server frames ran")
+
+--------------------------------------------------------------------------
+-- frame updates: full frame, then a delta frame against the acked one
+
+local msg = require("../src/shared/engine/common/msg")
+local qwents = require("../src/shared/engine/qw/qwents")
+local qwp = require("../src/shared/engine/qw/qwprotocol")
+
+local function baselineFor(n: number)
+	return qwsv.baselineFor(svr, n)
+end
+
+-- hand-parse one svc_playerinfo (the client's parser lands in qwcl)
+local function parsePlayerinfo(r: msg.Reader)
+	local num = msg.readByte(r)
+	local flags = msg.readShort(r)
+	local origin = vector.create(msg.readCoord(r), msg.readCoord(r), msg.readCoord(r))
+	local frame = msg.readByte(r)
+	local info = { num = num, flags = flags, origin = origin, frame = frame, msec = 0 }
+	if bit32.band(flags, qwp.PF_MSEC) ~= 0 then
+		info.msec = msg.readByte(r)
+	end
+	if bit32.band(flags, qwp.PF_COMMAND) ~= 0 then
+		info.cmd = qwents.readDeltaUsercmd(r, qwents.nullCmd())
+	end
+	local vel = { 0, 0, 0 }
+	for i = 1, 3 do
+		if bit32.band(flags, bit32.lshift(qwp.PF_VELOCITY1, i - 1)) ~= 0 then
+			vel[i] = msg.readShort(r)
+		end
+	end
+	info.velocity = vector.create(vel[1], vel[2], vel[3])
+	if bit32.band(flags, qwp.PF_MODEL) ~= 0 then
+		info.modelindex = msg.readByte(r)
+	end
+	if bit32.band(flags, qwp.PF_SKINNUM) ~= 0 then
+		info.skinnum = msg.readByte(r)
+	end
+	if bit32.band(flags, qwp.PF_EFFECTS) ~= 0 then
+		info.effects = msg.readByte(r)
+	end
+	if bit32.band(flags, qwp.PF_WEAPONFRAME) ~= 0 then
+		info.weaponframe = msg.readByte(r)
+	end
+	return info
+end
+
+local function parseFrame(r: msg.Reader, fromEnts)
+	local players = {}
+	local ents = nil
+	while true do
+		local cmdByte = msg.readByte(r)
+		if cmdByte == -1 or r.badread then
+			break
+		end
+		if cmdByte == qwp.svc_playerinfo then
+			local pi = parsePlayerinfo(r)
+			players[pi.num] = pi
+		elseif cmdByte == qwp.svc_packetentities then
+			ents = qwents.parsePacketEntities(r, {}, baselineFor)
+		elseif cmdByte == qwp.svc_deltapacketentities then
+			local _seq = msg.readByte(r)
+			ents = qwents.parsePacketEntities(r, fromEnts, baselineFor)
+		elseif cmdByte == qwp.svc_nails then
+			local n = msg.readByte(r)
+			for _ = 1, n * 6 do
+				msg.readByte(r)
+			end
+		else
+			error(`unexpected svc {cmdByte}`)
+		end
+	end
+	return players, ents
+end
+
+t.check(svr.baselines ~= nil and svr.baselines[0] ~= nil, "baselines created")
+t.check(svr.sv_playermodel >= 0, "player model number found")
+
+-- full (non-delta) frame
+client.netchan.incoming_sequence = 12
+client.delta_sequence = -1
+local out = msg.newBuf(8000)
+qwsv.writeEntitiesToClient(svr, client, out)
+t.check(out.cursize > 0, "frame written")
+local r = msg.reader(msg.snapshot(out))
+local players, ents1 = parseFrame(r, {})
+t.check(players[0] ~= nil, "self playerinfo present")
+t.check(bit32.band(players[0].flags, qwp.PF_MSEC) == 0, "self playerinfo omits PF_MSEC")
+local porg = vmlib.edVector(player, ent.origin)
+t.check(vector.magnitude(players[0].origin - porg) < 0.22, "playerinfo origin matches edict (1/8 coord quantization)")
+t.check(ents1 ~= nil and #ents1 > 0, `packet entities present ({ents1 and #ents1})`)
+t.check(#ents1 <= qwents.MAX_PACKET_ENTITIES, "within MAX_PACKET_ENTITIES")
+local frameSlot = svr.clients[1].frames[bit32.band(12, qwp.UPDATE_MASK)]
+t.eq(#frameSlot.entities, #ents1, "frame ring stored what was sent")
+
+-- delta frame: client acks seq 12, server writes seq 13 against it
+client.netchan.incoming_sequence = 13
+client.delta_sequence = 12
+local out2 = msg.newBuf(8000)
+qwsv.writeEntitiesToClient(svr, client, out2)
+t.check(out2.cursize < out.cursize, "delta frame smaller than full frame")
+local r2 = msg.reader(msg.snapshot(out2))
+local _players2, ents2 = parseFrame(r2, ents1)
+t.check(ents2 ~= nil, "delta frame parsed")
+t.eq(#ents2, #ents1, "static world: delta reproduces same entity set")
+local allMatch = true
+for i = 1, #ents1 do
+	if ents2[i].number ~= ents1[i].number then
+		allMatch = false
+	end
+	if vector.magnitude(ents2[i].origin - ents1[i].origin) >= 0.001 then
+		allMatch = false
+	end
+end
+t.check(allMatch, "delta round-trip: every entity number and origin matches")
 
 t.finish("test_qwsv")

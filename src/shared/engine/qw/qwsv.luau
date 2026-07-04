@@ -5,11 +5,14 @@
 -- (netchan + delta entities) is the next layer; this one is offline-
 -- verifiable game simulation.
 
+local bsp = require("../bsp/bsp")
 local cvarlib = require("../common/cvar")
 local mathlib = require("../common/mathlib")
 local msg = require("../common/msg")
 local vfslib = require("../common/vfs")
 local modelslib = require("../models/models")
+local qwents = require("./qwents")
+local qwp = require("./qwprotocol")
 local progslib = require("../progs/progs")
 local defs = require("../progs/defs")
 local vmlib = require("../progs/vm")
@@ -39,6 +42,19 @@ export type Client = {
 	message: msg.SizeBuf,
 	datagram: msg.SizeBuf,
 	prints: { string }, -- collected clientPrint output (transport later)
+
+	-- netchan-lite + delta compression state
+	netchan: { incoming_sequence: number, outgoing_sequence: number, incoming_acknowledged: number },
+	frames: { [number]: ClientFrame }, -- ring keyed by seq & UPDATE_MASK
+	delta_sequence: number, -- -1 = no delta unless requested (per message)
+	lastcmd: qwents.UserCmdWire,
+	localtime: number, -- sv.time when the last cmd batch ran
+	spec_track: number, -- 1-based player a spectator is tracking, 0 = none
+}
+
+export type ClientFrame = {
+	entities: { qwents.EntityState },
+	senttime: number,
 }
 
 function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
@@ -93,6 +109,12 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
 			message = msg.newBuf(8000),
 			datagram = msg.newBuf(2048),
 			prints = {},
+			netchan = { incoming_sequence = 0, outgoing_sequence = 0, incoming_acknowledged = 0 },
+			frames = {},
+			delta_sequence = -1,
+			lastcmd = qwents.nullCmd(),
+			localtime = 0,
+			spec_track = 0,
 		}
 	end
 
@@ -256,10 +278,75 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	vm.serverActive = true
 	svr.state = 2 -- ss_active
 
+	-- SV_FindModelNumbers
+	svr.sv_nailmodel, svr.sv_supernailmodel, svr.sv_playermodel = -1, -1, -1
+	for i, name in svr.model_precache do
+		if name == "progs/spike.mdl" then
+			svr.sv_nailmodel = i - 1
+		elseif name == "progs/s_spike.mdl" then
+			svr.sv_supernailmodel = i - 1
+		elseif name == "progs/player.mdl" then
+			svr.sv_playermodel = i - 1
+		end
+	end
+
 	-- run two frames to allow everything to settle
 	svr.frametime = 0.1
 	qwphys.physics(svr)
 	qwphys.physics(svr)
+
+	qwsv.createBaseline(svr)
+end
+
+-- SV_CreateBaseline: per-entity reference states for delta compression,
+-- plus the svc_spawnbaseline signon messages
+function qwsv.createBaseline(svr: any)
+	local vm = svr.vm
+	local ent = svr.qdefs.ent
+	svr.baselines = {} :: { [number]: qwents.EntityState }
+	local playerModel = svr.sv_playermodel >= 0 and svr.sv_playermodel or 0
+	for entnum = 0, vm.num_edicts - 1 do
+		local svent = vm.edicts[entnum + 1]
+		if svent.free then
+			continue
+		end
+		-- create baselines for all player slots, and any other
+		-- edict that has a visible model
+		if entnum > svr.maxclients and vmlib.edFloat(svent, ent.modelindex) == 0 then
+			continue
+		end
+
+		local base = qwents.nullState(entnum)
+		base.origin = vmlib.edVector(svent, ent.origin)
+		base.angles = vmlib.edVector(svent, ent.angles)
+		base.frame = vmlib.edFloat(svent, ent.frame)
+		base.skinnum = vmlib.edFloat(svent, ent.skin)
+		if entnum > 0 and entnum <= svr.maxclients then
+			base.colormap = entnum
+			base.modelindex = playerModel
+		else
+			base.colormap = 0
+			base.modelindex = svr.modelIndex(svr, vmlib.edString(vm, svent, ent.model)) or 0
+		end
+		svr.baselines[entnum] = base
+
+		msg.writeByte(svr.signon, qwp.svc_spawnbaseline)
+		msg.writeShort(svr.signon, entnum)
+		msg.writeByte(svr.signon, base.modelindex)
+		msg.writeByte(svr.signon, base.frame)
+		msg.writeByte(svr.signon, base.colormap)
+		msg.writeByte(svr.signon, base.skinnum)
+		msg.writeCoord(svr.signon, base.origin.x)
+		msg.writeAngle(svr.signon, base.angles.x)
+		msg.writeCoord(svr.signon, base.origin.y)
+		msg.writeAngle(svr.signon, base.angles.y)
+		msg.writeCoord(svr.signon, base.origin.z)
+		msg.writeAngle(svr.signon, base.angles.z)
+	end
+end
+
+function qwsv.baselineFor(svr: any, num: number): qwents.EntityState
+	return (svr.baselines and svr.baselines[num]) or qwents.nullState(num)
 end
 
 -- SV_ExtractFromUserinfo essentials
@@ -280,6 +367,12 @@ function qwsv.connectClient(svr: any, slot: number, userinfo: { [string]: string
 	client.oldbuttons = 0
 	client.entgravity = 1
 	client.maxspeed = cvarlib.value(svr.cvars, "sv_maxspeed")
+	client.netchan = { incoming_sequence = 0, outgoing_sequence = 0, incoming_acknowledged = 0 }
+	client.frames = {}
+	client.delta_sequence = -1
+	client.lastcmd = qwents.nullCmd()
+	client.localtime = 0
+	client.spec_track = 0
 
 	local ed = client.edict
 	buffer.fill(ed.fields, 0, 0, svr.progs.entityfields * 4)
@@ -499,8 +592,25 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 			touched[n] = true
 		end
 	end
+end
 
+-- clc_move essentials: PostRunCmd runs ONCE per move message, not per
+-- chopped sub-command; lastcmd is kept (buttons cleared) for the
+-- PF_COMMAND playerinfo and for filling dropped packets
+function qwsv.executeCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
+	client.localtime = svr.time
+	qwsv.runCmd(svr, client, ucmd)
 	qwsv.postRunCmd(svr, client)
+	local u = ucmd :: any
+	client.lastcmd = {
+		angles = ucmd.angles,
+		forwardmove = ucmd.forwardmove,
+		sidemove = ucmd.sidemove,
+		upmove = ucmd.upmove,
+		buttons = 0, -- avoid multiple fires on lag
+		impulse = u.impulse or 0,
+		msec = ucmd.msec,
+	}
 end
 
 -- SV_PostRunCmd
@@ -526,6 +636,273 @@ function qwsv.postRunCmd(svr: any, client: Client)
 		buffer.writei32(g, qdefs.glob.self * 4, client.edict.num)
 		vmlib.exec(vm, qdefs.func.SpectatorThink)
 	end
+end
+
+--------------------------------------------------------------------------
+-- frame updates (sv_ents.c)
+
+local function addToFatPVS(svr: any, org: vector, child: number, fatpvs: buffer, fatbytes: number)
+	local data = svr.worldmodel.brush
+	while true do
+		if child < 0 then
+			local leaf = data.leafs[-child]
+			if leaf.contents ~= qd.CONTENTS_SOLID then
+				local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+				for i = 0, math.min(fatbytes, buffer.len(pvs)) - 1 do
+					buffer.writeu8(fatpvs, i, bit32.bor(buffer.readu8(fatpvs, i), buffer.readu8(pvs, i)))
+				end
+			end
+			return
+		end
+
+		local node = data.nodes[child + 1]
+		local plane = data.planes[node.planenum + 1]
+		local d = vector.dot(org, plane.normal) - plane.dist
+		if d > 8 then
+			child = node.children[1]
+		elseif d < -8 then
+			child = node.children[2]
+		else
+			addToFatPVS(svr, org, node.children[1], fatpvs, fatbytes)
+			child = node.children[2]
+		end
+	end
+end
+
+-- SV_FatPVS: inclusive or of all leafs within 8 units of the point
+function qwsv.fatPVS(svr: any, org: vector): buffer
+	local fatbytes = bit32.rshift(svr.worldmodel.numleafs + 31, 3)
+	local fatpvs = buffer.create(fatbytes)
+	addToFatPVS(svr, org, 0, fatpvs, fatbytes)
+	return fatpvs
+end
+
+local function edictInPVS(ed: vmlib.Edict, pvs: buffer): boolean
+	for i = 1, ed.num_leafs do
+		local ln = ed.leafnums[i]
+		if bit32.band(buffer.readu8(pvs, bit32.rshift(ln, 3)), bit32.lshift(1, bit32.band(ln, 7))) ~= 0 then
+			return true
+		end
+	end
+	return false
+end
+
+-- SV_WritePlayersToClient
+function qwsv.writePlayersToClient(svr: any, client: Client, pvs: buffer, out: msg.SizeBuf)
+	local vm = svr.vm
+	local ent = svr.qdefs.ent
+	local clent = client.edict
+
+	for j = 1, svr.maxclients do
+		local cl: Client = svr.clients[j]
+		if not (cl.active and cl.spawned) then
+			continue
+		end
+		local ed = cl.edict
+
+		-- ZOID visibility tracking
+		if ed ~= clent and not (client.spec_track ~= 0 and client.spec_track == j) then
+			if cl.spectator then
+				continue
+			end
+			if not edictInPVS(ed, pvs) then
+				continue
+			end
+		end
+
+		local pflags = bit32.bor(qwp.PF_MSEC, qwp.PF_COMMAND)
+		local modelindex = vmlib.edFloat(ed, ent.modelindex)
+		local velocity = vmlib.edVector(ed, ent.velocity)
+		local effects = vmlib.edFloat(ed, ent.effects)
+		local skin = vmlib.edFloat(ed, ent.skin)
+		local health = vmlib.edFloat(ed, ent.health)
+		local weaponframe = vmlib.edFloat(ed, ent.weaponframe)
+
+		if modelindex ~= svr.sv_playermodel then
+			pflags = bit32.bor(pflags, qwp.PF_MODEL)
+		end
+		if velocity.x ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_VELOCITY1)
+		end
+		if velocity.y ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_VELOCITY2)
+		end
+		if velocity.z ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_VELOCITY3)
+		end
+		if effects ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_EFFECTS)
+		end
+		if skin ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_SKINNUM)
+		end
+		if health <= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_DEAD)
+		end
+		if vmlib.edVector(ed, ent.mins).z ~= -24 then
+			pflags = bit32.bor(pflags, qwp.PF_GIB)
+		end
+
+		if cl.spectator then
+			-- only send origin and velocity to spectators
+			pflags = bit32.band(pflags, bit32.bor(qwp.PF_VELOCITY1, qwp.PF_VELOCITY2, qwp.PF_VELOCITY3))
+		elseif ed == clent then
+			-- don't send a lot of data on personal entity
+			pflags = bit32.band(pflags, bit32.bnot(bit32.bor(qwp.PF_MSEC, qwp.PF_COMMAND)))
+			if weaponframe ~= 0 then
+				pflags = bit32.bor(pflags, qwp.PF_WEAPONFRAME)
+			end
+		end
+
+		if client.spec_track ~= 0 and client.spec_track == j and weaponframe ~= 0 then
+			pflags = bit32.bor(pflags, qwp.PF_WEAPONFRAME)
+		end
+
+		msg.writeByte(out, qwp.svc_playerinfo)
+		msg.writeByte(out, j - 1) -- wire player numbers are 0-based
+		msg.writeShort(out, pflags)
+
+		local origin = vmlib.edVector(ed, ent.origin)
+		msg.writeCoord(out, origin.x)
+		msg.writeCoord(out, origin.y)
+		msg.writeCoord(out, origin.z)
+		msg.writeByte(out, vmlib.edFloat(ed, ent.frame))
+
+		if bit32.band(pflags, qwp.PF_MSEC) ~= 0 then
+			local msec = 1000 * (svr.time - cl.localtime)
+			if msec > 255 then
+				msec = 255
+			end
+			msg.writeByte(out, msec // 1)
+		end
+
+		if bit32.band(pflags, qwp.PF_COMMAND) ~= 0 then
+			local cmd = table.clone(cl.lastcmd)
+			if health <= 0 then
+				-- don't show the corpse looking around
+				cmd.angles = vector.create(0, vmlib.edVector(ed, ent.angles).y, cmd.angles.z)
+			end
+			cmd.buttons = 0 -- never send buttons
+			cmd.impulse = 0 -- never send impulses
+			qwents.writeDeltaUsercmd(out, qwents.nullCmd(), cmd)
+		end
+
+		if bit32.band(pflags, qwp.PF_VELOCITY1) ~= 0 then
+			msg.writeShort(out, velocity.x // 1)
+		end
+		if bit32.band(pflags, qwp.PF_VELOCITY2) ~= 0 then
+			msg.writeShort(out, velocity.y // 1)
+		end
+		if bit32.band(pflags, qwp.PF_VELOCITY3) ~= 0 then
+			msg.writeShort(out, velocity.z // 1)
+		end
+		if bit32.band(pflags, qwp.PF_MODEL) ~= 0 then
+			msg.writeByte(out, modelindex)
+		end
+		if bit32.band(pflags, qwp.PF_SKINNUM) ~= 0 then
+			msg.writeByte(out, skin)
+		end
+		if bit32.band(pflags, qwp.PF_EFFECTS) ~= 0 then
+			msg.writeByte(out, effects)
+		end
+		if bit32.band(pflags, qwp.PF_WEAPONFRAME) ~= 0 then
+			msg.writeByte(out, weaponframe)
+		end
+	end
+end
+
+-- SV_AddNailUpdate / SV_EmitNailUpdate: special dense encoding because
+-- there can be a lot of nails
+local MAX_NAILS = 32
+
+local function emitNailUpdate(svr: any, nails: { vmlib.Edict }, out: msg.SizeBuf)
+	if #nails == 0 then
+		return
+	end
+	local ent = svr.qdefs.ent
+	msg.writeByte(out, qwp.svc_nails)
+	msg.writeByte(out, #nails)
+	for _, ed in nails do
+		local org = vmlib.edVector(ed, ent.origin)
+		local ang = vmlib.edVector(ed, ent.angles)
+		-- [48 bits] xyzpy 12 12 12 4 8
+		local x = bit32.arshift((org.x + 4096) // 1, 1)
+		local y = bit32.arshift((org.y + 4096) // 1, 1)
+		local z = bit32.arshift((org.z + 4096) // 1, 1)
+		local p = bit32.band((16 * ang.x / 360) // 1, 15)
+		local yaw = bit32.band((256 * ang.y / 360) // 1, 255)
+		msg.writeByte(out, bit32.band(x, 255))
+		msg.writeByte(out, bit32.band(bit32.bor(bit32.rshift(x, 8), bit32.lshift(y, 4)), 255))
+		msg.writeByte(out, bit32.band(bit32.rshift(y, 4), 255))
+		msg.writeByte(out, bit32.band(z, 255))
+		msg.writeByte(out, bit32.band(bit32.bor(bit32.rshift(z, 8), bit32.lshift(p, 4)), 255))
+		msg.writeByte(out, yaw)
+	end
+end
+
+-- SV_WriteEntitiesToClient: encode this frame's visible state against
+-- the client's last acked frame
+function qwsv.writeEntitiesToClient(svr: any, client: Client, out: msg.SizeBuf)
+	local vm = svr.vm
+	local ent = svr.qdefs.ent
+
+	-- this is the frame we are creating
+	local frame: ClientFrame = { entities = {}, senttime = svr.time }
+	client.frames[bit32.band(client.netchan.incoming_sequence, qwp.UPDATE_MASK)] = frame
+
+	local clent = client.edict
+	local org = vmlib.edVector(clent, ent.origin) + vmlib.edVector(clent, ent.view_ofs)
+	local pvs = qwsv.fatPVS(svr, org)
+
+	qwsv.writePlayersToClient(svr, client, pvs, out)
+
+	local pack = frame.entities
+	local nails: { vmlib.Edict } = {}
+	for e = svr.maxclients + 1, vm.num_edicts - 1 do
+		local ed = vm.edicts[e + 1]
+		if ed.free then
+			continue
+		end
+		-- ignore ents without visible models
+		local modelindex = vmlib.edFloat(ed, ent.modelindex)
+		if modelindex == 0 or vmlib.edString(vm, ed, ent.model) == "" then
+			continue
+		end
+		if not edictInPVS(ed, pvs) then
+			continue
+		end
+		if (modelindex == svr.sv_nailmodel or modelindex == svr.sv_supernailmodel) and #nails < MAX_NAILS then
+			table.insert(nails, ed)
+			continue
+		end
+		if #pack == qwents.MAX_PACKET_ENTITIES then
+			continue -- all full
+		end
+
+		local state = qwents.nullState(e)
+		state.origin = vmlib.edVector(ed, ent.origin)
+		state.angles = vmlib.edVector(ed, ent.angles)
+		state.modelindex = modelindex
+		state.frame = vmlib.edFloat(ed, ent.frame)
+		state.colormap = vmlib.edFloat(ed, ent.colormap)
+		state.skinnum = vmlib.edFloat(ed, ent.skin)
+		state.effects = vmlib.edFloat(ed, ent.effects)
+		table.insert(pack, state)
+	end
+
+	-- encode as a delta from the last packetentities acked by the client
+	local from: { qwents.EntityState }? = nil
+	local deltaSeq: number? = nil
+	if client.delta_sequence ~= -1 then
+		local fromframe = client.frames[bit32.band(client.delta_sequence, qwp.UPDATE_MASK)]
+		from = if fromframe then fromframe.entities else {}
+		deltaSeq = client.delta_sequence
+	end
+	qwents.emitPacketEntities(out, pack, from, deltaSeq, function(n: number): qwents.EntityState
+		return qwsv.baselineFor(svr, n)
+	end)
+
+	emitNailUpdate(svr, nails, out)
 end
 
 -- SV_Frame (physics portion; players move on cmd arrival)
