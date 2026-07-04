@@ -359,6 +359,7 @@ local worldlib = require(engine.server.world) -- pure hull math for TraceLine
 local chase_active = false
 
 local camera = Workspace.CurrentCamera
+local currentFov = 90 -- fov cvar (horizontal, CalcFov semantics)
 local refreshInputMode: () -> () = function() end
 
 --------------------------------------------------------------------------
@@ -587,7 +588,9 @@ execCommand = function(line: string)
 		local v = tonumber(args)
 		if v and v >= 10 and v <= 170 then
 			-- quake fov is horizontal for 4:3; convert to vertical
-			camera.FieldOfView = math.deg(2 * math.atan(math.tan(math.rad(v) / 2) * 0.75))
+			currentFov = v
+			local vp = camera.ViewportSize
+			camera.FieldOfView = qcoords.calcFovY(v, vp.X, vp.Y)
 		end
 		return
 	elseif cmd == "togglemenu" then
@@ -975,7 +978,15 @@ end
 -- camera
 
 camera.CameraType = Enum.CameraType.Scriptable
-camera.FieldOfView = 75
+currentFov = 90
+do
+	local function applyFov()
+		local vp = camera.ViewportSize
+		camera.FieldOfView = qcoords.calcFovY(currentFov, vp.X, vp.Y)
+	end
+	applyFov()
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
+end
 
 input.init(90)
 input.lockMouse()

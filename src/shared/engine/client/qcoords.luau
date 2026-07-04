@@ -44,4 +44,17 @@ function qcoords.modelCFrame(origin: vector, forward: vector, right: vector, up:
 	return CFrame.fromMatrix(pos, f, u, r)
 end
 
+-- CalcFov (screen.c): the fov cvar is the HORIZONTAL field of view at
+-- the actual viewport aspect; Roblox FieldOfView is vertical. At 16:9,
+-- fov 90 comes out ~58.7 vertical — hardcoding a 4:3 conversion makes
+-- everything (especially the view weapon) render ~35% too small.
+function qcoords.calcFovY(fovX: number, width: number, height: number): number
+	if width <= 0 or height <= 0 then
+		return 70
+	end
+	fovX = math.clamp(fovX, 1, 179)
+	local x = width / math.tan(math.rad(fovX) / 2)
+	return math.deg(2 * math.atan(height / x))
+end
+
 return qcoords

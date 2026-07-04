@@ -552,6 +552,13 @@ return function()
 
 	local camera = Workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Scriptable
+	-- CalcFov: fov 90 horizontal at the real viewport aspect
+	local function applyFov()
+		local vp = camera.ViewportSize
+		camera.FieldOfView = qcoords.calcFovY(90, vp.X, vp.Y)
+	end
+	applyFov()
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
 	input.init(0)
 	input.lockMouse()
 	input.setEnabled(true)
@@ -690,8 +697,12 @@ return function()
 			viewheight = 22
 		end
 		-- V_CalcRefdef: bob, roll, kicks, death/gib view, intermission
-		if cl.punchangle ~= 0 then
-			cl.punchangle = math.min(cl.punchangle + 10 * dt, 0) -- V_DropPunchAngle
+		-- DropPunchAngle, verbatim: punchangle -= 10*dt, clamped at 0 from
+		-- below — since kicks arrive negative, a kick lasts one frame
+		-- (authentic QW; the lingering NQ recoil was NetQuake behavior)
+		cl.punchangle -= 10 * dt
+		if cl.punchangle < 0 then
+			cl.punchangle = 0
 		end
 		local ownState = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
 		local eye, angles
