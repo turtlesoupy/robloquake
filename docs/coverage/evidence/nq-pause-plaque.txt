@@ -1,0 +1,8 @@
+Evidence: nq-pause-plaque.jpg — SCR_DrawPause
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), MCP screen_capture; console
+  "pause" via the RQDBG_Console harness; recovered from the transcript
+Code state: the commit introducing this file
+What it proves: pause.lmp plaque centered over the paused world
+(SCR_DrawPause; Host_Pause_f server side is offline-tested in
+test_server). The console is mid-slide at the top (scr_conspeed).

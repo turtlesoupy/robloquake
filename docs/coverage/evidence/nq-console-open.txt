@@ -1,0 +1,20 @@
+Evidence: nq-console-open.jpg — NQ console + keys.c/cmd.c battery
+Engine: NetQuake boot, game id1 (local dev only)
+Map: e1m1, deathmatch 0, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), MCP screen_capture via the
+  RQDBG_Console harness; recovered from the session transcript
+Code state: the commit introducing this file
+What it proves (visible in the scrollback):
+  - Con_DrawConsole: conback texture + id watermark, half-screen slide,
+    200-line scrollback, ] input prompt with blinking cursor
+    (Con_DrawInput), confont glyph rendering (Draw_Character/String)
+  - boot-time Key_Init: "execing default.cfg" ... "couldn't exec
+    autoexec.cfg" at the top of the scrollback
+  - the command battery run through the harness, results on screen:
+    echo hello_cbuf (Cmd_Echo_f); alias tst + expansion ali_fired
+    (Cmd_Alias_f + Cbuf_InsertText); echo "quoted string here"
+    (Cmd_TokenizeString quote handling); bind x query showing
+    "x" = "echo xkey_fired" (Key_SetBinding/Key_Bind_f); unbind x then
+    query showing "x" = "" (Key_Unbind_f — DELTA: C prints
+    '"x" is not bound'); exec default.cfg re-run (Cmd_Exec_f) printing
+    "sensitivity" is "3" (Cvar_Variable print path)

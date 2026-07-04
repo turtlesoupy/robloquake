@@ -146,23 +146,23 @@ F11 zoom chain) but there is no offline test.
 |---|---|---|---|---|
 | Cmd_Wait_f (cmd.c:53) | client/init.client.luau ("wait" in execCommand) | PENDING | defers remainder to next frame via cbufDeferred; manual verification only | TBD: write test or tools/verify script + evidence capture |
 | Cbuf_Init (cmd.c:73) | init.client.luau cbufDeferred/cbufWait state | PENDING | no 8KB sizebuf; unbounded Luau queue | TBD: write test or tools/verify script + evidence capture |
-| Cbuf_AddText (cmd.c:86) | init.client.luau:execLine | PENDING | executes immediately unless waiting (C queues); ordering equivalent for the port's callers | TBD: write test or tools/verify script + evidence capture |
-| Cbuf_InsertText (cmd.c:111) | init.client.luau cbufDeferred | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| Cbuf_Execute (cmd.c:143) | init.client.luau:execLine + cbufFrame | PENDING | quote-protected semicolon splitting per FIDELITY.md; manual verification | TBD: write test or tools/verify script + evidence capture |
+| Cbuf_AddText (cmd.c:86) | init.client.luau:execLine | VERIFIED | Console battery: every exec'd line runs through the Cbuf path (results on screen in evidence/nq-console-open.jpg). | RQDBG_Console battery per evidence/nq-console-open.txt |
+| Cbuf_InsertText (cmd.c:111) | init.client.luau cbufDeferred | VERIFIED | Console battery: alias expansion fired (ali_fired) — alias bodies insert ahead of the pending buffer. | RQDBG_Console battery per evidence/nq-console-open.txt |
+| Cbuf_Execute (cmd.c:143) | init.client.luau:execLine + cbufFrame | VERIFIED | Console battery: multi-command session executes in order (scrollback order matches issue order). | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_StuffCmds_f (cmd.c:213) | — | SUBSTITUTED | no command line to stuff on Roblox | — (substitution; verify justification still holds) |
-| Cmd_Exec_f (cmd.c:283) | init.client.luau "exec" | PENDING | execs default.cfg from pak at boot + autoexec.cfg (FIDELITY.md) | TBD: write test or tools/verify script + evidence capture |
-| Cmd_Echo_f (cmd.c:315) | init.client.luau "echo" | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Cmd_Exec_f (cmd.c:283) | init.client.luau "exec" | VERIFIED | Console battery: exec default.cfg prints "execing default.cfg" and applies its cvars ("sensitivity" is "3"); missing file prints couldn't-exec. | RQDBG_Console battery per evidence/nq-console-open.txt |
+| Cmd_Echo_f (cmd.c:315) | init.client.luau "echo" | VERIFIED | Console battery: echo hello_cbuf renders. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | CopyString (cmd.c:332) | — | SUBSTITUTED | GC strings | — (substitution; verify justification still holds) |
-| Cmd_Alias_f (cmd.c:341) | init.client.luau "alias" + aliases table | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Cmd_Alias_f (cmd.c:341) | init.client.luau "alias" + aliases table | VERIFIED | Console battery: alias tst defined and expanded. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_Init (cmd.c:428) | init.client.luau:execCommand dispatcher | SUBSTITUTED | if-chain dispatch instead of registered command table | — (substitution; verify justification still holds) |
 | Cmd_Argc (cmd.c:446) | init.client.luau:tokenize result | SUBSTITUTED | token array | — (substitution; verify justification still holds) |
 | Cmd_Argv (cmd.c:456) | tokenize result | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | Cmd_Args (cmd.c:468) | tokenize / table.concat | SUBSTITUTED | | — (substitution; verify justification still holds) |
-| Cmd_TokenizeString (cmd.c:481) | init.client.luau:tokenize | PENDING | quoted strings + // comments handled | TBD: write test or tools/verify script + evidence capture |
+| Cmd_TokenizeString (cmd.c:481) | init.client.luau:tokenize | VERIFIED | Console battery: quoted argument survives as one token (echo "quoted string here"). | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_AddCommand (cmd.c:532) | — | SUBSTITUTED | dispatcher if-chain | — (substitution; verify justification still holds) |
 | Cmd_Exists (cmd.c:568) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | Cmd_CompleteCommand (cmd.c:588) | — | UNIMPLEMENTED | console tab-completion | — (implement first) |
-| Cmd_ExecuteString (cmd.c:614) | init.client.luau:execCommand | PENDING | commands → aliases → cvars → forward order preserved in spirit | TBD: write test or tools/verify script + evidence capture |
+| Cmd_ExecuteString (cmd.c:614) | init.client.luau:execCommand | VERIFIED | Console battery: dispatch across builtins (echo/bind/exec), aliases, and cvar queries. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_ForwardToServer (cmd.c:660) | client console → clc_stringcmd forward | PENDING | console.luau: "everything else forwarded to the server like Cmd_ForwardToServer" | TBD: write test or tools/verify script + evidence capture |
 | Cmd_CheckParm (cmd.c:693) | — | UNIMPLEMENTED | unused | — (implement first) |
 

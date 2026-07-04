@@ -1,0 +1,8 @@
+Evidence: nq-solo-scoreboard.jpg — Sbar_SoloScoreboard via +showscores
+Engine: NetQuake boot, game id1 (local dev only); map e1m1, viewsize 100
+Captured: 2026-07-04, Studio Play (solo), MCP screen_capture; console
+  "+showscores" via the RQDBG_Console harness; recovered from transcript
+Code state: the commit introducing this file
+What it proves: the solo scoreboard renders over the status row with
+the exact C fields — "Monsters: 0 /23", "Secrets : 0 / 6", "Time : 2:14",
+"The Slipgate Complex" — via Sbar_ShowScores (+showscores command).

@@ -116,7 +116,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Sbar_ShowScores / Sbar_DontShowScores | +/-showscores → hud.setShowScores | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: TAB +showscores record | TBD: write test or tools/verify script + evidence capture |
+| Sbar_ShowScores / Sbar_DontShowScores | +/-showscores → hud.setShowScores | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): +showscores raises the overlay; -showscores restores. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
 | Sbar_Changed | — | SUBSTITUTED | retained GUI; no dirty-region repaint needed | — (substitution; verify justification still holds) |
 | Sbar_Init | hud.create (wad pics cached lazily) | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Sbar_DrawPic / Sbar_DrawTransPic | setPic → ImageLabel | SUBSTITUTED | framebuffer blit → ImageLabel; index 255 transparent | — (substitution; verify justification still holds) |
@@ -125,7 +125,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawNum | hud drawNum | PENDING | right-justified 24px slots, anum_ red variant, last-3-digit clip match | TBD: write test or tools/verify script + evidence capture |
 | Sbar_SortFrags | buildRankings sort | PENDING | delta: skips empty names then sorts by frags (C insertion sort, same order) | TBD: write test or tools/verify script + evidence capture |
 | Sbar_UpdateScoreboard | sig-string rebuild in updateOverlays | SUBSTITUTED | rebuild-on-change replaces per-frame scratch build | — (substitution; verify justification still holds) |
-| Sbar_SoloScoreboard | hud soloRows | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: monsters/secrets/time/level over status row, shown when dead, scorebar.lmp backdrop | TBD: write test or tools/verify script + evidence capture |
+| Sbar_SoloScoreboard | hud soloRows | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): exact C fields — Monsters 0/23, Secrets 0/6, Time, level name over the status row. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
 | Sbar_DrawScoreboard | updateOverlays dispatch | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | PENDING | flashon formula ((time-gettime)*10, %5+2, inv2_ active) matches; counts as conchars 18+digit | TBD: write test or tools/verify script + evidence capture |
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn | — (implement first) |
@@ -150,9 +150,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_SizeUp_f / SCR_SizeDown_f | accepted no-op commands | UNIMPLEMENTED | viewsize fixed | — (implement first) |
 | SCR_Init | init.client GUI setup | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent | — (implement first) |
-| SCR_DrawPause | hud pausePlaque | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md pause plaque record | TBD: write test or tools/verify script + evidence capture |
+| SCR_DrawPause | hud pausePlaque | VERIFIED | [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) + .txt: pause.lmp centered over the paused world. | Console "pause" per evidence/nq-pause-plaque.txt, capture, compare |
 | SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify/centerprint clear, plaque holds until first rendered frame | TBD: write test or tools/verify script + evidence capture |
-| SCR_SetUpToDrawConsole | console.update slide | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: console slide animation (scr_conspeed 300 ≙ 1.5 heights/s) | TBD: write test or tools/verify script + evidence capture |
+| SCR_SetUpToDrawConsole | console.update slide | VERIFIED | Half-screen slide in [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg); mid-slide retraction visible at the top of [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) (scr_conspeed). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | SCR_DrawConsole | console.update rows | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | UNIMPLEMENTED | no writable filesystem | — (implement first) |
 | SCR_ModalMessage | — | UNIMPLEMENTED | no modal quit/confirm flow (Roblox owns quit) | — (implement first) |
@@ -165,21 +165,21 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Con_ToggleConsole_f | console.toggle (backquote/tilde) | PENDING | mouse unlock while open; delta: no Key_ClearStates/togglemenu interplay | TBD: write test or tools/verify script + evidence capture |
+| Con_ToggleConsole_f | console.toggle (backquote/tilde) | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: console toggled open/closed through the harness across the battery. Delta: no Key_ClearStates. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Clear_f | `clear` command | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Con_ClearNotify | hud.setLoading clears notifyLines | PENDING | | TBD: write test or tools/verify script + evidence capture |
 | Con_MessageMode_f / Con_MessageMode2_f | stub print | UNIMPLEMENTED | pointed at `say`/Roblox chat | — (implement first) |
 | Con_CheckResize | — | SUBSTITUTED | fixed 64-column virtual canvas | — (substitution; verify justification still holds) |
-| Con_Init | console.create | PENDING | conback drawn like Draw_ConsoleBackground | TBD: write test or tools/verify script + evidence capture |
+| Con_Init | console.create | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: conback + id watermark drawn (Draw_ConsoleBackground). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Linefeed | implicit in print | SUBSTITUTED | | — (substitution; verify justification still holds) |
-| Con_Print | console.print | PENDING | delta: hard wrap at 64 cols (no word-boundary wrap), 200-line scrollback vs 16K text buffer, no cr handling | TBD: write test or tools/verify script + evidence capture |
+| Con_Print | console.print | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: scrollback renders the battery lines. Delta: hard wrap at 64 cols, 200-line scrollback vs 16K text buffer. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DebugLog | — | UNIMPLEMENTED | | — (implement first) |
-| Con_Printf | c.print → console + notify + output | PENDING | delta: no rcon/server redirect concerns client-side | TBD: write test or tools/verify script + evidence capture |
+| Con_Printf | c.print → console + notify + output | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: c.print output (VERSION banner, cvar prints) lands in the console. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | — (implement first) |
 | Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | — (implement first) |
-| Con_DrawInput | input row + blinking char-11 cursor | PENDING | ] prompt kept; delta: no horizontal scroll of long input | TBD: write test or tools/verify script + evidence capture |
+| Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DrawNotify | hud notifyRows (4 lines, 3s) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify in conchars, faithful metrics; recorded divergence: sits below Roblox topbar inset | TBD: write test or tools/verify script + evidence capture |
-| Con_DrawConsole | console.update | PENDING | delta: no scrollback paging, no version string | TBD: write test or tools/verify script + evidence capture |
+| Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_NotifyBox | — | UNIMPLEMENTED | | — (implement first) |
 
 ## keys.c
@@ -189,10 +189,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Key_Console | console.handleKey/handleText | PENDING | enter/backspace/up/down history; delta: no tab completion, no pgup/pgdn scrollback, no clipboard paste | TBD: write test or tools/verify script + evidence capture |
 | Key_Message | — | UNIMPLEMENTED | chat via Roblox | — (implement first) |
 | Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | PENDING | delta: Roblox KeyCodes; Escape reserved by platform (menu on M), mouse1-3 mapped | TBD: write test or tools/verify script + evidence capture |
-| Key_SetBinding | bindings table | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md keys.c record + "F11 zoom chain" | TBD: write test or tools/verify script + evidence capture |
-| Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: full bind system record | TBD: write test or tools/verify script + evidence capture |
+| Key_SetBinding | bindings table | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind x sets, query echoes "x" = "echo xkey_fired". | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
+| Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind query + unbind clears the binding. Delta: unbound query prints "x" = "" instead of C's '"x" is not bound'. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) | — (implement first) |
-| Key_Init | default.cfg exec at boot + autoexec layer | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: shipped default.cfg execs at boot, quake.rc ordering | TBD: write test or tools/verify script + evidence capture |
+| Key_Init | default.cfg exec at boot + autoexec layer | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: boot scrollback opens with "execing default.cfg" and "couldn't exec autoexec.cfg" (pak default.cfg + autoexec layer at boot). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Event | init.client keyEvent via UserInputService | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: keyups fire the -command; W→forwardmove chain | TBD: write test or tools/verify script + evidence capture |
 | Key_ClearStates | input.setEnabled(false) clears buttons | PENDING | cleared when console/menu opens | TBD: write test or tools/verify script + evidence capture |
 
@@ -232,7 +232,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Draw_Init | confont/textures lazy init | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: conchars with faithful metrics; high-bit bronze glyphs pass through | TBD: write test or tools/verify script + evidence capture |
+| Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | VERIFIED | Confont glyph rendering across all three captures (console text, scoreboard fields, plaque). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Draw_DebugChar | — | UNIMPLEMENTED | | — (implement first) |
 | Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | PENDING | used by hud/menu/plaques | TBD: write test or tools/verify script + evidence capture |
 | Draw_TransPicTranslate | — | UNIMPLEMENTED | only the setup menu used it | — (implement first) |

@@ -56,6 +56,17 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (NQ console/keys/cmd evidence pass)
+- Three committed captures drive 22 rows: nq-console-open.jpg (console
+  + the full keys.c/cmd.c battery through the checked-in RQDBG_Console
+  harness — echo/alias/quote-tokenize/bind/unbind/exec visible in the
+  scrollback; boot-time default.cfg exec at the top), nq-pause-plaque.jpg
+  (SCR_DrawPause + the console mid-slide), nq-solo-scoreboard.jpg
+  (Sbar_SoloScoreboard exact C fields via +showscores). Formatting
+  delta recorded: unbound key query prints "x" = "" vs C's not-bound
+  message. Also corrected qw-dm3-packetents.jpg (the transcript stores
+  each capture twice; the first extraction committed duplicate bytes).
+
 ### 2026-07-04 (QW client visual evidence pass)
 - qw-client DEMOTED cleared. CL_LinkPacketEntities/CL_EmitEntities via
   evidence/qw-dm3-packetents.jpg (a wire packet entity rendered at a
