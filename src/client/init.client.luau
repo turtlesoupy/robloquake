@@ -237,8 +237,13 @@ local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
 end
 
 -- world load on serverinfo
+local loadingUp = 0 -- 1 = loading, 2 = built, awaiting first rendered frame
 c.onServerInfo = function()
 	print(`[cl] serverinfo: {c.levelname}`)
+	-- SCR_BeginLoadingPlaque: sounds stop, notify/centerprints clear, the
+	-- loading plaque holds until the first rendered frame of the new level
+	loadingUp = 1
+	hudlib.setLoading(hud, true)
 	worldFolder:ClearAllChildren()
 	entFolder:ClearAllChildren()
 	soundlib.clear(snd)
@@ -265,7 +270,8 @@ c.onServerInfo = function()
 	for _, ta in worldmesh.takeTextureAnims() do
 		table.insert(textureAnims, ta)
 	end
-	print(`[cl] world built: {worldName} ({#lightAnim} animated light verts, {#textureAnims} animated textures)`)
+	print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
+	loadingUp = 2
 end
 
 c.print = function(s: string)
@@ -847,6 +853,12 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- particles
 	particleslib.update(psys, c.time, dt)
+
+	if loadingUp == 2 then
+		loadingUp = 0
+		hudlib.setLoading(hud, false)
+	end
+	hudlib.setPaused(hud, c.paused == true)
 
 	-- console / menu overlays
 	consolelib.update(con, c.time)

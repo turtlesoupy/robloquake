@@ -55,6 +55,8 @@ export type Hud = {
 	centerTime: number,
 	notifyRows: { confontlib.TextRow },
 	notifyLines: { { text: string, expire: number } },
+	loadingPlaque: ImageLabel?,
+	pausePlaque: ImageLabel?,
 	conchars: buffer?,
 	charPics: { [number]: EditableImage? },
 	pal: textures.Palette,
@@ -218,6 +220,33 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		h.notifyRows[i] = confontlib.newRow(rowFrame, NOTIFY_COLS, SCALE)
 	end
 
+	-- SCR_DrawLoading / SCR_DrawPause: gfx plaques centered above the sbar
+	local function plaque(picName: string): ImageLabel?
+		local buf = vfslib.loadFile(fs, picName)
+		if not buf then
+			return nil
+		end
+		local pic = wadlib.parseQPic(buf)
+		local img = textures.createImage(pic.pixels, pic.width, pic.height, pal, true)
+		if not img then
+			return nil
+		end
+		local label = Instance.new("ImageLabel")
+		label.Name = picName
+		label.BackgroundTransparency = 1
+		label.ImageContent = Content.fromObject(img)
+		label.ResampleMode = Enum.ResamplerMode.Pixelated
+		label.AnchorPoint = Vector2.new(0.5, 0.5)
+		label.Position = UDim2.new(0.5, 0, 0.5, -24 * SCALE)
+		label.Size = UDim2.fromOffset(pic.width * SCALE, pic.height * SCALE)
+		label.Visible = false
+		label.ZIndex = 15
+		label.Parent = gui
+		return label
+	end
+	h.loadingPlaque = plaque("gfx/loading.lmp")
+	h.pausePlaque = plaque("gfx/pause.lmp")
+
 	-- SCR_DrawCenterString rows are (re)built per message
 	local centerFrame = Instance.new("Frame")
 	centerFrame.Name = "centerprint"
@@ -301,6 +330,26 @@ local function refreshNotify(h: Hud)
 	for i = 1, 4 do
 		local item = h.notifyLines[i]
 		confontlib.setRow(font, h.notifyRows[i], if item then item.text else "")
+	end
+end
+
+-- SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque
+function hud.setLoading(h: Hud, on: boolean)
+	if h.loadingPlaque then
+		h.loadingPlaque.Visible = on
+	end
+	if on then
+		-- Con_ClearNotify + centertime_off = 0
+		table.clear(h.notifyLines)
+		refreshNotify(h)
+		h.centerFrame.Visible = false
+		h.centerTime = 0
+	end
+end
+
+function hud.setPaused(h: Hud, on: boolean)
+	if h.pausePlaque then
+		h.pausePlaque.Visible = on
 	end
 end
 

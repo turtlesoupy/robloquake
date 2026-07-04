@@ -31,6 +31,8 @@ export type Console = {
 	-- called with a full command line when the user presses return
 	onCommand: (line: string) -> (),
 	blinkTime: number,
+	slide: number,
+	lastTime: number,
 }
 
 function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Console
@@ -82,6 +84,8 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	c.open = false
 	c.onCommand = function(_line: string) end
 	c.blinkTime = 0
+	c.slide = 0 -- scr_con_current in [0,1] of the console height
+	c.lastTime = 0
 
 	gui.Parent = parent
 	return c
@@ -103,7 +107,7 @@ end
 
 function console.toggle(c: Console)
 	c.open = not c.open
-	c.gui.Visible = c.open
+	-- visibility follows the slide animation in update (scr_conspeed)
 	UserInputService.MouseBehavior = if c.open then Enum.MouseBehavior.Default else Enum.MouseBehavior.LockCenter
 	UserInputService.MouseIconEnabled = c.open
 end
@@ -160,7 +164,20 @@ function console.handleText(c: Console, text: string)
 end
 
 function console.update(c: Console, time: number)
-	if not c.open then
+	-- SCR_SetUpToDrawConsole: slide at scr_conspeed (300 lines/sec on the
+	-- 200-line virtual screen = 1.5 console-heights/sec here)
+	local dt = math.clamp(time - c.lastTime, 0, 0.1)
+	c.lastTime = time
+	local target = if c.open then 1 else 0
+	if c.slide < target then
+		c.slide = math.min(c.slide + dt * 1.5, target)
+	elseif c.slide > target then
+		c.slide = math.max(c.slide - dt * 1.5, target)
+	end
+	local height = (ROWS + 1) * 8 * SCALE + 16
+	c.gui.Visible = c.slide > 0
+	c.gui.Position = UDim2.new(0.5, 0, 0, -height * (1 - c.slide))
+	if not c.gui.Visible then
 		return
 	end
 	-- scrollback fills rows 1..ROWS-1, input line at the bottom

@@ -16,6 +16,18 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Fixed during the audit
 
+- **Per-texel lightmaps + dynamic lights** (the former #1/#2/#3 opens):
+  lightatlas.luau ports R_BuildLightMap / R_AddDynamicLights /
+  R_MarkLights into EditableImage pages; black alpha-overlay meshes
+  multiply over fullbright base textures (epsilon part transparency
+  forces per-texel alpha blending). cl_dlights ported: muzzle flashes,
+  bright/dim entity lights, rocket glow, explosion flash, with entity
+  lighting picking up dlight falloff like R_AliasSetupLighting.
+  Palette 224-255 fullbrights reassert via an unlit cutout pass.
+- Loading plaque (SCR_BeginLoadingPlaque: notify/centerprint clear, plaque
+  holds until the first rendered frame), pause plaque (SCR_DrawPause)
+- Console slide animation (scr_conspeed 300)
+
 - Impact sounds (`cl_tent.c R_ParseTEnt`): TE explosions play r_exp3,
   spikes play tink1/ric1-3, wiz/knight hits — the QC r_exp3 call is
   commented out in shipped progs; these are client-side (fd28443)
@@ -33,36 +45,22 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Open — ordered by visibility
 
-1. **Per-texel lightmaps** (`d_surf.c` surface cache). Vertex lighting drags
-   whole faces dark when a vertex sits in shadow. Plan: bake
-   texture × lightmap into EditableImage surface atlases exactly like the
-   software surface cache, with lightstyle re-bake.
-2. **Per-pixel fullbrights** (palette 224–255). The software colormap keeps
-   these bright regardless of light; vertex multiply darkens them (torch
-   flames, runes, lava baked into wall textures). Solved naturally by the
-   surface-cache bake; interim overlay pass possible.
-3. **Dynamic lights** (`cl_dlight.c` / `R_MarkLights`): muzzle flash,
-   explosion flash, quad/pent glow, rocket glow. Depends on the surface
-   cache for faithful surface lighting; entity-light approximation earlier.
-4. **Loading flow** (`SCR_BeginLoadingPlaque`): console over load,
-   gfx/loading.lmp plaque, sound stop, then reveal.
-5. **Lightning beams**: real bolt models (`progs/bolt*.mdl`) segmented every
+1. **Lightning beams**: real bolt models (`progs/bolt*.mdl`) segmented every
    30 units with random roll (`CL_UpdateTEnts`); currently placeholder neon
    rods.
-6. **Intermission / finale overlays**: rankings screen, finale text plaque
+2. **Intermission / finale overlays**: rankings screen, finale text plaque
    (`Sbar_IntermissionOverlay`, `SCR_CheckDrawCenterString`).
-7. **Pause plaque** (`SCR_DrawPause`).
-8. **Underwater screen warp** (`D_WarpScreen`).
-9. **Console slide animation** (`scr_conspeed`).
-10. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
-    tick on Heartbeat (~60Hz). Audit feel + consider fixed-timestep.
-11. **config.cfg / quake.rc execution**: `bind`/`unbind`/`alias`, cvar
-    persistence, autoexec. None implemented; keys are hardcoded defaults.
-12. **Chase cam** (`chase_active`).
-13. **EF_BRIGHTFIELD entity particles** (`R_EntityParticles`): unused by
-    id1 QC; port for completeness with the real anorms table.
-14. **Demo playback/recording** (`cl_demo.c`).
-15. **Save/load** (`host_cmd.c` savegames).
+3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
+   (no screen-space shader access); best-effort approximation TBD.
+4. **Host timing**: WinQuake caps synchronized host frames at 72fps; we
+   tick on Heartbeat (~60Hz). Audit feel + consider fixed-timestep.
+5. **config.cfg / quake.rc execution**: `bind`/`unbind`/`alias`, cvar
+   persistence, autoexec. None implemented; keys are hardcoded defaults.
+6. **Chase cam** (`chase_active`).
+7. **EF_BRIGHTFIELD entity particles** (`R_EntityParticles`): unused by
+   id1 QC; port for completeness with the real anorms table.
+8. **Demo playback/recording** (`cl_demo.c`).
+9. **Save/load** (`host_cmd.c` savegames).
 
 ## Platform substitutions (cannot be direct ports)
 
