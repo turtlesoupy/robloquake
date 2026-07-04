@@ -1261,8 +1261,40 @@ RunService.Heartbeat:Connect(function(dt: number)
 		for _, ta in textureAnims do
 			if ta.kind == "turb" then
 				textures.writeTurbFrame(ta.img, ta.pixels, ta.w, ta.h, pal, c.time)
-			else
+			elseif ta.kind == "sky" then
 				textures.writeSkyFrame(ta.img, ta.pixels, ta.w, ta.h, pal, c.time)
+			elseif ta.kind == "wall" then
+				-- R_TextureAnimation: world surfaces have entity frame 0,
+				-- so only the base (+N) chain ever shows
+				local base = ta.base
+				local frames = ta.frames
+				local parts = ta.parts
+				if base and frames and parts and base.anim_total > 0 then
+					local reletive = styleFrame % base.anim_total
+					local tex: bsplib.Texture = base
+					local count = 0
+					while tex.anim_min > reletive or tex.anim_max <= reletive do
+						local nxt = tex.anim_next
+						if not nxt then
+							error("R_TextureAnimation: broken cycle")
+						end
+						tex = nxt
+						count += 1
+						if count > 100 then
+							error("R_TextureAnimation: infinite cycle")
+						end
+					end
+					if tex.name ~= ta.current then
+						local fimg = frames[tex.name]
+						if fimg then
+							ta.current = tex.name
+							local content = Content.fromObject(fimg)
+							for _, part in parts do
+								part.TextureContent = content
+							end
+						end
+					end
+				end
 			end
 		end
 		local changed: { [number]: boolean } = {}

@@ -315,6 +315,9 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			-- placement from this chunk's bounding box center
 			part.CFrame = CFrame.new(center)
 			part.Parent = container
+			if partsOut then
+				table.insert(partsOut, part)
+			end
 		end
 
 		for _, fd in faces do
@@ -412,12 +415,50 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end
 		end
 
+		-- +N miptex chains register for R_TextureAnimation frame swaps;
+		-- prebuild one image per chain texture (base and alternate)
+		local img = textureImage(miptex)
+		local wallParts: { MeshPart }? = nil
+		if img and tex and tex.anim_total > 0 then
+			local frames: { [string]: EditableImage } = { [tex.name] = img }
+			local visited: { [bsp.Texture]: boolean } = {}
+			local function walk(start: bsp.Texture?): boolean
+				local t = start
+				while t and not visited[t] do
+					visited[t] = true
+					if not frames[t.name] then
+						local fimg = textures.createImage(t.pixels, t.width, t.height, pal, false)
+						if not fimg then
+							return false -- image budget exhausted; stay on the base frame
+						end
+						frames[t.name] = fimg
+					end
+					t = t.anim_next
+				end
+				return true
+			end
+			if walk(tex) and walk(tex.alternate_anims) then
+				wallParts = {}
+				table.insert(worldmesh.textureAnims, {
+					kind = "wall",
+					img = img,
+					pixels = tex.pixels,
+					w = tex.width,
+					h = tex.height,
+					base = tex,
+					frames = frames,
+					parts = wallParts,
+				})
+			end
+		end
+
 		buildChunks(
 			faceList,
 			if tex then tex.name else tostring(miptex),
-			textureImage(miptex),
+			img,
 			if tex then textures.averageColor(tex.pixels, tex.width * tex.height, pal) else Color3.fromRGB(128, 128, 128),
-			false
+			false,
+			wallParts
 		)
 	end
 

@@ -128,17 +128,17 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 
 ## cl_cam.c (spectator/chase camera)
 
-All UNIMPLEMENTED — spectator wire-up is journaled backlog ("spectator wire-up" in M2 REMAINING). The spectator *movement* path exists (pmove `spectatorMove`, `qwcl.predictUsercmd` spectator flag) but no camera/tracking UI.
+Autocam essentials live in qwclient.luau (`camLock`/`camUnlock`/`camCheckHighTarget`/`camTrack`): always-on cl_hightrack target pick, `ptrack <num>` stringcmds, chase-locked view through the tracked player's predicted origin + viewangles, BUTTON_JUMP cycling, clc_tmove ride-along. The flyby-position search (InitFlyby family) is not ported — the view locks straight on like cl_chasecam 1.
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| vectoangles / vlen (statics) | — | UNIMPLEMENTED | Helpers for the unported file (mathlib has equivalents). |
-| Cam_DrawViewModel / Cam_DrawPlayer | — | UNIMPLEMENTED | |
-| Cam_Unlock / Cam_Lock | — | UNIMPLEMENTED | |
-| Cam_DoTrace / Cam_TryFlyby / Cam_IsVisible / InitFlyby | — | UNIMPLEMENTED | |
-| Cam_CheckHighTarget | — | UNIMPLEMENTED | |
-| Cam_Track / adjustang / Cam_SetView / Cam_FinishMove | — | UNIMPLEMENTED | |
-| Cam_Reset / CL_InitCam | — | UNIMPLEMENTED | |
+| vectoangles / vlen (statics) | — | UNIMPLEMENTED | Only needed by the unported flyby search. |
+| Cam_DrawViewModel / Cam_DrawPlayer | qwclient camera branch + relink skip | PENDING | Tracked player's model skipped, viewmodel drawn with the target's weaponframe while locked; needs a live spectator screenshot. |
+| Cam_Unlock / Cam_Lock | `camUnlock` / `camLock` | PENDING | `ptrack`/`ptrack <num>` clc_stringcmds; no flyby, locks immediately (chasecam semantics). |
+| Cam_DoTrace / Cam_TryFlyby / Cam_IsVisible / InitFlyby | — | UNIMPLEMENTED | Flyby camera-position search skipped; the port is chase-lock only. |
+| Cam_CheckHighTarget | `camCheckHighTarget` | PENDING | Highest-frags pick over cl.players (name set, not spectator), relock when the leader out-frags the tracked player. |
+| Cam_Track / adjustang / Cam_SetView / Cam_FinishMove | `camTrack` | PENDING | Runs per sent cmd: hightrack pick while unlocked, dead-target retarget, clc_tmove when >16 units off, moves zeroed while locked, jump-cycle with oldbuttons edge gate ("don't pogo stick"). Delta: hightrack recheck only while unlocked so jump-cycling sticks (C's hightrack path skips the jump check entirely). adjustang/Cam_SetView are #if 0 in the C. |
+| Cam_Reset / CL_InitCam | — | SUBSTITUTED | cl_hightrack/cl_chasecam cvars fixed on; state is per-boot locals. |
 
 ## cl_demo.c (demo record/playback)
 
@@ -210,29 +210,29 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 | SCR_SizeUp_f / SCR_SizeDown_f | — | UNIMPLEMENTED | viewsize scaling (fidelity backlog). |
 | SCR_Init | — | SUBSTITUTED | |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. |
-| SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | — | UNIMPLEMENTED | QW console overlay follow-up. |
+| SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | `consolelib.update` (Heartbeat) | PENDING | scr_conspeed slide + draw via the shared console module. |
 | WritePCXfile / SCR_ScreenShot_f / MipColor / SCR_DrawCharToSnap / SCR_DrawStringToSnap / SCR_RSShot_f | — | SUBSTITUTED | Screenshots/remote-shots are platform features; N/A. |
 | SCR_DrawNotifyString / SCR_ModalMessage | — | UNIMPLEMENTED | |
 | SCR_UpdateScreen / SCR_UpdateWholeScreen | Heartbeat render sequence | SUBSTITUTED | Roblox render pipeline; the C draw-order (3D → sbar → console) has no equivalent yet because the 2D layers are absent. |
 
 ## console.c
 
-QW boot routes prints to the Studio output; the in-game console is journaled follow-up. NQ boot's `src/client/console.luau` exists but is not wired to QW.
+The QW boot now drives the shared `src/client/console.luau` (the NQ boot's console module): tilde toggle, line editor + history, scrollback, and a messagemode chat line; typed commands run the Cmd_ExecuteString subset in qwclient.luau with Cmd_ForwardToServer fallback.
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| Con_Printf / Con_Print | `cl.prints` sink → `print("[qw] …")` | PENDING | svc_print text (incl. chat, verified live 547df88 "kill/respawn + chat broadcasts over the wire") reaches the output, not an in-game surface — invisible in a published client. |
+| Con_Printf / Con_Print | `cl.prints` sink → hudlib notify + `consolelib.print` + Studio output | PENDING | svc_print text (incl. chat, verified live 547df88 "kill/respawn + chat broadcasts over the wire") now also lands in the console scrollback; needs a live screenshot. |
 | Con_DPrintf | `cl.dprint` hook | PENDING | qwclient wires it to print. |
-| Key_ClearTyping / Con_ToggleConsole_f / Con_ToggleChat_f / Con_MessageMode_f / Con_MessageMode2_f | — | UNIMPLEMENTED | No console/chat input UI. |
-| Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | — | UNIMPLEMENTED | |
-| Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | — | UNIMPLEMENTED | |
+| Key_ClearTyping / Con_ToggleConsole_f / Con_ToggleChat_f / Con_MessageMode_f / Con_MessageMode2_f | qwclient key wiring + `execCommand` | PENDING | Backquote/tilde toggles; `messagemode`/`messagemode2` commands open the chat line (T is bound to messagemode per default.cfg); input.setEnabled(false) while either is up. |
+| Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | consolelib | PENDING | `clear` empties con.lines; wrap/scrollback in consolelib.print; resize N/A (fixed 64-col conback). |
+| Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | `consolelib.update` + chat row | PENDING | Input line with blink cursor + scrollback via conchars rows; the messagemode "say:" line is a confont row (notify fade stays on hudlib). NotifyBox/SafePrintf N/A. |
 
 ## keys.c
 
 | Function | Port | Status | Evidence / Delta |
 |---|---|---|---|
-| Key_Event | qwclient `onKey` (InputBegan/InputEnded) | PENDING | Hardcoded `keyButtons` table (WASD/arrows/space/ctrl/shift, mouse1 attack, 1–8 impulses); no gameProcessed console/menu dispatch tiers. |
-| Key_Console / Key_Message | — | UNIMPLEMENTED | No console/chat typing in QW boot. |
+| Key_Event | qwclient `onKey` (InputBegan/InputEnded) | PENDING | Hardcoded `keyButtons` table (WASD/arrows/space/ctrl/shift, mouse1 attack, 1–8 impulses); dispatch tiers now match key_dest: console → messagemode → game, tilde toggles from anywhere, mouse ignored while typing. |
+| Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | PENDING | Enter executes/`say "…"`s, Backspace, history arrows, SHIFT_MAP + GetStringForKeyCode text entry (NQ boot's scheme); Escape/tilde leaves messagemode. Needs a live typing screenshot. |
 | CheckForCommand / CompleteCommand | — | UNIMPLEMENTED | |
 | Key_StringToKeynum / Key_KeynumToString | — | UNIMPLEMENTED | |
 | Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | — | UNIMPLEMENTED | No bind system in the QW boot (code comment: "QW console/bind integration is journaled follow-up work"). |
@@ -398,14 +398,14 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 | Status | Rows |
 |---|---|
 | VERIFIED | 53 |
-| PENDING | 56 |
-| UNIMPLEMENTED | 69 |
-| SUBSTITUTED | 48 |
+| PENDING | 65 |
+| UNIMPLEMENTED | 59 |
+| SUBSTITUTED | 49 |
 | **Total rows** | **226** |
 
 Highest-impact gaps (all journaled in the backlog):
-1. **sbar.c + console.c overlays** — entire QW HUD/scoreboard/console UI missing; prints/centerprints go to Studio output only (invisible in a published client).
-2. **cl_cam.c** — spectator chase camera entirely unimplemented (spectator movement exists in pmove).
+1. **sbar.c/console.c live proof** — HUD, console and chat line are wired (hudlib + consolelib) but all rows sit at PENDING until a Studio screenshot verifies them.
+2. **cl_cam.c flyby search** — spectator autocam is chase-lock only (InitFlyby/Cam_TryFlyby camera positioning not ported); needs live spectator verification.
 3. **CL_AllocExplosion / CL_UpdateExplosions** — `s_explod.spr` explosion sprite omitted (particles/dlight/sound only).
 4. **V_ParseDamage consumers + cshifts** — damage parsed but no view kick or screen blends (`V_Calc*Cshift`, `V_UpdatePalette` family).
 5. **CL_NewTranslation / skin colormaps + CL_AddFlagModels** — no player color translation or CTF flag attachment (flagindex ready).

@@ -202,7 +202,7 @@ parses (test_bsp/test_models headers).
 | Mod_TouchModel (model.c:236) | — | SUBSTITUTED | no cache to touch |
 | Mod_LoadModel (model.c:256) | models.luau:forName (dispatch on magic) | PENDING | dispatch by IDPO/IDSP/BSP version; loaders individually verified below |
 | Mod_ForName (model.c:329) | models.luau:forName | PENDING | exercised by test_server precache (`models precached`), no direct assertions |
-| Mod_LoadTextures (model.c:355) | bsp.luau:loadTextures | VERIFIED | test_bsp: 81 miptex, names, mip chain size, +anim sequence linking |
+| Mod_LoadTextures (model.c:355) | bsp.luau:loadTextures | VERIFIED | test_bsp: 81 miptex, names, mip chain size, +anim sequence linking; test_texanim: full +N/+a chain cycles, anim_min/max/total, alternate links on e1m2/start |
 | Mod_LoadLighting (model.c:504) | bsp.luau:loadBlob | VERIFIED | test_bsp: 168590 light bytes |
 | Mod_LoadVisibility (model.c:521) | bsp.luau:loadBlob | VERIFIED | test_bsp: 40843 vis bytes |
 | Mod_LoadEntities (model.c:538) | bsp.luau (entities lump as string) | VERIFIED | test_bsp: worldspawn + player start found in lump |

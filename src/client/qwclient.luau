@@ -1,9 +1,10 @@
 --!strict
 -- QuakeWorld client boot: selected when QuakeClientFS has attribute
 -- engine="qw". Drives the qwcl core (connection, delta frames,
--- prediction) and renders through the shared render/* modules. First
--- cut covers world + entities + players + sounds + input/camera; the
--- QW sbar/console overlay is tracked as follow-up work.
+-- prediction) and renders through the shared render/* modules. Covers
+-- world + entities + players + sounds + input/camera, the console +
+-- messagemode chat (console.c/keys.c) and the spectator autocam
+-- (cl_cam.c).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
 local mathlib = require(engine.common.mathlib)
+local msg = require(engine.common.msg)
 local vfslib = require(engine.common.vfs)
 local qcoords = require(engine.client.qcoords)
 local qwcl = require(engine.qw.qwcl)
@@ -22,12 +24,14 @@ local qwp = require(engine.qw.qwprotocol)
 local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
 
+local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
 local lightpoint = require(script.Parent.render.lightpoint)
 local particleslib = require(script.Parent.render.particles)
 local textures = require(script.Parent.render.textures)
 local worldmesh = require(script.Parent.render.worldmesh)
+local consolelib = require(script.Parent.console)
 local hudlib = require(script.Parent.hud)
 local input = require(script.Parent.input)
 local soundlib = require(script.Parent.sound)
@@ -121,6 +125,30 @@ return function()
 	cshiftFrame.BackgroundTransparency = 1
 	cshiftFrame.Parent = cshiftGui
 	cshiftGui.Parent = player:WaitForChild("PlayerGui")
+
+	-- console + chat line live on their own gui above the hud (console.c;
+	-- the same consolelib the NQ boot uses, wired below to the QW command
+	-- handling: unknown commands forward to the server per Cmd_ForwardToServer)
+	local overlayGui = Instance.new("ScreenGui")
+	overlayGui.Name = "QuakeOverlay"
+	overlayGui.IgnoreGuiInset = true
+	overlayGui.DisplayOrder = 20
+	overlayGui.ResetOnSpawn = false
+	overlayGui.Parent = player:WaitForChild("PlayerGui")
+	local con = consolelib.create(fs, pal, overlayGui)
+
+	-- Con_DrawNotify's "say:" input line while messagemode is up
+	local chatHolder = Instance.new("Frame")
+	chatHolder.Name = "chatline"
+	chatHolder.BackgroundTransparency = 1
+	chatHolder.Position = UDim2.fromOffset(8, 8)
+	chatHolder.Size = UDim2.fromOffset(64 * 8 * 2, 8 * 2)
+	chatHolder.Visible = false
+	chatHolder.Parent = overlayGui
+	local chatRow = confontlib.newRow(chatHolder, 64, 2)
+	local chatOpen = false -- key_dest == key_message
+	local chatTeam = false -- chat_team
+	local chatBuffer = "" -- chat_buffer
 
 	-- CL_AllocExplosion ring: s_explod.spr animated at 10 Hz
 	local explosions: { { origin: vector, start: number } } = {}
@@ -557,6 +585,128 @@ return function()
 	end
 
 	----------------------------------------------------------------------
+	-- spectator autocam (cl_cam.c): always-on cl_hightrack target pick,
+	-- Cam_Lock chase view through the tracked player, BUTTON_JUMP cycling
+	local BUTTON_JUMP = 2
+	local CAM_NONE, CAM_TRACK = 0, 1
+	local autocam = CAM_NONE
+	local spec_track = 0 -- player# of who we are tracking
+	local camLocked = false
+	local camOldbuttons = 0
+
+	-- Cam_Unlock
+	local function camUnlock()
+		if autocam ~= CAM_NONE then
+			qwcl.sendStringCmd(cl, "ptrack")
+			autocam = CAM_NONE
+			camLocked = false
+		end
+	end
+
+	-- Cam_Lock (the port's view is the cl_chasecam-style lock straight on
+	-- the player, so no InitFlyby search: lock immediately)
+	local function camLock(playernum: number)
+		qwcl.sendStringCmd(cl, `ptrack {playernum}`)
+		spec_track = playernum
+		autocam = CAM_TRACK
+		camLocked = true
+	end
+
+	-- Cam_CheckHighTarget: track whoever has the most frags
+	local function camCheckHighTarget()
+		local j, max = -1, -9999
+		for i = 0, qwp.MAX_CLIENTS - 1 do
+			local s = cl.players[i]
+			if s and s.name ~= "" and not s.spectator and s.frags > max then
+				max = s.frags
+				j = i
+			end
+		end
+		if j >= 0 then
+			local cur = cl.players[spec_track]
+			if not camLocked or not cur or cl.players[j].frags > cur.frags then
+				camLock(j)
+			end
+		else
+			camUnlock()
+		end
+	end
+
+	-- the tracked playerstate for this parse frame, or nil (gates both the
+	-- camera override and Cam_DrawPlayer)
+	local function camTrackedState(): qwcl.PlayerState?
+		if not (cl.spectator and autocam ~= CAM_NONE and camLocked) then
+			return nil
+		end
+		local ps = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[spec_track]
+		if ps and ps.messagenum == cl.parsecount then
+			return ps
+		end
+		return nil
+	end
+
+	-- Cam_Track + Cam_FinishMove essentials, once per sent cmd. Delta from
+	-- C: hightrack retargeting only runs while unlocked so the jump-cycle
+	-- choice sticks (pure cl_hightrack would return before the jump check).
+	local function camTrack(buttons: number)
+		if not cl.spectator or cl.state ~= "active" then
+			return
+		end
+		if not camLocked then
+			camCheckHighTarget()
+		end
+		if autocam == CAM_NONE then
+			return
+		end
+		-- tracked player gone or turned spectator: retarget
+		local ts = cl.players[spec_track]
+		if camLocked and (not ts or ts.name == "" or ts.spectator) then
+			camLocked = false
+			camCheckHighTarget()
+			return
+		end
+		-- cl_chasecam path of Cam_Track: clc_tmove keeps the spectator
+		-- entity riding the tracked player on the server
+		local ps = camTrackedState()
+		if ps and vector.magnitude(ps.origin - cl.simorg) > 16 then
+			msg.writeByte(cl.netchan.message, qwp.clc_tmove)
+			msg.writeCoord(cl.netchan.message, ps.origin.x)
+			msg.writeCoord(cl.netchan.message, ps.origin.y)
+			msg.writeCoord(cl.netchan.message, ps.origin.z)
+		end
+		-- BUTTON_JUMP cycles to the next player (Cam_FinishMove)
+		if camLocked then
+			if bit32.band(buttons, BUTTON_JUMP) ~= 0 and bit32.band(camOldbuttons, BUTTON_JUMP) ~= 0 then
+				return -- don't pogo stick
+			end
+			if bit32.band(buttons, BUTTON_JUMP) == 0 then
+				camOldbuttons = bit32.band(camOldbuttons, bit32.bnot(BUTTON_JUMP))
+				return
+			end
+			camOldbuttons = bit32.bor(camOldbuttons, BUTTON_JUMP) -- don't jump again until released
+		end
+		local endi = if camLocked and autocam ~= CAM_NONE then (spec_track + 1) % qwp.MAX_CLIENTS else spec_track
+		local i = endi
+		repeat
+			local s = cl.players[i]
+			if s and s.name ~= "" and not s.spectator then
+				camLock(i)
+				return
+			end
+			i = (i + 1) % qwp.MAX_CLIENTS
+		until i == endi
+		-- stay on same guy?
+		local s = cl.players[spec_track]
+		if s and s.name ~= "" and not s.spectator then
+			camLock(spec_track)
+			return
+		end
+		consolelib.print(con, "No target found ...")
+		autocam = CAM_NONE
+		camLocked = false
+	end
+
+	----------------------------------------------------------------------
 	-- entity linking (packet entities + players + nails)
 	local renderEnts: { [string]: entrender.RenderEnt } = {}
 	local renderDefs: { [string]: entrender.ModelDef } = {}
@@ -650,6 +800,10 @@ return function()
 		local predicted = qwcl.predictedPlayerOrigins(cl)
 		for num, ps in frame.playerstate do
 			if ps.messagenum ~= cl.parsecount or num == cl.playernum then
+				continue
+			end
+			-- Cam_DrawPlayer: don't draw the target we are chase camming
+			if cl.spectator and autocam ~= CAM_NONE and camLocked and num == spec_track then
 				continue
 			end
 			local angles = vector.create(-ps.viewangles.x / 3, ps.viewangles.y, 0)
@@ -761,10 +915,11 @@ return function()
 
 	local camera = Workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Scriptable
-	-- CalcFov: fov 90 horizontal at the real viewport aspect
+	-- CalcFov: fov cvar (horizontal) at the real viewport aspect
+	local currentFov = 90
 	local function applyFov()
 		local vp = camera.ViewportSize
-		camera.FieldOfView = qcoords.calcFovY(90, vp.X, vp.Y)
+		camera.FieldOfView = qcoords.calcFovY(currentFov, vp.X, vp.Y)
 	end
 	applyFov()
 	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
@@ -772,9 +927,153 @@ return function()
 	input.lockMouse()
 	input.setEnabled(true)
 
-	-- direct key wiring (the NQ boot routes through its bind system;
-	-- QW console/bind integration is journaled follow-up work)
+	-- direct key wiring plus the console/messagemode tiers (keys.c
+	-- Key_Event: console first, chat line second, game keys last)
 	local UserInputService = game:GetService("UserInputService")
+
+	local function refreshInputMode()
+		-- while the console or chat line is up the player stops moving
+		input.setEnabled(not (con.open or chatOpen))
+	end
+
+	-- Cmd_ExecuteString subset: the client commands the QW boot handles
+	-- locally; everything else is forwarded verbatim (Cmd_ForwardToServer:
+	-- "things like godmode, noclip, etc, are commands directed to the
+	-- server, so when they are typed in at the console, they will need to
+	-- be forwarded")
+	local function execCommand(line: string)
+		local cmd, args = line:match("^(%S+)%s*(.*)$")
+		if not cmd then
+			return
+		end
+		cmd = cmd:lower()
+		if cmd == "messagemode" or cmd == "messagemode2" then
+			-- Con_MessageMode_f / Con_MessageMode2_f
+			chatTeam = cmd == "messagemode2"
+			chatOpen = true
+			chatBuffer = ""
+			refreshInputMode()
+		elseif cmd == "quit" or cmd == "disconnect" then
+			-- CL_Quit_f / CL_Disconnect_f: N/A on this platform
+			consolelib.print(con, "use the Roblox menu to leave the experience")
+		elseif cmd == "fov" then
+			local v = tonumber(args)
+			if v and v >= 10 and v <= 170 then
+				currentFov = v
+				applyFov()
+			end
+		elseif cmd == "clear" then
+			table.clear(con.lines)
+		elseif cmd == "toggleconsole" then
+			consolelib.toggle(con)
+			refreshInputMode()
+		elseif cl.state == "disconnected" then
+			consolelib.print(con, `Can't "{cmd}", not connected`)
+		else
+			-- say/say_team and every unrecognized command → clc_stringcmd
+			qwcl.sendStringCmd(cl, line)
+		end
+	end
+	con.onCommand = execCommand
+
+	-- console text entry straight from key codes (same scheme as the NQ
+	-- boot: no TextBox, GetStringForKeyCode + shifted punctuation)
+	local SHIFT_MAP: { [string]: string } = {
+		["1"] = "!", ["2"] = "@", ["3"] = "#", ["4"] = "$", ["5"] = "%",
+		["6"] = "^", ["7"] = "&", ["8"] = "*", ["9"] = "(", ["0"] = ")",
+		["-"] = "_", ["="] = "+", ["["] = "{", ["]"] = "}", ["\\"] = "|",
+		[";"] = ":", ["'"] = "\"", [","] = "<", ["."] = ">", ["/"] = "?",
+	}
+
+	local function keyToChar(key: Enum.KeyCode, shifted: boolean): string?
+		local ok, str = pcall(UserInputService.GetStringForKeyCode, UserInputService, key)
+		if not ok or #str ~= 1 then
+			if key == Enum.KeyCode.Space then
+				return " "
+			end
+			return nil
+		end
+		local b = str:byte()
+		if b < 32 or b >= 127 then
+			return nil
+		end
+		-- GetStringForKeyCode reports letters uppercase; the console types
+		-- lowercase unless shift is held (key_console behaviour)
+		if str:match("%a") then
+			return if shifted then str:upper() else str:lower()
+		end
+		if shifted then
+			return SHIFT_MAP[str] or str
+		end
+		return str
+	end
+
+	local function isShiftDown(): boolean
+		return UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+	end
+
+	-- Key_Console via the consolelib line editor
+	local function consoleKey(key: Enum.KeyCode)
+		local fake = { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard }
+		if consolelib.handleKey(con, fake :: any) then
+			local ch = keyToChar(key, isShiftDown())
+			if ch then
+				consolelib.handleText(con, ch)
+			end
+		end
+	end
+
+	-- Key_Message: the chat line typed after T (messagemode)
+	local function messageKey(key: Enum.KeyCode)
+		if key == Enum.KeyCode.Return or key == Enum.KeyCode.KeypadEnter then
+			execCommand((if chatTeam then "say_team" else "say") .. " \"" .. chatBuffer .. "\"")
+			chatOpen = false
+			chatBuffer = ""
+			refreshInputMode()
+		elseif key == Enum.KeyCode.Escape then
+			chatOpen = false
+			chatBuffer = ""
+			refreshInputMode()
+		elseif key == Enum.KeyCode.Backspace then
+			chatBuffer = chatBuffer:sub(1, -2)
+		else
+			local ch = keyToChar(key, isShiftDown())
+			if ch then
+				chatBuffer ..= ch
+			end
+		end
+	end
+
+	-- debug hook: drive the console remotely (verification without keypresses)
+	local dbgConsole = Instance.new("BindableFunction")
+	dbgConsole.Name = "RQDBG_Console"
+	dbgConsole.Parent = Workspace
+	dbgConsole.OnInvoke = function(action: string, arg: string?)
+		if action == "toggle" then
+			consolelib.toggle(con)
+			refreshInputMode()
+			return tostring(con.open)
+		elseif action == "isopen" then
+			return tostring(con.open)
+		elseif action == "exec" then
+			for piece in (arg :: string):gmatch("[^;]+") do
+				local trimmed = piece:match("^%s*(.-)%s*$")
+				if trimmed ~= "" then
+					execCommand(trimmed)
+				end
+			end
+			return "ok"
+		elseif action == "key" then
+			consoleKey((Enum.KeyCode :: any)[arg])
+			return con.inputText
+		elseif action == "text" then
+			return con.inputText
+		elseif action == "lines" then
+			return table.concat(con.lines, "\n")
+		end
+		return ""
+	end
 	local keyButtons: { [Enum.KeyCode]: string } = {
 		[Enum.KeyCode.W] = "forward",
 		[Enum.KeyCode.Up] = "forward",
@@ -809,6 +1108,33 @@ return function()
 		end
 	end
 	UserInputService.InputBegan:Connect(function(io, processed)
+		if io.UserInputType == Enum.UserInputType.Keyboard then
+			local key = io.KeyCode
+			-- tilde/backquote toggles the console from anywhere
+			if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
+				if chatOpen then
+					chatOpen = false
+					chatBuffer = ""
+				end
+				consolelib.toggle(con)
+				refreshInputMode()
+				return
+			end
+			if con.open then
+				consoleKey(key)
+				return
+			end
+			if chatOpen then
+				messageKey(key)
+				return
+			end
+			if key == Enum.KeyCode.T then
+				execCommand("messagemode") -- default.cfg "bind t messagemode"
+				return
+			end
+		elseif con.open or chatOpen then
+			return -- mouse buttons don't reach the game while typing
+		end
 		if not processed then
 			onKey(io, true)
 		end
@@ -821,6 +1147,14 @@ return function()
 	local accum = 0
 	RunService.Heartbeat:Connect(function(dt: number)
 		cl.realtime += dt
+
+		-- SCR_DrawConsole / Con_DrawNotify: console slide + the chat line
+		consolelib.update(con, cl.realtime)
+		chatHolder.Visible = chatOpen
+		if chatOpen then
+			local ccursor = if math.floor(cl.realtime * 4) % 2 == 0 then string.char(11) else " "
+			confontlib.setRow(con.font, chatRow, "say: " .. chatBuffer .. ccursor)
+		end
 
 		-- inbound packets
 		for _, packet in inbound do
@@ -893,11 +1227,15 @@ return function()
 		end
 		if msec >= 1 and cl.state ~= "connected" then
 			accum -= msec / 1000
+			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
+			-- the chase takes over the controls (moves zeroed like C)
+			camTrack(buttons)
+			local camOn = cl.spectator and autocam ~= CAM_NONE and camLocked
 			qwcl.sendCmd(cl, {
 				angles = viewangles,
-				forwardmove = st.forwardmove,
-				sidemove = st.sidemove,
-				upmove = st.upmove,
+				forwardmove = if camOn then 0 else st.forwardmove,
+				sidemove = if camOn then 0 else st.sidemove,
+				upmove = if camOn then 0 else st.upmove,
 				buttons = buttons,
 				impulse = st.impulse,
 				msec = msec,
@@ -981,12 +1319,24 @@ return function()
 			cl.punchangle = 0
 		end
 		local ownState = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
+		local trackPs = camTrackedState()
 		local eye, angles
 		local gunVisible = false
+		local gunFrame = ownState.weaponframe
 		if cl.intermission ~= 0 then
 			-- V_CalcIntermissionRefdef: fixed org/angles, no bob/height
 			eye = cl.simorg
 			angles = cl.simangles
+		elseif trackPs then
+			-- Cam_Track chase lock: through the tracked player's eyes at
+			-- their predicted origin (stats already mirror the target)
+			local predicted = qwcl.predictedPlayerOrigins(cl)
+			eye = (predicted[spec_track] or trackPs.origin) + vector.create(0, 0, viewheight)
+			angles = trackPs.viewangles
+			-- Cam_DrawViewModel true while chase locked; self->weaponframe
+			-- = player->weaponframe
+			gunVisible = true
+			gunFrame = trackPs.weaponframe
 		elseif (cl.stats[qwp.STAT_HEALTH] or 100) <= 0 or bit32.band(ownState.flags, qwp.PF_DEAD) ~= 0 then
 			-- dead: corpse view at -16 with the 80-degree death roll
 			eye = cl.simorg + vector.create(0, 0, -16)
@@ -1044,7 +1394,7 @@ return function()
 			if ge then
 				local def = getModelDef(gunModel) :: entrender.ModelDef
 				local gunorg = eye + fwd * (math.sqrt(cl.simvel.x * cl.simvel.x + cl.simvel.y * cl.simvel.y) * 0.02 * 0.4)
-				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), ownState.weaponframe, 0, 0, cl.time)
+				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), gunFrame, 0, 0, cl.time)
 				-- R_DrawViewModel: always give some light on the gun
 				local glight = if cl.worldmodel then lightpoint.at(cl.worldmodel, eye, styleValueFor) else 255
 				for _, dl in dlights do
@@ -1124,11 +1474,12 @@ return function()
 			end
 		end
 
-		-- notify lines onto the hud (QW console overlay is follow-up)
+		-- Con_Printf: notify lines onto the hud + console scrollback
 		while #cl.prints > 0 do
 			local p = table.remove(cl.prints, 1)
 			if p then
 				hudlib.print(hud, p.text, cl.time)
+				consolelib.print(con, p.text)
 				print("[qw] " .. p.text:gsub("\n$", ""))
 			end
 		end

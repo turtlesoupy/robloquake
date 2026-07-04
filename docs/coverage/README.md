@@ -38,7 +38,9 @@ it enters here in the same commit.
 
 ## Changelog
 
-### 2026-07-04 (post-manifest fixes, same day)
+### 2026-07-04 (bucket 1 continuation)
+- qw-client console.c/keys.c (Con_Toggle/MessageMode/Clear/Draw*, Key_Console/Key_Message): UNIMPLEMENTED → PENDING. The QW boot now drives the shared consolelib (tilde toggle, history editor, scrollback, cl.prints into the console), a Cmd_ExecuteString subset (say/say_team, quit/disconnect note, fov via calcFovY, clear, toggleconsole) with Cmd_ForwardToServer fallback to clc_stringcmd, and T-messagemode chat ("say:" confont line, Enter → say "…"); input disabled while typing.
+- qw-client cl_cam.c (Cam_Lock/Cam_Unlock/Cam_CheckHighTarget/Cam_Track/Cam_FinishMove/Cam_DrawPlayer/Cam_DrawViewModel): UNIMPLEMENTED → PENDING; Cam_Reset/CL_InitCam → SUBSTITUTED (cvars fixed on). Spectator autocam in qwclient.luau: highest-frags ptrack, chase-locked camera at the target's predicted origin + viewheight with their viewangles, jump-button cycling, clc_tmove ride-along, tracked model skipped. Flyby search (InitFlyby family) stays UNIMPLEMENTED. Live spectator screenshot still needed for VERIFIED.
 - qw-client sbar.c (Sbar_Draw/DrawInventory/DrawFrags/DrawFace/DrawNum,
   intermission + DM overlays): UNIMPLEMENTED → PENDING. The QW boot now
   drives the NQ sbar.c port (hudlib) via a qwcl adapter (main bars are

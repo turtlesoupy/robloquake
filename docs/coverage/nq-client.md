@@ -72,7 +72,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|
 | CL_InitTEnts | lazy beamModelDef + soundbank regions | PENDING | delta: bolt models/sfx loaded on first use instead of precached |
 | CL_ParseBeam | init.client parseBeam (via cl.luau TE event) | VERIFIED | FIDELITY.md lightning beams record; entity-override + free-slot scan kept, MAX_BEAMS 24 |
-| CL_ParseTEnt | cl.luau parseTEnt + init.client onTempEntity | VERIFIED | FIDELITY.md impact sounds (fd28443); deltas: TE_TAREXPLOSION → plain explosion (no blob), TE_EXPLOSION2 colormap ignored |
+| CL_ParseTEnt | cl.luau parseTEnt + init.client onTempEntity | VERIFIED | FIDELITY.md impact sounds (fd28443); TE_TAREXPLOSION → blobExplosion (no dlight) and TE_EXPLOSION2 → particleExplosion2(colorStart/Length) + dlight now match cl_tent.c; spawners proven in tests/test_particles2.luau (routing itself unexercised by tests) |
 | CL_NewTempEntity | beamPool pooled render entities | PENDING | delta: pooled per model name, capped 40 segments/beam |
 | CL_UpdateTEnts | init.client updateBeams | VERIFIED | FIDELITY.md: 30-unit segments, random roll, player-tracked start, 0.2s life; delta: C int-truncates yaw/pitch, port keeps float |
 
@@ -359,8 +359,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool |
 | R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | PENDING | dir/16, count 255→1024 explosion escape kept |
 | R_ParticleExplosion | particles.explosion | PENDING | 1024 particles, ramp1, ±16 org / ±256 vel match |
-| R_ParticleExplosion2 | — | UNIMPLEMENTED | TE_EXPLOSION2 parsed (colorStart/Length read) but falls back to plain explosion |
-| R_BlobExplosion | — | UNIMPLEMENTED | TE_TAREXPLOSION falls back to plain explosion; pt_blob/pt_blob2 physics exist unused |
+| R_ParticleExplosion2 | particlesim.particleExplosion2 | VERIFIED | tests/test_particles2.luau: 512 particles, color colorStart+(i%colorLength), die +0.3, all pt_blob, ±16 org / ±256 vel |
+| R_BlobExplosion | particlesim.blobExplosion | VERIFIED | tests/test_particles2.luau: 1024 particles, 512 pt_blob (66+rand%6) / 512 pt_blob2 (150+rand%6), die 1+(rand&8)*0.05, pt_blob/pt_blob2 update physics checked |
 | R_RunParticleEffect | particles.runEffect | PENDING | color &~7 + rand&7, die 0.1*(rand%5), vel dir*15 match |
 | R_LavaSplash | particles.lavaSplash | PENDING | 32x32 grid, color 224+&7, z 256 dir match |
 | R_TeleportSplash | particles.teleportSplash | VERIFIED | FIDELITY.md teleport splash implied by TE record; loops -16..12/-24..28 step 4 match |
@@ -390,7 +390,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|
 | R_AddDynamicLights | lightatlas addDynamicLights | VERIFIED | FIDELITY.md per-texel lightmaps record; sd/td falloff formula exact |
 | R_BuildLightMap | lightatlas.writeRegion | VERIFIED | FIDELITY.md; 16-unit texels, style layers, blocklights sum; delta: alpha-overlay multiply + overbright x2 + gamma 0.7 instead of colormap |
-| R_TextureAnimation | — | UNIMPLEMENTED | +0/+a texture cycles never advance — animated wall textures (buttons etc.) stay on their base frame |
+| R_TextureAnimation | init.client wall-anim tick + worldmesh "wall" TextureAnims | PENDING | tests/test_texanim.luau proves the +N/+a chain data and the anim_min/anim_max walk math on e1m2/start; base chain only (world frame 0), swaps chunk TextureContent between prebuilt frame images — visual confirmation pending |
 | R_DrawSurface / R_DrawSurfaceBlock8_mip0-3 / R_DrawSurfaceBlock16 | — | SUBSTITUTED | surface-cache block drawing; GPU samples texture × lightmap overlay instead |
 | R_GenTurbTile / R_GenTurbTile16 | textures.writeTurbFrame | PENDING | 8px sine displacement both axes, period 32, speed time*2 — software look approximated in texture space |
 | R_GenTile | — | SUBSTITUTED | |
