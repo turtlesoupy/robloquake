@@ -68,6 +68,34 @@ unreliable.OnClientEvent:Connect(function(data: unknown)
 	end
 end)
 
+-- Cmd_ForwardToServer
+local function sendStringCmd(line: string)
+	local buf = buffer.create(#line + 2)
+	buffer.writeu8(buf, 0, 4) -- clc_stringcmd
+	buffer.writestring(buf, 1, line)
+	buffer.writeu8(buf, 1 + #line, 0)
+	reliable:FireServer(buf)
+end
+
+-- demo state (cl_demo.c); helpers live near the console commands
+local demoPlaying = false
+local demoBuf: buffer? = nil
+local demoPos = 0
+local demoRecording: { string }? = nil
+local demoName = ""
+local recordedDemos: { [string]: buffer } = {}
+local playDemo: (name: string) -> () = function() end
+local stopDemo: (msgText: string?) -> () = function() end
+local demoFrame: () -> () = function() end
+
+-- ask the server to publish a pak file into the client bundle, then the
+-- folder-source loadFile(..., true) waits out replication
+local function demandFile(name: string)
+	if not clientAssets:FindFirstChild(name) then
+		sendStringCmd("rq_need " .. name)
+	end
+end
+
 --------------------------------------------------------------------------
 -- rendering state
 
@@ -212,6 +240,7 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 		end
 		def = { kind = "brush", flags = 0, brushModel = template }
 	elseif name:sub(-4) == ".mdl" then
+		demandFile(name)
 		local buf = vfslib.loadFile(fs, name, true)
 		if not buf then
 			def = { kind = "none", flags = 0 }
@@ -221,6 +250,7 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			entrender.prepareImages(def, pal)
 		end
 	elseif name:sub(-4) == ".spr" then
+		demandFile(name)
 		local buf = vfslib.loadFile(fs, name, true)
 		if not buf then
 			def = { kind = "none", flags = 0 }
@@ -266,6 +296,7 @@ c.onServerInfo = function()
 	table.clear(beamPool)
 
 	local worldName = c.model_precache[2]
+	demandFile(worldName)
 	local buf = vfslib.loadFile(fs, worldName, true)
 	assert(buf, "world bsp missing: " .. worldName)
 	worldModels = bsplib.load(worldName, buf)
@@ -289,16 +320,6 @@ c.print = function(s: string)
 	hudlib.print(hud, s, c.time)
 	consolelib.print(con, s)
 	print("[q] " .. s)
-end
-
--- console command execution: a few local commands, everything else is
--- forwarded to the server like Cmd_ForwardToServer
-local function sendStringCmd(line: string)
-	local buf = buffer.create(#line + 2)
-	buffer.writeu8(buf, 0, 4) -- clc_stringcmd
-	buffer.writestring(buf, 1, line)
-	buffer.writeu8(buf, 1 + #line, 0)
-	reliable:FireServer(buf)
 end
 
 -- chase.c: chase_active third-person camera (defaults 100/16/0)
@@ -568,6 +589,32 @@ execCommand = function(line: string)
 		end
 	elseif cmd == "impulse" then
 		input.setImpulse(tonumber(args) or 0)
+	elseif cmd == "playdemo" then
+		playDemo(args:match("%S+") or "")
+		return
+	elseif cmd == "stopdemo" then
+		stopDemo("demo stopped")
+		return
+	elseif cmd == "record" then
+		local name = args:match("%S+")
+		if not name then
+			consolelib.print(con, "record <demoname>")
+		else
+			demoName = name .. ".dem"
+			demoRecording = { "-1\n" } -- forced cd track line
+			consolelib.print(con, `recording to {demoName}.`)
+		end
+		return
+	elseif cmd == "stop" then
+		if demoRecording then
+			local blob = table.concat(demoRecording :: { string })
+			recordedDemos[demoName] = buffer.fromstring(blob)
+			demoRecording = nil
+			consolelib.print(con, `Completed demo ({#blob} bytes, playdemo {demoName})`)
+		else
+			consolelib.print(con, "Not recording a demo.")
+		end
+		return
 	elseif cmd == "chase_active" then
 		local v = tonumber(args)
 		if v then
@@ -591,6 +638,93 @@ execCommand = function(line: string)
 	else
 		sendStringCmd(line)
 	end
+end
+
+--------------------------------------------------------------------------
+-- cl_demo.c: demo playback (and in-memory recording)
+
+stopDemo = function(msgText: string?)
+	if demoPlaying then
+		demoPlaying = false
+		demoBuf = nil
+		consolelib.print(con, msgText or "demo completed")
+		consolelib.print(con, "use map <name> to rejoin the live game")
+	end
+end
+
+playDemo = function(name: string)
+	if name == "" then
+		consolelib.print(con, "playdemo <demoname> : plays a demo")
+		return
+	end
+	if not name:find("%.dem$") then
+		name ..= ".dem"
+	end
+	local buf = recordedDemos[name]
+	if not buf then
+		demandFile(name)
+		buf = vfslib.loadFile(fs, name, true)
+	end
+	if not buf then
+		consolelib.print(con, `ERROR: couldn't open {name}`)
+		return
+	end
+	-- skip the forced cd track line
+	local n = buffer.len(buf)
+	local i = 0
+	while i < n and buffer.readu8(buf, i) ~= 10 do
+		i += 1
+	end
+	demoPos = i + 1
+	demoBuf = buf
+	demoPlaying = true
+	c.signon = 0
+	consolelib.print(con, `Playing demo from {name}.`)
+end
+
+-- CL_GetMessage's demo path: feed blocks until the message time passes
+-- cl.time; always grab during signon
+local demoBusy = false
+demoFrame = function()
+	if demoBusy then
+		return -- a previous message is still building the world (yields)
+	end
+	demoBusy = true
+	local fed = 0
+	while demoPlaying do
+		if c.signon == cllib.SIGNONS and c.time <= c.mtime0 then
+			break
+		end
+		local db = demoBuf :: buffer
+		if demoPos + 16 > buffer.len(db) then
+			stopDemo()
+			break
+		end
+		local msglen = buffer.readi32(db, demoPos)
+		local ax = buffer.readf32(db, demoPos + 4)
+		local ay = buffer.readf32(db, demoPos + 8)
+		demoPos += 16
+		if msglen < 0 or demoPos + msglen > buffer.len(db) then
+			stopDemo("demo message > buffer")
+			break
+		end
+		local block = buffer.create(msglen)
+		buffer.copy(block, 0, db, demoPos, msglen)
+		demoPos += msglen
+		input.setAngles(vector.create(ax, ay, 0))
+		local ok, err = pcall(cllib.parseServerMessage, c, block)
+		cllib.takeReliable(c) -- drop signon replies; the demo has the answers
+		if not ok then
+			warn("[demo] parse error: " .. tostring(err))
+			stopDemo("demo parse error")
+			break
+		end
+		fed += 1
+		if fed > 200 then
+			break -- don't stall a frame on a huge signon burst
+		end
+	end
+	demoBusy = false
 end
 
 con.onCommand = execLine
@@ -1002,11 +1136,26 @@ RunService.Heartbeat:Connect(function(dt: number)
 	cbufFrame()
 	input.updateTurn(dt)
 
-	-- pump inbound messages
+	-- pump inbound messages (demo playback detaches from the live stream)
+	if demoPlaying then
+		inbound = {}
+		demoFrame()
+	end
 	if #inbound > 0 then
 		local queue = inbound
 		inbound = {}
 		for _, data in queue do
+			if demoRecording then
+				-- CL_WriteDemoMessage: length, viewangles, payload
+				local va = input.viewangles()
+				local hdr = buffer.create(16)
+				buffer.writei32(hdr, 0, buffer.len(data))
+				buffer.writef32(hdr, 4, va.x)
+				buffer.writef32(hdr, 8, va.y)
+				buffer.writef32(hdr, 12, 0)
+				table.insert(demoRecording :: { string }, buffer.tostring(hdr))
+				table.insert(demoRecording :: { string }, buffer.tostring(data))
+			end
 			local ok, err = pcall(cllib.parseServerMessage, c, data)
 			if not ok then
 				warn("[cl] parse error: " .. tostring(err))
@@ -1030,7 +1179,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	-- input → viewangles → move packet (throttled to ~72Hz like NetQuake)
 	c.viewangles = input.viewangles()
 	sendAccumulator += dt
-	if sendAccumulator >= 1 / 72 then
+	if sendAccumulator >= 1 / 72 and not demoPlaying then
 		sendAccumulator = 0
 		local st = input.sample()
 		local move = cllib.buildMove(c, st.forwardmove, st.sidemove, st.upmove, st.attack, st.jump, st.impulse)

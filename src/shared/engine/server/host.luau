@@ -490,6 +490,14 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 		else
 			sg.loadgameRequest = name -- deferred: can't respawn mid-message
 		end
+	elseif cmd == "rq_need" then
+		-- platform hook: client asks for a pak file in its bundle (demo
+		-- playback needs maps/models the current level didn't precache)
+		local hook = (svr :: any).onFileRequest
+		local path = (args :: string):match("[%w_/%.%-]+")
+		if hook and path then
+			hook(path)
+		end
 	elseif cmd == "status" or cmd == "ping" then
 		-- informational; not needed for gameplay
 	else

@@ -16,6 +16,19 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Fixed during the audit
 
+- **Demo playback + recording** (`cl_demo.c`): playdemo parses the exact
+  .dem block format (cd-track line, then length/viewangles/payload
+  blocks) and feeds the shipped attract demos through the full parse
+  pipeline with CL_GetMessage's mtime pacing in a detached no-transmit
+  mode — demo1.dem plays e1m3 end to end. record/stop capture inbound
+  messages with viewangles into the same format (in-memory, replayable
+  with playdemo). Demo maps' assets publish on demand via a tiny
+  rq_need client->server file request. Fixed along the way: retained
+  EditableMeshes now Destroy() on map teardown (the editable budget
+  starved consecutive map builds — latent changelevel bug), atlas pages
+  destroy on reset, and demo feeding guards against re-entry while a
+  world build yields.
+
 - **Save/load** (`Host_Savegame_f`/`Host_Loadgame_f`): exact .sav text
   format (version 5, comment with kills, 16 spawn parms, skill, map,
   time, 64 lightstyles, ED_WriteGlobals, ED_Write per edict with
@@ -88,12 +101,8 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
    (no screen-space shader access); best-effort approximation TBD.
-8. **Demo playback/recording** (`cl_demo.c`). Design: record = inbound
-   message buffers + view angles per block in the exact .dem format;
-   playback = feed pak demos (demo1.dem etc) through the parse pipeline
-   with mtime pacing in a no-transmit demoplayback mode; needs a small
-   client->server file request ("rq_need") so demo maps' assets publish
-   on demand.
+The open list is empty: remaining divergences are the documented
+platform substitutions and deliberate defaults below.
 
 ## Platform substitutions (cannot be direct ports)
 

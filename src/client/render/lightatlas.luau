@@ -278,6 +278,15 @@ function lightatlas.alloc(a: Atlas, data: bsp.BspData, surf: bsp.Surface, styleV
 	return region
 end
 
+function lightatlas.destroy(a: Atlas)
+	for _, page in a.pages do
+		page.img:Destroy()
+	end
+	table.clear(a.pages)
+	table.clear(a.regions)
+	table.clear(a.animated)
+end
+
 function lightatlas.pageImage(a: Atlas, pi: number): EditableImage?
 	local page = a.pages[pi]
 	return if page then page.img else nil

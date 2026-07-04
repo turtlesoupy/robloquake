@@ -177,7 +177,11 @@ local function publishClientAssets()
 end
 
 publishClientAssets()
-print(`[robloquake] client bundle: {publishCount} files published`)
+print(`[robloquake] client bundle: {publishCount} files published`);
+
+(svr :: any).onFileRequest = function(path: string)
+	publishFile(path) -- no-ops when the pak doesn't have it
+end
 
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do

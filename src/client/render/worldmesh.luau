@@ -33,7 +33,15 @@ local function retainMesh(container: Instance, em: EditableMesh)
 		list = {}
 		liveMeshes[container] = list
 		container.Destroying:Connect(function()
+			local held = liveMeshes[container]
 			liveMeshes[container] = nil
+			if held then
+				-- release the editable memory budget immediately; waiting
+				-- for GC starves the next map's build
+				for _, m in held do
+					m:Destroy()
+				end
+			end
 		end)
 	end
 	table.insert(list, em)
@@ -112,6 +120,9 @@ local currentAtlas: lightatlaslib.Atlas? = nil
 local currentStyleValue: (number) -> number = baseStyleValue
 
 function worldmesh.resetLighting(styleValue: (number) -> number)
+	if currentAtlas then
+		lightatlaslib.destroy(currentAtlas)
+	end
 	currentAtlas = lightatlaslib.new()
 	currentStyleValue = styleValue
 end
