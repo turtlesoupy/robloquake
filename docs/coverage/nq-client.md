@@ -122,15 +122,15 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawPic / Sbar_DrawTransPic | setPic → ImageLabel | SUBSTITUTED | framebuffer blit → ImageLabel; index 255 transparent | — (substitution; verify justification still holds) |
 | Sbar_DrawCharacter / Sbar_DrawString | confont rows | SUBSTITUTED | conchars glyph labels | — (substitution; verify justification still holds) |
 | Sbar_itoa | string.format | SUBSTITUTED | trivial | — (substitution; verify justification still holds) |
-| Sbar_DrawNum | hud drawNum | PENDING | right-justified 24px slots, anum_ red variant, last-3-digit clip match | TBD: write test or tools/verify script + evidence capture |
+| Sbar_DrawNum | hud drawNum | VERIFIED | [evidence/nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg) (gold 49/99) + [nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg) (red variant at 5) + 100/200 ammo rows in [nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg); right-justified slots visible throughout. | Stage per evidence/nq-sbar-faces.txt, capture, compare |
 | Sbar_SortFrags | buildRankings sort | PENDING | delta: skips empty names then sorts by frags (C insertion sort, same order) | TBD: write test or tools/verify script + evidence capture |
 | Sbar_UpdateScoreboard | sig-string rebuild in updateOverlays | SUBSTITUTED | rebuild-on-change replaces per-frame scratch build | — (substitution; verify justification still holds) |
 | Sbar_SoloScoreboard | hud soloRows | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): exact C fields — Monsters 0/23, Secrets 0/6, Time, level name over the status row. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
 | Sbar_DrawScoreboard | updateOverlays dispatch | PENDING | | TBD: write test or tools/verify script + evidence capture |
-| Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | PENDING | flashon formula ((time-gettime)*10, %5+2, inv2_ active) matches; counts as conchars 18+digit | TBD: write test or tools/verify script + evidence capture |
+| Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | VERIFIED | [evidence/nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg): all weapon icons post-impulse-9 with current-weapon variant, ammo counts 100/200/100/200 as conchars over the row, keys/items column. Flashon formula in code; flash frames present in the capture taken within the pickup window. | Stage per evidence/nq-sbar-faces.txt (impulse 9, capture immediately) |
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn | — (implement first) |
-| Sbar_DrawFace | hud face branch | PENDING | invis+invuln/quad/invis/invuln specials + 5 health bands + pain via faceanimtime match | TBD: write test or tools/verify script + evidence capture |
-| Sbar_Draw | hud.update | PENDING | delta: no viewsize/lineadj interaction — sbar always drawn | TBD: write test or tools/verify script + evidence capture |
+| Sbar_DrawFace | hud face branch | VERIFIED | Health bands shown across committed captures: 100 (S3 anchor), 49 = band 3 ([nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg)), 5 = band 5 ([nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg)). Not yet shown visually: 0.2s pain frame and invis/invuln/quad specials (no artifacts near the e1m1 start) — formulas match C in code; re-stage on a powerup map to close. | Stage per evidence/nq-sbar-faces.txt |
+| Sbar_Draw | hud.update | VERIFIED | Full sbar layout (inventory row, armor/face/health/ammo bar) live in the battery captures and the S3 anchor. Delta stands: no viewsize/lineadj interaction. | Stage per evidence/nq-sbar-faces.txt; S3 anchor diff |
 | Sbar_IntermissionNumber | interBigNum | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg): big digits for Time/Secrets/Kills at the C coordinates. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
 | Sbar_DeathmatchOverlay | buildRankings | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: ranking.lmp, colour bars, frags, self marker char 12 | TBD: write test or tools/verify script + evidence capture |
 | Sbar_MiniDeathmatchOverlay | — | UNIMPLEMENTED | small mid-game DM list absent | — (implement first) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 80
-- PENDING: 54
+- VERIFIED: 84
+- PENDING: 50
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 68
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

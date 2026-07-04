@@ -1,0 +1,35 @@
+NQ sbar face/inventory battery (2026-07-04)
+============================================
+
+Engine: NQ boot, e1m1, id1 (registered 1.06), viewsize 100.
+Staging (re-runnable, tools/verify_input_nq.luau conventions):
+RQDBG_Console exec "impulse 9" / "impulse 7", RQ_ForcePitch +
+RQ_ForceAttack fire rockets into the floor for controlled self-damage
+(pitch 60 point-blank ~= -50 health, pitch 35 ~= -25), RQ_Health attr
+read between hits.
+
+nq-sbar-inventory.jpg — immediately after impulse 9 (main menu still
+  overlaid, sbar unobstructed): full Sbar_DrawInventory row — all
+  weapon icons with the current-weapon variant, ammo counts 100 / 200 /
+  100 / 200 as conchars 18+digit over the icons, keys/items column,
+  sigils area; Sbar_DrawNum health 100, armor 0, rockets 100.
+
+nq-sbar-face49.jpg — health 49 after one point-blank splash:
+  Sbar_DrawFace band 3 (40-59) bloodied face; gold Sbar_DrawNum 49;
+  rockets 99.
+
+nq-sbar-face5.jpg — health 5 after a second, farther splash:
+  Sbar_DrawFace band 5 (<20) heavily bloodied face; the health number
+  renders in the red anum_ variant (C uses anum digits when the value
+  is low/negative context — here the port's red variant at 5); rockets
+  98.
+
+Face bands shown across the committed set: 100 (S3 anchor
+nq-e1m1-start.jpg + inventory capture), 49 (band 3), 5 (band 5).
+NOT visually shown: pain-frame flash (0.2s faceanimtime window — the
+frozen-pause technique can catch it later) and the invis/invuln/quad
+specials (no artifacts near the e1m1 start; re-stage on a map with
+powerups when those rows are revisited).
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.
