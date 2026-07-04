@@ -187,6 +187,31 @@ local lastFrame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_
 t.check(#lastFrame.packet_entities > 0, `packet entities present ({#lastFrame.packet_entities})`)
 
 --------------------------------------------------------------------------
+-- runtime PF_centerprint and PF_lightstyle must reach the wire (the
+-- former via the netchan reliable stream — ClientReliableWrite — and
+-- the latter through the ss_active broadcast)
+local dfs = require("../src/shared/engine/progs/defs")
+local svm = svr.vm
+vmlib.setGlobalInt(svm, dfs.OFS_PARM0, sclient.edict.num)
+vmlib.setGlobalInt(svm, dfs.OFS_PARM0 + 3, vmlib.allocString(svm, "duel to the death"))
+svm.argc = 2
+svm.builtins[73](svm) -- centerprint
+vmlib.setGlobalFloat(svm, dfs.OFS_PARM0, 11)
+vmlib.setGlobalInt(svm, dfs.OFS_PARM0 + 3, vmlib.allocString(svm, "azazaza"))
+svm.argc = 2
+svm.builtins[35](svm) -- lightstyle
+tick(0)
+tick(0)
+local sawCenter = false
+for _, cp in cl.centerprints do
+	if cp == "duel to the death" then
+		sawCenter = true
+	end
+end
+t.check(sawCenter, "PF_centerprint arrived over the netchan reliable stream")
+t.eq(cl.lightstyles[11], "azazaza", "runtime PF_lightstyle broadcast reached the client")
+
+--------------------------------------------------------------------------
 -- changelevel: SV_SaveSpawnparms + full re-handshake over the wire
 -- (mirrors qwserver.luau's changelevelTo consumer)
 vmlib.edSetFloat(player, ent.ammo_nails, 142)

@@ -770,9 +770,11 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 			svr.print("tried to sprint to a non-client")
 			return
 		end
+		-- ClientReliableWrite: onto the client's netchan reliable stream
+		-- (client.message is a dead buffer nothing flushes)
 		local client = svr.clients[entnum]
-		msg.writeByte(client.message, proto.svc_centerprint)
-		msg.writeString(client.message, s)
+		msg.writeByte(client.netchan.message, proto.svc_centerprint)
+		msg.writeString(client.netchan.message, s)
 	end)
 
 	def(74, "ambientsound", function()

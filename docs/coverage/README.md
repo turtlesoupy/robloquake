@@ -52,6 +52,21 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (qw builtins re-earned at the register level)
+- New tests/test_qwbuiltins.luau (53 checks): PF_* builtins driven
+  exactly as PR_ExecuteProgram drives them — parameters into OFS_PARM*,
+  results from OFS_RETURN — with expectations taken from the C source
+  (printf %5.1f half-even, rint half-away-from-zero, vectoyaw int
+  truncation, findradius SOLID_NOT skip, ss_loading precache gate
+  preceding dedup, WriteAngle byte quantization, WriteCoord 1/8 units).
+  ~28 qw-server pr_cmds rows re-earned; PF_break and the debugger stubs
+  ruled N/A (debugger traps, platform-meaningless).
+- Bug found+fixed while re-earning: PF_centerprint wrote to
+  client.message, a buffer nothing flushes — centerprints never reached
+  QW clients. Now on the netchan reliable stream (ClientReliableWrite
+  equivalent) and wire-proven in test_qw_loopback, alongside a new
+  runtime PF_lightstyle broadcast check.
+
 ### 2026-07-04 (qwworld re-earned at C truth)
 - New tests/test_qwtrace.luau: the compiled-C trace fixture
   (tools/trace_truth.c) now replays through the QW world module itself
