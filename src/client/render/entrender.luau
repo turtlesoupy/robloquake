@@ -94,14 +94,105 @@ local function buildAliasBoxEnt(def: ModelDef, parent: Instance): RenderEnt
 	}
 end
 
+-- Quiet-window mesh regeneration. The zombie-object platform defect
+-- hits per-ENTITY meshes too: siblings of one def render mixed
+-- textured/black because each alias ent owns its own EditableMesh +
+-- MeshPart, born at sighting time (hot). Undetectable in place;
+-- rebuilds in quiet windows survive. Every alias ent gets its mesh
+-- rebuilt ONCE, a beat after entity creation goes quiet, swapped
+-- in-place so the owning boot never notices.
+local REGEN_QUIET = 1.5
+local meshRegenQueue: { [RenderEnt]: ModelDef } = {}
+local lastAliasCreate = 0
+local regenConn: RBXScriptConnection? = nil
+local buildAliasMesh -- forward decl
+
+local function drainMeshRegen()
+	if os.clock() - lastAliasCreate < REGEN_QUIET then
+		return
+	end
+	local re, def = next(meshRegenQueue)
+	if not re then
+		if regenConn then
+			regenConn:Disconnect()
+			regenConn = nil
+		end
+		return
+	end
+	meshRegenQueue[re] = nil
+	local oldPart = re.part
+	if not oldPart then
+		return
+	end
+	local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
+	if not part then
+		return -- keep the old mesh; better than nothing
+	end
+	local p = part :: MeshPart
+	p.CFrame = oldPart.CFrame
+	p.Color = oldPart.Color
+	p.Transparency = oldPart.Transparency
+	if re.boundImg then
+		p.TextureContent = Content.fromObject(re.boundImg)
+	end
+	p.Parent = oldPart.Parent
+	local oldEm = re.em
+	re.em = em
+	re.part = p
+	re.vids = vids
+	re.backVids = backVids
+	re.centerOffset = centerOffset
+	re.lastFrame = -999 -- force a re-pose next updateAlias
+	oldPart:Destroy()
+	if oldEm then
+		oldEm:Destroy()
+	end
+end
+
+local function queueMeshRegen(re: RenderEnt, def: ModelDef)
+	meshRegenQueue[re] = def
+	lastAliasCreate = os.clock()
+	if not regenConn then
+		regenConn = game:GetService("RunService").Heartbeat:Connect(drainMeshRegen)
+	end
+end
+
 local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	if not textures.canUseMeshApi() then
 		return buildAliasBoxEnt(def, parent)
 	end
+	local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
+	if not part then
+		return buildAliasBoxEnt(def, parent) -- budget exhausted / build failed
+	end
+	local p = part :: MeshPart
+	local skinImages = def.skinImages
+	local initialImg = if skinImages then skinImages[1] else nil
+	if initialImg then
+		p.TextureContent = Content.fromObject(initialImg)
+	end
+	p.Parent = parent
+
+	local re: RenderEnt = {
+		kind = "alias",
+		boundImg = initialImg,
+		modelindex = 0,
+		em = em,
+		part = p,
+		vids = vids,
+		backVids = backVids,
+		lastFrame = 0,
+		centerOffset = centerOffset,
+	}
+	queueMeshRegen(re, def)
+	return re
+end
+
+function buildAliasMesh(def: ModelDef): (EditableMesh?, MeshPart?, { number }?, { number }?, CFrame?)
 	local am = def.alias :: mdl.AliasModel
 	local em = AssetService:CreateEditableMesh()
 	if not em then
-		return buildAliasBoxEnt(def, parent) -- memory budget exhausted
+		return nil
 	end
 
 	local skinW, skinH = am.skinwidth, am.skinheight
@@ -170,7 +261,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	em:Destroy()
 	if not okF or not fixedOrErr then
 		warn(`[robloquake] alias fixed copy failed: {fixedOrErr}`)
-		return buildAliasBoxEnt(def, parent)
+		return nil
 	end
 	em = fixedOrErr :: EditableMesh
 
@@ -187,7 +278,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	if not ok then
 		em:Destroy()
 		warn(`[robloquake] alias mesh failed: {partOrErr}`)
-		return buildAliasBoxEnt(def, parent)
+		return nil
 	end
 	local part = partOrErr :: MeshPart
 	part.Anchored = true
@@ -196,24 +287,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	part.CanTouch = false
 	part.CastShadow = false
 	part.Material = Enum.Material.SmoothPlastic
-	local skinImages = def.skinImages
-	local initialImg = if skinImages then skinImages[1] else nil
-	if initialImg then
-		part.TextureContent = Content.fromObject(initialImg)
-	end
-	part.Parent = parent
-
-	return {
-		kind = "alias",
-		boundImg = initialImg,
-		modelindex = 0,
-		em = em,
-		part = part,
-		vids = vids,
-		backVids = backVids,
-		lastFrame = 0,
-		centerOffset = centerOffset,
-	}
+	return em, part, vids, backVids, centerOffset
 end
 
 -- pick the frame (handling framegroups by time)
@@ -444,6 +518,7 @@ function entrender.destroyDef(def: ModelDef)
 end
 
 function entrender.destroy(re: RenderEnt)
+	meshRegenQueue[re] = nil
 	if re.part then
 		re.part:Destroy()
 	end
