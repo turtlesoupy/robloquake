@@ -30,9 +30,11 @@ entrender scales UVs by (w/padW, h/padH); translated player skins take
 the same path, with creation failures cached (the old code retried a
 failed translation every frame, hammering the image budget).
 
-VERIFY: boot NQ, approach any monster or corpse — skins render. The
-GL/shotgun view models (same padded pipeline through the ViewportFrame
-gun path) render textured post-fix in this session's captures.
+VERIFY: boot NQ, approach any monster or corpse — skins render.
+AFTER-IMAGE: nq-black-entities-after.jpg — a start-map wall torch's
+flame.mdl (296x140, padded to 512x256) rendering its full orange/white
+flame skin in-world post-fix; every flame static on the map now
+carries the padded 512x256 image.
 
 id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
 public distribution.
