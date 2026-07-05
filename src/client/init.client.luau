@@ -390,6 +390,22 @@ c.onServerInfo = function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
+		-- Mod_LoadModel semantics (model.c): C loads EVERY precached model
+		-- during the level load, not on first sighting. Building all defs
+		-- here (behind the loading plaque, off the parse path) matches the
+		-- reference AND concentrates editable-object creation into one
+		-- window instead of scattering hot bursts across the level — the
+		-- zombie-object exposure amplifier.
+		local eagerBuilt = 0
+		for mi = 1, #c.model_precache - 1 do
+			if gen ~= worldBuildGen then
+				return -- changelevel superseded this load
+			end
+			if pcall(getModelDef, mi) then
+				eagerBuilt += 1
+			end
+		end
+		print(`[cl] precache defs built: {eagerBuilt}`)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create

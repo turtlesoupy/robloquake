@@ -331,6 +331,23 @@ return function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[robloquake] qw world built: {cl.levelname}`)
+		-- Mod_LoadModel semantics (model.c): C builds every precached
+		-- model at level load; doing the same here concentrates
+		-- editable-object creation into one window (zombie-object
+		-- exposure; see the NQ boot's twin pass)
+		local resets = seenLevelResets
+		task.spawn(function()
+			local eagerBuilt = 0
+			for mi in cl.model_name do
+				if seenLevelResets ~= resets then
+					return -- level change superseded this load
+				end
+				if pcall(getModelDef, mi) then
+					eagerBuilt += 1
+				end
+			end
+			print(`[robloquake] qw precache defs built: {eagerBuilt}`)
+		end)
 	end
 
 	-- statics arrive in the prespawn signon, after the world builds:
