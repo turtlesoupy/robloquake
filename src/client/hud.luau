@@ -536,7 +536,9 @@ end
 local function interFill(h: Hud, x: number, y: number, w: number, hh: number, palIndex: number)
 	local f = Instance.new("Frame")
 	f.BorderSizePixel = 0
-	f.BackgroundColor3 = h.pal[palIndex + 1] or Color3.new()
+	-- Palette is {r,g,b} arrays, not Color3s (was pal[i].R — always nil,
+	-- so scoreboard color fills silently rendered black)
+	f.BackgroundColor3 = Color3.fromRGB(h.pal.r[palIndex + 1] or 0, h.pal.g[palIndex + 1] or 0, h.pal.b[palIndex + 1] or 0)
 	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
 	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
 	f.Parent = h.interFrame

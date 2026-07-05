@@ -104,13 +104,13 @@ function textures.createFullbrightImage(pixels: buffer, width: number, height: n
 	local ok, img = pcall(function()
 		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
 		local rgba = buffer.create(count * 4)
+		local pr, pg, pb = pal.r, pal.g, pal.b
 		for i = 0, count - 1 do
 			local p = buffer.readu8(pixels, i)
 			if p >= 224 then
-				local c = pal[p + 1]
-				buffer.writeu8(rgba, i * 4, math.floor(c.R * 255 + 0.5))
-				buffer.writeu8(rgba, i * 4 + 1, math.floor(c.G * 255 + 0.5))
-				buffer.writeu8(rgba, i * 4 + 2, math.floor(c.B * 255 + 0.5))
+				buffer.writeu8(rgba, i * 4, pr[p + 1])
+				buffer.writeu8(rgba, i * 4 + 1, pg[p + 1])
+				buffer.writeu8(rgba, i * 4 + 2, pb[p + 1])
 				buffer.writeu8(rgba, i * 4 + 3, 255)
 			end
 		end
