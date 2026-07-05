@@ -1,0 +1,26 @@
+nq-crosshair-aim.jpg — SCR_DrawCrosshair placement fix (playtest report:
+"the crosshair is not actually the location that guns shoot").
+
+CAPTURE CONTEXT: Studio Play, NQ boot, start map, deathmatch 0.
+Produced by tools/verify_crosshair.luau PART 3: rocket launcher fired at
+a wall ~140qu ahead, server console "pause" issued 0.32s after the
+trigger — BecomeExplosion is a server think chain, so the s_explod
+fireball froze mid-animation for an unhurried capture. The '+' overlaps
+the fireball's upper edge; the small gap is the authentic 6qu below-eye
+rocket spawn line (~29px at that range), not misalignment.
+
+ROOT CAUSE: C draws the '+' at the vrect centre, which in WinQuake IS
+the projection centre (the 3d view is squeezed above the sbar). Our
+Roblox camera cannot shift its projection centre off the window centre
+(qcoords.vrect comment), so the vrect-centre emulation put the glyph
+48px (half the 2x-scaled sbar) above the real aim line — every shot
+landed below the crosshair.
+
+NUMERIC CHECKS (verify_crosshair.luau PARTS 1-2, recorded this session):
+  PART 1 glyph centre vs projection centre: delta=(0.0, 0.0)
+    (GetGuiInset-corrected; AbsolutePosition is inset-relative even on
+    an IgnoreGuiInset gui)
+  PART 2 tracked missile terminal position projected to screen:
+    dist=673qu screen delta=(-14.0, 18.8) px — within one 16px glyph;
+    ~6px of the Y residue is the 6qu spawn offset, the rest the
+    missile mesh centre vs entity origin.

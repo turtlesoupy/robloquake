@@ -142,16 +142,21 @@ cshiftFrame.Parent = overlayGui
 local con = consolelib.create(fs, pal, overlayGui)
 local mnu = menulib.create(fs, pal, overlayGui)
 
--- SCR_DrawCrosshair: the conchars '+' glyph drawn with its top-left at the
--- centre of the 3d view (the screen minus the 48-line status bar), gated by
--- the crosshair cvar. WinQuake defaults it off; we default on.
+-- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair cvar
+-- (WinQuake defaults it off; we default on). C draws it at the vrect
+-- centre, which IS the projection centre there because the 3d view is
+-- squeezed above the sbar. Our camera cannot shift its projection centre
+-- off the window centre (see qcoords.vrect), so the aim line passes
+-- through the window centre — the glyph must sit there, not sb/2 up,
+-- or rockets land below it.
 local confontlib = require(script.render.confont)
 local crosshairLabel = Instance.new("ImageLabel")
 crosshairLabel.Name = "crosshair"
 crosshairLabel.BackgroundTransparency = 1
 crosshairLabel.ResampleMode = Enum.ResamplerMode.Pixelated
 crosshairLabel.Size = UDim2.fromOffset(8 * 2, 8 * 2)
-crosshairLabel.Position = UDim2.new(0.5, 0, 0.5, -48)
+crosshairLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+crosshairLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
 crosshairLabel.ZIndex = 0 -- under the console/menu
 do
 	local img = confontlib.glyph(con.font, string.byte("+"))
