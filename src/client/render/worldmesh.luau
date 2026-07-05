@@ -13,6 +13,7 @@ local qcoords = require(engine.client.qcoords)
 local textures = require(script.Parent.textures)
 local tris = require(script.Parent.tris)
 local lightatlaslib = require(script.Parent.lightatlas)
+local buildqueue = require(script.Parent.buildqueue)
 
 local worldmesh = {}
 
@@ -335,10 +336,12 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end
 
 			-- budget pressure is transient (sighting-burst builds); retry
-			-- with backoff rather than dropping the batch outright
+			-- with backoff rather than dropping the batch outright. Each
+			-- attempt holds the exclusive build slot: one scratch dynamic
+			-- EM alive at a time across worldmesh + entrender.
 			local part: MeshPart? = nil
 			for n = 1, MAX_BUILD_ATTEMPTS do
-				part = attempt()
+				part = buildqueue.run(attempt)
 				if part then
 					break
 				end

@@ -73,6 +73,12 @@ rows.
   error) and retry the whole attempt with exponential backoff (~3s total)
   before dropping the batch (world) or degrading to the box ent (alias).
   Fix 2/3 (single build queue) and 3/3 (caller retry backoff) follow.
+- Fix 2/3: render/buildqueue.luau — an exclusive build slot shared by
+  worldmesh chunk attempts and entrender alias attempts. At most one
+  scratch dynamic EM exists at any moment; queued builds drip one per
+  Heartbeat so asynchronously-reclaimed budget is actually free before the
+  next attempt. Offline-tested (tests/test_buildqueue.luau: serialization,
+  FIFO, error-release).
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified

@@ -14,6 +14,7 @@ local spr = require(engine.models.spr)
 local qcoords = require(engine.client.qcoords)
 
 local textures = require(script.Parent.textures)
+local buildqueue = require(script.Parent.buildqueue)
 
 local entrender = {}
 
@@ -119,11 +120,11 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	-- and one retained dynamic saturates it for the whole session (see
 	-- worldmesh — images created at that margin zombie into permanent
 	-- black). The fixed copy reserves only its actual size and still
-	-- allows SetPosition (frame animation). Returns nils on budget failure.
-	local function attempt(): (EditableMesh?, MeshPart?, { number }?, { number }?)
+	-- allows SetPosition (frame animation). Returns nil on budget failure.
+	local function attempt(): { em: EditableMesh, part: MeshPart, vids: { number }, backVids: { number } }?
 		local em = AssetService:CreateEditableMesh()
 		if not em then
-			return nil, nil, nil, nil -- memory budget exhausted
+			return nil -- memory budget exhausted
 		end
 
 		-- vertices: each mdl vertex gets a front-facing and a back-facing
@@ -170,7 +171,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		end)
 		em:Destroy()
 		if not okF or not fixedOrErr then
-			return nil, nil, nil, nil
+			return nil
 		end
 		local fixed = fixedOrErr :: EditableMesh
 
@@ -186,27 +187,30 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		end)
 		if not ok then
 			fixed:Destroy()
-			return nil, nil, nil, nil
+			return nil
 		end
-		return fixed, partOrErr :: MeshPart, vids, backVids
+		return { em = fixed, part = partOrErr :: MeshPart, vids = vids, backVids = backVids }
 	end
 
 	-- budget pressure is transient (sighting-burst builds run through the
-	-- same budget); retry with backoff before degrading to the box
-	local em: EditableMesh?, part: MeshPart?, vids: { number }?, backVids: { number }?
+	-- same budget); retry with backoff before degrading to the box. Each
+	-- attempt holds the exclusive build slot: one scratch dynamic EM alive
+	-- at a time across worldmesh + entrender.
+	local built: { em: EditableMesh, part: MeshPart, vids: { number }, backVids: { number } }? = nil
 	for n = 1, MAX_BUILD_ATTEMPTS do
-		em, part, vids, backVids = attempt()
-		if em then
+		built = buildqueue.run(attempt)
+		if built then
 			break
 		end
 		if n < MAX_BUILD_ATTEMPTS then
 			task.wait(0.1 * 2 ^ (n - 1))
 		end
 	end
-	if not em or not part or not vids or not backVids then
+	if not built then
 		warn(`[robloquake] alias build failed for {am.name} after {MAX_BUILD_ATTEMPTS} attempts (box fallback)`)
 		return buildAliasBoxEnt(def, parent)
 	end
+	local em, part, vids, backVids = built.em, built.part, built.vids, built.backVids
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
