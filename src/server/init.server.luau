@@ -160,10 +160,24 @@ local function publishAvatarRig(player: Player)
 	end
 	task.spawn(function()
 		local ok, rig = pcall(function()
-			local desc = Players:GetHumanoidDescriptionFromUserId(player.UserId)
-			local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
-			model:SetAttribute("IdleAnim", tonumber(desc.IdleAnimation) or 0)
-			model:SetAttribute("RunAnim", tonumber(desc.RunAnimation) or 0)
+			-- Studio multi-client test players are guests with NEGATIVE
+			-- UserIds; description fetch rejects those (and can fail on
+			-- network hiccups) — a blank description = default rig
+			local desc: HumanoidDescription? = nil
+			if player.UserId > 0 then
+				local okDesc, d = pcall(function()
+					return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+				end)
+				if okDesc then
+					desc = d
+				end
+			end
+			if not desc then
+				desc = Instance.new("HumanoidDescription")
+			end
+			local model = Players:CreateHumanoidModelFromDescription(desc :: HumanoidDescription, Enum.HumanoidRigType.R15)
+			model:SetAttribute("IdleAnim", tonumber((desc :: HumanoidDescription).IdleAnimation) or 0)
+			model:SetAttribute("RunAnim", tonumber((desc :: HumanoidDescription).RunAnimation) or 0)
 			return model
 		end)
 		if not ok or not rig then
