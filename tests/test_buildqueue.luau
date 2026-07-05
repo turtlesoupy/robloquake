@@ -50,4 +50,16 @@ buildqueue.run(function()
 end)
 t.check(ranAfter, "slot is free again after an error")
 
+-- idleFor: 0 while a build holds the slot, grows once fully idle
+local during = -1
+task.spawn(function()
+	buildqueue.run(function()
+		during = buildqueue.idleFor()
+		task.wait(0.02)
+	end)
+end)
+task.wait(0.05)
+t.eq(during, 0, "idleFor is 0 while a build runs")
+t.check(buildqueue.idleFor() > 0, "idleFor grows once the queue is idle")
+
 t.finish("test_buildqueue")

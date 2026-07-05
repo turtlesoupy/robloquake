@@ -29,9 +29,19 @@ local entrender = {}
 -- and swapped into the def; the per-frame identity checks in
 -- updateAlias/updateSprite rebind live ents, and the old object is
 -- destroyed once nothing can still reference it.
+-- Timing/context matter (gallery boots 2026-07-05): recreations fired 0.4s
+-- after def prep, from the Heartbeat-connection context, DURING the
+-- sighting burst, zombied exactly like the originals — while recreations
+-- from a task context in a build-quiet window have never failed (executor
+-- heals, green-quad selftest, the live rebind probe). So the anneal now
+-- imitates the proven heal: it waits for the shared build queue to go
+-- idle, recreates inside the exclusive build slot, and runs the work in a
+-- deferred task rather than the Heartbeat callback itself.
 local ANNEAL_DELAY = 0.4
+local ANNEAL_QUIET = 0.3 -- build-queue idle seconds required before draining
 local annealQueue: { { def: ModelDef, field: string, at: number } } = {}
 local annealConn: RBXScriptConnection? = nil
+local annealCount = 0
 
 local function recreateImage(img: EditableImage): EditableImage?
 	local ok, fresh = pcall(function(): EditableImage?
@@ -47,24 +57,40 @@ local function recreateImage(img: EditableImage): EditableImage?
 	return if ok then fresh else nil
 end
 
+local function processAnneal(entry: { def: ModelDef, field: string, at: number })
+	local tbl = (entry.def :: any)[entry.field] :: { [any]: EditableImage }?
+	if not tbl then
+		return
+	end
+	for key, old in tbl do
+		-- hold the exclusive build slot: no scratch dynamic EM (or other
+		-- build-burst creation) shares the recreation window
+		local fresh = buildqueue.run(function()
+			return recreateImage(old)
+		end)
+		if fresh then
+			tbl[key] = fresh
+			annealCount += 1
+			task.delay(0.5, function()
+				old:Destroy()
+			end)
+		end
+	end
+	workspace:SetAttribute("RQDBG_AnnealCount", annealCount)
+end
+
 local function drainAnneal()
-	local now = os.clock()
-	for i, entry in annealQueue do
-		if now >= entry.at then
-			table.remove(annealQueue, i)
-			local tbl = (entry.def :: any)[entry.field] :: { [any]: EditableImage }?
-			if tbl then
-				for key, old in tbl do
-					local fresh = recreateImage(old)
-					if fresh then
-						tbl[key] = fresh
-						task.delay(0.5, function()
-							old:Destroy()
-						end)
-					end
-				end
+	-- only anneal in a build-quiet window; during a sighting burst the
+	-- recreations would zombie exactly like the originals
+	if buildqueue.idleFor() >= ANNEAL_QUIET then
+		local now = os.clock()
+		for i, entry in annealQueue do
+			if now >= entry.at then
+				table.remove(annealQueue, i)
+				-- run OUT of the Heartbeat-connection context (see above)
+				task.defer(processAnneal, entry)
+				break -- one def per drain: spread the recreations out
 			end
-			break -- one def per Heartbeat: spread the recreations out
 		end
 	end
 	if #annealQueue == 0 and annealConn then

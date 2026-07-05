@@ -99,6 +99,15 @@ rows.
   succeed, which is the regime the anneal was designed for: every def
   image recreated from its own pixels a beat after creation, swapped via
   identity-gated binds.
+- Anneal hardened after boot 2 (still-black trio with anneal active; the
+  live rebind probe healed all three instantly): recreations fired during
+  the sighting burst, from the Heartbeat-connection context, zombie
+  exactly like the originals — every clean creation ever observed
+  (executor heals, green-quad selftest, live probe) was task-context in a
+  quiet window. drainAnneal now waits for buildqueue.idleFor() ≥ 0.3s,
+  recreates inside the exclusive build slot, and runs in task.defer
+  rather than the Heartbeat callback. RQDBG_AnnealCount workspace attr
+  counts swapped images for protocol observability.
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified

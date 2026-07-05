@@ -27,6 +27,7 @@ local buildqueue = {}
 local busy = false
 local waiters: { thread } = {}
 local handoffScheduled = false
+local lastRelease = os.clock()
 
 local function handoff()
 	local waiter = table.remove(waiters, 1)
@@ -34,6 +35,7 @@ local function handoff()
 		task.spawn(waiter) -- resumes acquire()'s yield; the slot stays claimed
 	else
 		busy = false
+		lastRelease = os.clock()
 	end
 end
 
@@ -69,7 +71,18 @@ local function release()
 		scheduleHandoff()
 	else
 		busy = false
+		lastRelease = os.clock()
 	end
+end
+
+-- Seconds the queue has been fully idle (no holder, no waiters); 0 while
+-- any build is running or queued. Lets low-priority work (image annealing)
+-- wait for a build-quiet window.
+function buildqueue.idleFor(): number
+	if busy or #waiters > 0 then
+		return 0
+	end
+	return os.clock() - lastRelease
 end
 
 -- Run fn while holding the exclusive build slot. fn may yield (the async
