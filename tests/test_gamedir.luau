@@ -105,7 +105,65 @@ else
 	print("test_gamedir: in-house toolchain leg SKIPPED (run tools/build_progs.sh first)")
 end
 
--- 5. missing progs errors clearly, doesn't crash obscurely ----------------
+-- 5. in-house OVERLAY mod: instagib (mods/instagib over the GPL qw-qc) ----
+-- (build with: tools/build_progs.sh mods/instagib build/instagib
+--  reference/quake-c/qw-qc)
+
+local INSTAGIB = "build/instagib/qwprogs.dat"
+if fs.isFile(INSTAGIB) then
+	local igFs = testutil.gameFs()
+	vfs.addPack(
+		igFs,
+		pak.load(
+			"instagib/pak0.pak",
+			writePak({ { name = "qwprogs.dat", data = buffer.fromstring(fs.readFile(INSTAGIB)) } })
+		)
+	)
+	local svr = qwsv.newGame(igFs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+	check(svr.active == true, "instagib qwprogs boots e1m1")
+	qwsv.connectClient(svr, 1, { name = "gunner" })
+	qwsv.connectClient(svr, 2, { name = "victim" })
+	local gunner, victim = svr.clients[1], svr.clients[2]
+	check(gunner.spawned == true and victim.spawned == true, "both instagib clients spawned")
+
+	local vmlib = require("../src/shared/engine/progs/vm")
+	local mathlib = require("../src/shared/engine/common/mathlib")
+	local qwworld = require("../src/shared/engine/qw/qwworld")
+	local ent = svr.qdefs.ent
+
+	-- an armored, full-health victim right down the gunner's aim line
+	vmlib.edSetFloat(victim.edict, ent.armorvalue, 200)
+	vmlib.edSetFloat(victim.edict, ent.armortype, 0.8)
+	local yaw = vmlib.edVector(gunner.edict, ent.angles).y
+	local fwd = mathlib.angleVectors(vector.create(0, yaw, 0))
+	vmlib.edSetVector(victim.edict, ent.origin, vmlib.edVector(gunner.edict, ent.origin) + fwd * 120)
+	vmlib.edSetVector(victim.edict, ent.velocity, vector.zero)
+	qwworld.linkEdict(svr.world, victim.edict, false)
+
+	local shellsBefore = vmlib.edFloat(gunner.edict, ent.ammo_shells)
+	qwsv.executeCmd(svr, gunner, {
+		angles = vector.create(0, yaw, 0),
+		forwardmove = 0,
+		sidemove = 0,
+		upmove = 0,
+		buttons = 1,
+		msec = 50,
+	})
+	qwsv.frame(svr, 0.05)
+	check(
+		vmlib.edFloat(victim.edict, ent.health) <= 0,
+		"one instagib blast kills through 200 armor (health "
+			.. tostring(vmlib.edFloat(victim.edict, ent.health))
+			.. ")"
+	)
+	eq(vmlib.edFloat(gunner.edict, ent.ammo_shells), shellsBefore, "instagib consumes no ammo")
+else
+	print("test_gamedir: instagib overlay leg SKIPPED (run tools/build_progs.sh first)")
+end
+
+-- 6. missing progs errors clearly, doesn't crash obscurely ----------------
 
 local emptyFs = vfs.new()
 local ok, err = pcall(function()

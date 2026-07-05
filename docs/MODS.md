@@ -119,6 +119,18 @@ mode works too. CAUTION: gmqcc's progs.src auto-mode writes its output
 into the current directory — the script compiles in a temp copy for that
 reason; don't run compilers by hand inside a source tree you care about.
 
+In-house mods are OVERLAYS: keep only the changed `.qc` files in
+`mods/<name>/` and pass the GPL base as the third argument. The worked
+example is [mods/instagib](../mods/instagib/README.md) — one modified
+`weapons.qc` over qw-qc:
+
+```sh
+tools/build_progs.sh mods/instagib build/instagib reference/quake-c/qw-qc
+```
+
+`tests/test_gamedir.luau` proves it end to end (boots, one blast kills
+through 200 armor, no ammo consumed).
+
 ## Known limits
 
 - One gamedir at a time (`gamedir` attribute is a single name — matching

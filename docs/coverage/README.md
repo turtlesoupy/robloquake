@@ -58,6 +58,14 @@ rows.
 
 ## Changelog
 
+### 2026-07-05 (in-house overlay mod: instagib)
+- mods/instagib = the in-house gamedir mod worked example: ONE modified
+  weapons.qc (GPL, overlaid on reference qw-qc via build_progs.sh's new
+  [base-dir] overlay arg) — single perfectly accurate 1000-damage slug, no
+  ammo use. test_gamedir leg proves boot + one-shot kill through 200 armor
+  + no ammo consumed. This closes the MODS.md in-house pipeline
+  (own QC → compile → gamedir → VM) with a real second compiled mod.
+
 ### 2026-07-05 (second mod: Rocket Arena; QC toolchain; localinfo)
 - Rocket Arena "Final Arena" 1.20 (second unmodified third-party mod) runs
   its full round/queue/rotation loop offline — S6 row. Zero per-mod engine

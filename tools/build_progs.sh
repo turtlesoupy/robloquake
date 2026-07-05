@@ -8,10 +8,14 @@
 # progdefs header CRC (NQ 5927 / QW 54730) so the engine's ABI check
 # passes. fteqcc with vanilla settings works too if you prefer it.
 #
-# Usage: tools/build_progs.sh <qc-source-dir> <output-dir>
+# Usage: tools/build_progs.sh <qc-source-dir> <output-dir> [base-dir]
 #   e.g. tools/build_progs.sh reference/quake-c/qw-qc build/inhouse
-# The source dir must contain progs.src (first line names the output file,
-# e.g. ./qwprogs.dat — that basename lands in <output-dir>).
+#        tools/build_progs.sh mods/instagib build/instagib reference/quake-c/qw-qc
+# With [base-dir], the source dir is an OVERLAY: base files are copied
+# first, then the mod's files over them — in-house mods keep only their
+# changed .qc files in the repo. progs.src (from the overlay if present,
+# else the base) names the output file on line 1 (e.g. ./qwprogs.dat);
+# that basename lands in <output-dir>.
 #
 # gmqcc is built on first use into build/gmqcc (shallow clone; the
 # LDFLAGS override drops --gc-sections, which macOS ld rejects).
@@ -20,8 +24,13 @@ cd "$(dirname "$0")/.."
 
 SRC="$1"
 OUT="$2"
-[ -n "$SRC" ] && [ -n "$OUT" ] || { echo "usage: tools/build_progs.sh <qc-source-dir> <output-dir>"; exit 2; }
-[ -f "$SRC/progs.src" ] || { echo "no progs.src in $SRC"; exit 2; }
+BASE="$3"
+[ -n "$SRC" ] && [ -n "$OUT" ] || { echo "usage: tools/build_progs.sh <qc-source-dir> <output-dir> [base-dir]"; exit 2; }
+if [ -n "$BASE" ]; then
+    [ -f "$SRC/progs.src" ] || [ -f "$BASE/progs.src" ] || { echo "no progs.src in $SRC or $BASE"; exit 2; }
+else
+    [ -f "$SRC/progs.src" ] || { echo "no progs.src in $SRC"; exit 2; }
+fi
 
 GMQCC=build/gmqcc/gmqcc
 if ! [ -x "$GMQCC" ]; then
@@ -36,11 +45,14 @@ fi
 # tree you care about
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+if [ -n "$BASE" ]; then
+    cp "$BASE"/*.qc "$BASE"/*.src "$TMP"/ 2>/dev/null || true
+fi
 cp "$SRC"/*.qc "$SRC"/*.src "$TMP"/ 2>/dev/null || true
 ROOT="$(pwd)"
 (cd "$TMP" && "$ROOT/$GMQCC" -std=qcc)
 
 mkdir -p "$OUT"
-DAT="$(sed -n '1s/[[:space:]]*$//;1s|^\./||p' "$SRC/progs.src")"
+DAT="$(sed -n '1s/[[:space:]]*$//;1s|^\./||p' "$TMP/progs.src")"
 cp "$TMP/$DAT" "$OUT/$DAT"
 echo "$OUT/$DAT"
