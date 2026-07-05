@@ -53,8 +53,39 @@ rows.
 | S2 | NQ campaign loop: spawn, pickup, damage, changelevel carry, save/load round-trip | VERIFIED | tests/test_scenario_nq.luau (30 checks): shells picked up by really walking over the box (SV_TouchLinks), a live grunt shoots the player (svc_damage pain flash on the client), earned inventory + damaged health carry to e1m2, then a save/load round-trip restores health/shells/origin/time and the game keeps running | `lune run tests/test_scenario_nq.luau` |
 | S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | VERIFIED | [evidence/nq-e1m1-start.jpg](evidence/nq-e1m1-start.jpg) + [.txt capture context](evidence/nq-e1m1-start.txt): e1m1 start hall at the fixed anchor (480,-352,88 yaw 90, deathmatch 0, viewsize 100) — textured/lightmapped world, centered shotgun through the ViewportFrame projection, full sbar with live stats. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/nq-e1m1-start.jpg |
 | S4 | QW visual anchor: same vantage discipline, QW engine | VERIFIED | [evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg) + [.txt capture context](evidence/qw-dm3-stairs.txt): the QW boot at the fixed dm3 stair anchor (-64,470,44 yaw 90) — the truth-course risers visible, QW sbar via hudlib adapter, view weapon over the strip. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/qw-dm3-stairs.jpg |
+| S5 | Unmodified third-party mod via gamedir: Threewave CTF 4.21 full loop on the QW boot | VERIFIED | tests/test_scenario_ctf.luau (29 checks): the mod's shipped qwprogs.dat (217-field foreign ABI) stacked over id1 exactly as build_assets.py stages it; two wire clients get color-assigned to teams and spawn at their bases, runes spawn, enemy flag grab → capture (+15 frags, flag rehomes solid) → carrier killed → flag drops/lands → defender touch-return, grapple selected by impulse 22 and fired (mod-added .hook_out field read by name from the mod's own fielddefs), rune picked up (player_flag bit + carried rune non-solid). Requires external_assets/threewave/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ctf.luau` |
 
 ## Changelog
+
+### 2026-07-05 (gamedir mod support: Threewave CTF runs unmodified)
+- Generic gamedir plumbing: `gamedir` place attribute stacks a mod dir's
+  paks over the base game (init.server `addGameDirectory` pak0..pakN loop,
+  COM_InitFilesystem -game semantics, missing dir warns + falls back);
+  qwserver resolves qwprogs.dat through the searchpath FIRST (authentic
+  COM_LoadFile — a mod pak's progs wins) with the chunk-asset folders as
+  fallback; qwsv.newGame's progs buffer is now optional (vfs fallback,
+  clear error naming the missing file); clientbundle publishes from the
+  stacked vfs (gamedir attribute + mod-first soundmap resolution).
+- tools/build_assets.py stages any mod: shipped paks chunked as-is, loose
+  game files packed into a synthetic pak (docs/QC-source/toolchain files
+  excluded, names lowercased — DOS-era mods assumed case-insensitive
+  lookups); tools/build_soundbank.py takes multiple --source dirs for
+  base+mod banks (later overrides, loose sound/ trees included).
+- FIDELITY FIX found by the mod: QW's SV_Physics_Toss clears FL_ONGROUND
+  when velocity_z > 0 (a QW addition over NQ) — the port was missing the
+  line, so QC that flings resting items (CTF flag tosses) left them inert.
+  Direct unstick check added to test_qwsv.
+- New: tests/test_gamedir.luau (searchpath override/fallthrough + foreign
+  progs on both boots + clear-error path), tests/test_scenario_ctf.luau
+  (S5), docs/MODS.md (add-a-mod steps), docs/mods-licenses.md (Threewave
+  provenance/license: free public use OK, commercial needs Zoid's
+  permission — LOCAL/DEV ONLY gate recorded).
+- Threewave findings worth keeping: teamplay is the mod's bitfield config
+  (419 = its shipped server.cfg), runes spawn with BLANK classnames (find
+  them by progs/end%d.mdl model), the QW 4.21 build announces rune pickups
+  with no text (assert player_flag bit + rune non-solid instead), returning
+  a still-airborne dropped flag loses it through the floor on real QW too
+  (land it first).
 
 ### 2026-07-04 (playtest "all items highlighted": stale CL_ClearState fields — RESOLVED)
 - User playtest report: every owned weapon slot drawn with its bright

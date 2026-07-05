@@ -413,4 +413,28 @@ t.check(
 	"MOVETYPE_STEP falls under gravity and lands (SV_Physics_Step)"
 )
 
+-- QW's SV_Physics_Toss unstick: upward velocity clears FL_ONGROUND (a line
+-- QW added over NQ; QC that flings resting items relies on it — found via
+-- Threewave CTF's flag tosses)
+local tossEd = vmlib.alloc(vm)
+vmlib.edSetFloat(tossEd, ent.movetype, qdl2.MOVETYPE_TOSS)
+vmlib.edSetFloat(tossEd, ent.solid, qdl2.SOLID_BBOX)
+vmlib.edSetVector(tossEd, ent.mins, vector.zero)
+vmlib.edSetVector(tossEd, ent.maxs, vector.zero)
+vmlib.edSetVector(tossEd, ent.origin, vector.create(480, -352, 120))
+qwworldlib2.linkEdict(svr.world, tossEd, false)
+for _ = 1, 30 do
+	qwsv.frame(svr, 0.05)
+end
+t.check(bit32.band(vmlib.edFloat(tossEd, ent.flags), qdl2.FL_ONGROUND) ~= 0, "toss item landed (FL_ONGROUND)")
+local restZ = vmlib.edVector(tossEd, ent.origin).z
+vmlib.edSetVector(tossEd, ent.velocity, vector.create(0, 0, 300))
+for _ = 1, 4 do
+	qwsv.frame(svr, 0.05)
+end
+t.check(
+	vmlib.edVector(tossEd, ent.origin).z > restZ + 20,
+	"upward velocity unsticks a grounded toss item (SV_Physics_Toss QW onground clear)"
+)
+
 t.finish("test_qwsv")

@@ -24,17 +24,31 @@ export type Ctx = {
 	assets: Instance,
 	gameFolder: Instance,
 	gameDir: string,
+	modDir: string?,
+	modFolder: Instance?,
 	startMap: string,
 	reliable: RemoteEvent,
 	unreliable: UnreliableRemoteEvent,
 }
 
 return function(ctx: Ctx)
-	-- qwprogs.dat ships as a chunked asset (it is not inside the paks):
-	-- tools/build_assets.py --file <path-to>/qwprogs.dat
-	local qwprogsFolder = ctx.gameFolder:FindFirstChild("qwprogs") or ctx.assets:FindFirstChild("qwprogs")
-	assert(qwprogsFolder, "engine=qw needs a qwprogs asset (tools/build_assets.py --file qwprogs.dat)")
-	local qwprogsBuf = assetchunks.loadRaw(qwprogsFolder)
+	-- qwprogs.dat: the authentic path is COM_LoadFile through the searchpath
+	-- stack (a mod gamedir's pak wins over the base game). The base games
+	-- ship it OUTSIDE their paks as a chunked asset instead
+	-- (tools/build_assets.py --file <path-to>/qwprogs.dat), so fall back to
+	-- the chunk folders: mod dir first, then base game, then the assets root.
+	local qwprogsBuf = vfs.loadFile(ctx.fsys, "qwprogs.dat")
+	if not qwprogsBuf then
+		local qwprogsFolder = (ctx.modFolder and ctx.modFolder:FindFirstChild("qwprogs"))
+			or ctx.gameFolder:FindFirstChild("qwprogs")
+			or ctx.assets:FindFirstChild("qwprogs")
+		assert(
+			qwprogsFolder,
+			"engine=qw needs qwprogs.dat in a searchpath pak or as a chunked asset"
+				.. " (tools/build_assets.py --file qwprogs.dat)"
+		)
+		qwprogsBuf = assetchunks.loadRaw(qwprogsFolder)
+	end
 
 	local svr = qwsv.newGame(ctx.fsys, qwprogsBuf)
 	svr.print = function(s: string)
@@ -55,7 +69,7 @@ return function(ctx: Ctx)
 	assert(svr.active, "QW server failed to spawn")
 	_G.RQ_SERVER = svr -- studio debugging access
 
-	local bundle = clientbundle.new(ctx.fsys, ctx.gameDir, ctx.gameFolder)
+	local bundle = clientbundle.new(ctx.fsys, ctx.gameDir, ctx.gameFolder, ctx.modDir, ctx.modFolder)
 	bundle.clientFS:SetAttribute("engine", "qw")
 	bundle.publishAll(svr)
 

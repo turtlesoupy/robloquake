@@ -92,15 +92,24 @@ def parse_wav(blob: bytes):
     return samples, loopstart
 
 
-def build(source: pathlib.Path, game: str) -> None:
+def build(sources: list[pathlib.Path], game: str) -> None:
+    """Bank all sounds from the source dirs in order (later dirs override —
+    pass the base game first, then the mod gamedir for a game+mod bank)."""
     out_dir = ROOT / "assets" / game
     out_dir.mkdir(parents=True, exist_ok=True)
 
     entries = {}
-    for pakpath in sorted(source.glob("*.pak")):
-        for name, blob in pak_entries(pakpath):
-            if name.startswith("sound/") and name.endswith(".wav"):
-                entries[name] = blob  # later paks override earlier
+    for source in sources:
+        for pakpath in sorted(source.glob("*.pak")):
+            for name, blob in pak_entries(pakpath):
+                if name.startswith("sound/") and name.endswith(".wav"):
+                    entries[name] = blob  # later paks override earlier
+        # loose sound/ trees (mods ship these outside paks too)
+        loose_root = source / "sound"
+        if loose_root.is_dir():
+            for wav in sorted(loose_root.rglob("*.wav")):
+                name = wav.relative_to(source).as_posix().lower()
+                entries[name] = wav.read_bytes()
 
     bank = []
     regions = {}
@@ -154,17 +163,24 @@ if __name__ == "__main__":
     ap.add_argument(
         "--source",
         type=pathlib.Path,
+        nargs="+",
         default=None,
-        help="directory containing pak0.pak, pak1.pak, ... (default: per --game)",
+        help="source dir(s) with paks and/or loose sound/ trees, in override"
+        " order: base game first, then the mod gamedir (default: per --game)",
     )
-    ap.add_argument("--game", default="id1", help="game directory name (id1 or lq1)")
+    ap.add_argument(
+        "--game",
+        default="id1",
+        help="output directory name under assets/ (base game or mod gamedir)",
+    )
     args = ap.parse_args()
-    source = args.source
-    if source is None:
+    sources = args.source
+    if sources is None:
         source = {
             "id1": ROOT / "external_assets/quake106/extracted/id1",
             "lq1": ROOT / "external_assets/librequake/full/id1",
         }.get(args.game)
         if source is None:
             raise SystemExit("unknown game; pass --source")
-    build(source, args.game)
+        sources = [source]
+    build(sources, args.game)

@@ -73,10 +73,16 @@ export type ClientFrame = {
 	ping_time: number, -- realtime - senttime when the client acked, -1 pending
 }
 
-function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer): any
+function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	local svr: any = {}
 	svr.fs = fsys
-	svr.qwprogsBuf = qwprogsBuf
+	-- QW loads qwprogs.dat with COM_LoadFile: the searchpath stack resolves
+	-- it, so a mod gamedir's progs override the base game's. Callers may
+	-- also inject a buffer directly (the Studio boot's chunk-asset path).
+	svr.qwprogsBuf = qwprogsBuf or vfslib.loadFile(fsys, "qwprogs.dat")
+	if not svr.qwprogsBuf then
+		error("PR_LoadProgs: couldn't load qwprogs.dat (not in any searchpath pak)")
+	end
 	svr.maxclients = MAX_CLIENTS
 	svr.cvars = cvarlib.new()
 	local cv = svr.cvars

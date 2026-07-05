@@ -26,6 +26,33 @@ function testutil.gameFs(): vfs.Vfs
 	return fsys
 end
 
+-- build a pak blob the way tools/build_assets.py packs loose mod files
+-- (PACK header, file data, 64-byte directory entries) — for staging mod
+-- gamedirs in tests
+function testutil.writePak(files: { { name: string, data: buffer } }): buffer
+	local headerLen = 12
+	local dirlen = #files * 64
+	local datalen = 0
+	for _, f in files do
+		datalen += buffer.len(f.data)
+	end
+	local blob = buffer.create(headerLen + datalen + dirlen)
+	buffer.writestring(blob, 0, "PACK")
+	buffer.writei32(blob, 4, headerLen + datalen) -- dirofs
+	buffer.writei32(blob, 8, dirlen)
+	local pos = headerLen
+	local dpos = headerLen + datalen
+	for _, f in files do
+		buffer.copy(blob, pos, f.data, 0, buffer.len(f.data))
+		buffer.writestring(blob, dpos, f.name) -- rest of the 56 bytes stays 0
+		buffer.writei32(blob, dpos + 56, pos)
+		buffer.writei32(blob, dpos + 60, buffer.len(f.data))
+		pos += buffer.len(f.data)
+		dpos += 64
+	end
+	return blob
+end
+
 local failures = 0
 local checks = 0
 

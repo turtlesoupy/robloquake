@@ -89,8 +89,8 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | COM_LoadCacheFile (common.c:1591) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_LoadStackFile (common.c:1598) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_LoadPackFile (common.c:1619) | common/pak.luau:load | VERIFIED | test_pak: 339 entries, lengths cross-checked vs independent Python parse | `lune run tests/test_pak.luau` |
-| COM_AddGameDirectory (common.c:1689) | vfs.luau:addPack + init.server.luau pak loop | VERIFIED | Searchpath layering exercised by test_librequake (lq1 over id1) and test_qw_pmove (pak1 stacked over pak0 for dm3). | `lune run tests/test_librequake.luau`; `lune run tests/test_qw_pmove.luau` |
-| COM_InitFilesystem (common.c:1732) | src/server/init.server.luau | SUBSTITUTED | paks reassembled from base64 asset chunks (no filesystem); -basedir/-game via folder attributes | — (substitution; verify justification still holds) |
+| COM_AddGameDirectory (common.c:1689) | vfs.luau:addPack + init.server.luau `addGameDirectory` (pak0..pakN loop) | VERIFIED | Searchpath layering exercised by test_librequake (lq1 over id1), test_qw_pmove (pak1 over pak0), and test_gamedir (mod pak over id1: override, fallthrough, foreign progs.dat wins on both boots). | `lune run tests/test_gamedir.luau`; `lune run tests/test_librequake.luau` |
+| COM_InitFilesystem (common.c:1732) | src/server/init.server.luau | SUBSTITUTED | paks reassembled from base64 asset chunks (no filesystem); -basedir via the game attribute, -game via the gamedir attribute (mod dir stacked over base, missing dir warns and falls back). Stacking semantics verified offline by test_gamedir + test_scenario_ctf. | — (substitution; verify justification still holds) |
 
 ## mathlib.c
 

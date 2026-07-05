@@ -17,10 +17,19 @@ export type Bundle = {
 	publishAll: (svr: any) -> (),
 }
 
-function clientbundle.new(fsys: vfs.Vfs, gameDir: string, gameFolder: Instance): Bundle
+function clientbundle.new(
+	fsys: vfs.Vfs,
+	gameDir: string,
+	gameFolder: Instance,
+	modDir: string?,
+	modFolder: Instance?
+): Bundle
 	local clientFS = Instance.new("Folder")
 	clientFS.Name = "QuakeClientFS"
 	clientFS:SetAttribute("game", gameDir)
+	if modDir then
+		clientFS:SetAttribute("gamedir", modDir)
+	end
 	clientFS.Parent = ReplicatedStorage
 
 	local publishedFiles: { [string]: boolean } = {}
@@ -78,9 +87,11 @@ function clientbundle.new(fsys: vfs.Vfs, gameDir: string, gameFolder: Instance):
 				publishFile(name)
 			end
 		end
-		-- soundmap (bank asset id + regions) is a StringValue, mirrored as-is
+		-- soundmap (bank asset id + regions) is a StringValue, mirrored as-is;
+		-- a mod gamedir's bank (base + mod sounds) overrides the base game's
 		local assets = gameFolder.Parent
-		local soundmap = gameFolder:FindFirstChild("soundmap")
+		local soundmap = (modFolder and modFolder:FindFirstChild("soundmap"))
+			or gameFolder:FindFirstChild("soundmap")
 			or (assets and assets:FindFirstChild("soundmap"))
 		if soundmap and not clientFS:FindFirstChild("soundmap") then
 			soundmap:Clone().Parent = clientFS

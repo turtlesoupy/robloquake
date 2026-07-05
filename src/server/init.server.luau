@@ -43,12 +43,34 @@ local gameFolder = assets:WaitForChild(gameDir)
 local startAttr = assets:GetAttribute("startmap")
 local START_MAP = if typeof(startAttr) == "string" then startAttr else "start"
 
+-- COM_AddGameDirectory: add a game/mod dir's paks pak0..pakN; each newly
+-- added pak is searched before the ones added earlier
 local fsys = vfs.new()
-for _, pakName in { "pak0", "pak1" } do
-	local pack = loadPak(gameFolder, pakName)
-	if pack then
+local function addGameDirectory(dirFolder: Instance)
+	for i = 0, 9 do
+		local pack = loadPak(dirFolder, `pak{i}`)
+		if not pack then
+			break
+		end
 		vfs.addPack(fsys, pack)
-		print(`[robloquake] loaded {gameDir}/{pakName}.pak ({pack.numfiles} files)`)
+		print(`[robloquake] loaded {dirFolder.Name}/pak{i}.pak ({pack.numfiles} files)`)
+	end
+end
+addGameDirectory(gameFolder)
+
+-- mod support: gamedir attribute stacks a mod's paks over the base game
+-- (COM_InitFilesystem's -game). Missing mod files fall through to the base
+-- game automatically because the searchpath stack is searched newest-first.
+local gamedirAttr = assets:GetAttribute("gamedir")
+local modDir: string? = nil
+local modFolder: Instance? = nil
+if typeof(gamedirAttr) == "string" and gamedirAttr ~= "" and gamedirAttr ~= gameDir then
+	modFolder = assets:FindFirstChild(gamedirAttr)
+	if modFolder then
+		modDir = gamedirAttr
+		addGameDirectory(modFolder :: Instance)
+	else
+		warn(`[robloquake] gamedir "{gamedirAttr}" not found under QuakeAssets — running base game`)
 	end
 end
 
@@ -72,6 +94,8 @@ if engineAttr == "qw" then
 		assets = assets,
 		gameFolder = gameFolder,
 		gameDir = gameDir,
+		modDir = modDir,
+		modFolder = modFolder,
 		startMap = START_MAP,
 		reliable = reliable,
 		unreliable = unreliable,
@@ -102,7 +126,7 @@ _G.RQ_SERVER = svr -- studio debugging access
 
 -- client asset bundle (shared with the QW boot)
 local clientbundle = require(script.clientbundle)
-local bundle = clientbundle.new(fsys, gameDir, gameFolder)
+local bundle = clientbundle.new(fsys, gameDir, gameFolder, modDir, modFolder)
 bundle.clientFS:SetAttribute("engine", "nq")
 bundle.publishAll(svr)
 local publishFile = bundle.publishFile;

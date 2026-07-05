@@ -771,6 +771,12 @@ function sv_phys.physicsToss(svr: any, ed: vmlib.Edict)
 		return
 	end
 
+	-- QW addition over NQ: upward velocity unsticks a grounded entity
+	-- (QC that flings resting items relies on this)
+	if vmlib.edVector(ed, ent.velocity).z > 0 then
+		vmlib.edSetFloat(ed, ent.flags, bit32.band(vmlib.edFloat(ed, ent.flags), bit32.bnot(qd.FL_ONGROUND)))
+	end
+
 	-- if onground, return without moving
 	if bit32.band(vmlib.edFloat(ed, ent.flags), qd.FL_ONGROUND) ~= 0 then
 		return
