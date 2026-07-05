@@ -158,12 +158,7 @@ crosshairLabel.Size = UDim2.fromOffset(8 * 2, 8 * 2)
 crosshairLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 crosshairLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
 crosshairLabel.ZIndex = 0 -- under the console/menu
-do
-	local img = confontlib.glyph(con.font, string.byte("+"))
-	if img then
-		crosshairLabel.ImageContent = Content.fromObject(img)
-	end
-end
+confontlib.apply(con.font, crosshairLabel, string.byte("+"))
 crosshairLabel.Parent = overlayGui
 
 -- (Roblox CoreGui overlays stay enabled by request)

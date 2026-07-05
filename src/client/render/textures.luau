@@ -173,6 +173,58 @@ function textures.resamplePixelsPow2(pixels: buffer, width: number, height: numb
 	return out, w2, h2
 end
 
+-- Shared image pages: the platform renders Object-content bindings from a
+-- LIMITED pool — around ~128 live EditableImages, every bind past the cap
+-- silently draws BLACK (playtest "more dark textures"; a session sat at
+-- 140 distinct images, 40 of them 8x8 glyphs, and every image created
+-- after the cliff rendered black with healthy CPU pixels). Small non-
+-- tiling GUI pics pack into one page and address it with
+-- ImageRectOffset/ImageRectSize instead of owning a binding each.
+export type ImagePage = {
+	img: EditableImage?,
+	size: number,
+	shelfX: number,
+	shelfY: number,
+	shelfH: number,
+}
+
+function textures.newImagePage(size: number): ImagePage
+	local ok, img = pcall(function()
+		return AssetService:CreateEditableImage({ Size = Vector2.new(size, size) })
+	end)
+	if not ok then
+		img = nil
+	end
+	return { img = img, size = size, shelfX = 0, shelfY = 0, shelfH = 0 }
+end
+
+-- shelf-pack pixels into the page; returns the pixel offset or nil when
+-- the page is full / unavailable. A 1px gap keeps Pixelated sampling from
+-- bleeding neighbours.
+function textures.pageAlloc(page: ImagePage, pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): Vector2?
+	local img = page.img
+	if not img then
+		return nil
+	end
+	local w, h = width + 1, height + 1
+	local x, y
+	if page.shelfX + w <= page.size and page.shelfY + h <= page.size then
+		x, y = page.shelfX, page.shelfY
+		page.shelfX += w
+		page.shelfH = math.max(page.shelfH, h)
+	elseif page.shelfY + page.shelfH + h <= page.size then
+		page.shelfY += page.shelfH
+		page.shelfX = w
+		page.shelfH = h
+		x, y = 0, page.shelfY
+	else
+		return nil
+	end
+	local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
+	img:WritePixelsBuffer(Vector2.new(x, y), Vector2.new(width, height), rgba)
+	return Vector2.new(x, y)
+end
+
 -- Player color translation (CL_NewTranslation): shirt row 16-31 and pants
 -- row 96-111 are remapped from the top/bottom color ranges. Backwards
 -- ranges (>= 128) are reversed.

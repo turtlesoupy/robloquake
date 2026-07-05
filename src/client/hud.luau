@@ -41,7 +41,10 @@ local IT_CELLS = 2048
 local IT_INVISIBILITY = 524288
 local IT_QUAD = 2097152
 
-type Pic = { img: EditableImage?, w: number, h: number }
+-- img is usually the shared page (rect-addressed); dedicated only when
+-- the page is full. One page instead of ~25 pics: live EditableImage
+-- bindings are a scarce pool (~128) and binds past the cap render black.
+type Pic = { img: EditableImage?, off: Vector2, w: number, h: number }
 
 export type Hud = {
 	gui: ScreenGui,
@@ -75,7 +78,8 @@ export type Hud = {
 	sbarBg: ImageLabel,
 	fs: vfslib.Vfs,
 	conchars: buffer?,
-	charPics: { [number]: EditableImage? },
+	charPics: { [number]: Pic? },
+	page: textures.ImagePage,
 	pal: textures.Palette,
 }
 
@@ -86,18 +90,25 @@ local function getPic(h: Hud, w: wadlib.Wad, name: string): Pic
 	end
 	local ok, pic = pcall(wadlib.getPic, w, name)
 	if not ok then
-		local missing: Pic = { img = nil, w = 8, h = 8 }
+		local missing: Pic = { img = nil, off = Vector2.zero, w = 8, h = 8 }
 		h.pics[name] = missing
 		return missing
 	end
-	local img = textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
-	local p: Pic = { img = img, w = pic.width, h = pic.height }
+	local off = textures.pageAlloc(h.page, pic.pixels, pic.width, pic.height, h.pal, true)
+	local p: Pic
+	if off then
+		p = { img = h.page.img, off = off, w = pic.width, h = pic.height }
+	else
+		-- page full: dedicated image (rect (0,0)-(w,h) addresses it whole)
+		local img = textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
+		p = { img = img, off = Vector2.zero, w = pic.width, h = pic.height }
+	end
 	h.pics[name] = p
 	return p
 end
 
--- an 8x8 conchars glyph as an image (used for the small yellow ammo counts)
-local function charPic(h: Hud, code: number): EditableImage?
+-- an 8x8 conchars glyph pic (used for the small yellow ammo counts)
+local function charPic(h: Hud, code: number): Pic?
 	if h.charPics[code] ~= nil then
 		return h.charPics[code]
 	end
@@ -116,9 +127,18 @@ local function charPic(h: Hud, code: number): EditableImage?
 			buffer.writeu8(glyph, y * 8 + x, if p == 0 then 255 else p)
 		end
 	end
-	local img = textures.createImage(glyph, 8, 8, h.pal, true)
-	h.charPics[code] = img
-	return img
+	local off = textures.pageAlloc(h.page, glyph, 8, 8, h.pal, true)
+	local p: Pic? = nil
+	if off then
+		p = { img = h.page.img, off = off, w = 8, h = 8 }
+	else
+		local img = textures.createImage(glyph, 8, 8, h.pal, true)
+		if img then
+			p = { img = img, off = Vector2.zero, w = 8, h = 8 }
+		end
+	end
+	h.charPics[code] = p
+	return p
 end
 
 local function makeLabel(parent: Instance, x: number, y: number, w: number, hh: number): ImageLabel
@@ -136,6 +156,8 @@ local function setPic(h: Hud, label: ImageLabel, name: string, w: wadlib.Wad)
 	local pic = getPic(h, w, name)
 	if pic.img then
 		label.ImageContent = Content.fromObject(pic.img)
+		label.ImageRectOffset = pic.off
+		label.ImageRectSize = Vector2.new(pic.w, pic.h)
 		label.Size = UDim2.fromOffset(pic.w * SCALE, pic.h * SCALE)
 		label.Visible = true
 	else
@@ -175,6 +197,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.canvas = canvas
 	h.pics = {}
 	h.charPics = {}
+	h.page = textures.newImagePage(512)
 	h.pal = pal
 	h.centerTime = 0
 	h.centerStart = 0
@@ -264,7 +287,8 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 			return nil
 		end
 		local pic = wadlib.parseQPic(buf)
-		local img = textures.createImage(pic.pixels, pic.width, pic.height, pal, true)
+		local off = textures.pageAlloc(h.page, pic.pixels, pic.width, pic.height, pal, true)
+		local img = if off then h.page.img else textures.createImage(pic.pixels, pic.width, pic.height, pal, true)
 		if not img then
 			return nil
 		end
@@ -272,6 +296,8 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		label.Name = picName
 		label.BackgroundTransparency = 1
 		label.ImageContent = Content.fromObject(img)
+		label.ImageRectOffset = off or Vector2.zero
+		label.ImageRectSize = Vector2.new(pic.width, pic.height)
 		label.ResampleMode = Enum.ResamplerMode.Pixelated
 		label.AnchorPoint = Vector2.new(0.5, 0.5)
 		label.Position = UDim2.new(0.5, 0, 0.5, -24 * SCALE)
@@ -445,13 +471,16 @@ local function interLmp(h: Hud, name: string, x: number, y: number, centered: bo
 		return
 	end
 	local pic = wadlib.parseQPic(buf)
-	local img = textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
+	local off = textures.pageAlloc(h.page, pic.pixels, pic.width, pic.height, h.pal, true)
+	local img = if off then h.page.img else textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
 	if not img then
 		return
 	end
 	local label = Instance.new("ImageLabel")
 	label.BackgroundTransparency = 1
 	label.ImageContent = Content.fromObject(img)
+	label.ImageRectOffset = off or Vector2.zero
+	label.ImageRectSize = Vector2.new(pic.width, pic.height)
 	label.ResampleMode = Enum.ResamplerMode.Pixelated
 	local px = if centered then (320 - pic.width) // 2 else x
 	label.Position = UDim2.fromOffset(px * SCALE, y * SCALE)
@@ -468,6 +497,8 @@ local function interWadPic(h: Hud, name: string, x: number, y: number)
 	local label = Instance.new("ImageLabel")
 	label.BackgroundTransparency = 1
 	label.ImageContent = Content.fromObject(p.img :: EditableImage)
+	label.ImageRectOffset = p.off
+	label.ImageRectSize = Vector2.new(p.w, p.h)
 	label.ResampleMode = Enum.ResamplerMode.Pixelated
 	label.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
 	label.Size = UDim2.fromOffset(p.w * SCALE, p.h * SCALE)
@@ -784,9 +815,11 @@ function hud.update(h: Hud, c: cllib.Client)
 			local label = h.countDigits[i + 1][j + 1]
 			local ch = str:sub(j + 1, j + 1)
 			if ch ~= " " then
-				local img = charPic(h, 18 + (ch:byte() - 48))
-				if img then
-					label.ImageContent = Content.fromObject(img)
+				local pic = charPic(h, 18 + (ch:byte() - 48))
+				if pic and pic.img then
+					label.ImageContent = Content.fromObject(pic.img)
+					label.ImageRectOffset = pic.off
+					label.ImageRectSize = Vector2.new(pic.w, pic.h)
 					label.Visible = true
 				end
 			else

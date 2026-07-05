@@ -1,39 +1,62 @@
 --!strict
 --!optimize 2
 -- The conchars console font: 16x16 grid of 8x8 glyphs from gfx.wad, drawn
--- as one ImageLabel per character cell (Draw_Character semantics; color 0
--- is transparent).
+-- as ImageLabels addressing ONE 128x128 sheet image via ImageRectOffset
+-- (Draw_Character semantics; color 0 is transparent). One image for the
+-- whole font instead of one per glyph: live EditableImage bindings are a
+-- scarce pool (~128) and every bind past the cap renders black.
 
 local textures = require(script.Parent.textures)
 
 local confont = {}
 
 export type Font = {
-	glyphs: { [number]: EditableImage? },
+	sheet: EditableImage?,
+	sheetBuilt: boolean,
 	conchars: buffer,
 	pal: textures.Palette,
 }
 
 function confont.new(conchars: buffer, pal: textures.Palette): Font
-	return { glyphs = {}, conchars = conchars, pal = pal }
+	return { sheet = nil, sheetBuilt = false, conchars = conchars, pal = pal }
 end
 
-function confont.glyph(f: Font, code: number): EditableImage?
-	if f.glyphs[code] ~= nil then
-		return f.glyphs[code]
+-- Build the whole 128x128 sheet once; color 0 -> index 255 (transparent).
+local function sheet(f: Font): EditableImage?
+	if f.sheetBuilt then
+		return f.sheet
 	end
-	local out = buffer.create(64)
+	f.sheetBuilt = true
+	local out = buffer.create(128 * 128)
+	for i = 0, 128 * 128 - 1 do
+		local p = buffer.readu8(f.conchars, i)
+		buffer.writeu8(out, i, if p == 0 then 255 else p)
+	end
+	f.sheet = textures.createImage(out, 128, 128, f.pal, true)
+	return f.sheet
+end
+
+-- Sheet image + pixel rect for a character code; nil when images are
+-- unavailable (fallback rendering).
+function confont.cell(f: Font, code: number): (EditableImage?, Vector2)
+	local img = sheet(f)
 	local row = math.floor(code / 16) % 16
 	local col = code % 16
-	for y = 0, 7 do
-		for x = 0, 7 do
-			local p = buffer.readu8(f.conchars, (row * 8 + y) * 128 + col * 8 + x)
-			buffer.writeu8(out, y * 8 + x, if p == 0 then 255 else p)
-		end
+	return img, Vector2.new(col * 8, row * 8)
+end
+
+confont.CELL = Vector2.new(8, 8)
+
+-- Point an ImageLabel at a glyph (Draw_Character for one cell).
+function confont.apply(f: Font, label: ImageLabel, code: number): boolean
+	local img, off = confont.cell(f, code)
+	if not img then
+		return false
 	end
-	local img = textures.createImage(out, 8, 8, f.pal, true)
-	f.glyphs[code] = img
-	return img
+	label.ImageContent = Content.fromObject(img)
+	label.ImageRectOffset = off
+	label.ImageRectSize = confont.CELL
+	return true
 end
 
 export type TextRow = {
@@ -67,13 +90,7 @@ function confont.setRow(f: Font, row: TextRow, text: string)
 	for i, label in row.labels do
 		local code = text:byte(i)
 		if code and code ~= 32 then
-			local img = confont.glyph(f, code)
-			if img then
-				label.ImageContent = Content.fromObject(img)
-				label.Visible = true
-			else
-				label.Visible = false
-			end
+			label.Visible = confont.apply(f, label, code)
 		else
 			label.Visible = false
 		end
