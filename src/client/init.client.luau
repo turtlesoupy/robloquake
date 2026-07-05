@@ -525,6 +525,14 @@ c.onServerInfo = function()
 			end
 			task.delay(5, buildGallery)
 			workspace:GetAttributeChangedSignal("RQDBG_GalleryGo"):Connect(buildGallery)
+			-- RQDBG_AnnealGo: re-queue every def's images for a late anneal
+			-- pass (discriminates "in-boot quiet recreation heals" from
+			-- "only out-of-VM recreation heals" without a reboot)
+			workspace:GetAttributeChangedSignal("RQDBG_AnnealGo"):Connect(function()
+				for _, def in modelDefs do
+					entrender.annealDefImages(def)
+				end
+			end)
 		end
 	end)
 end

@@ -38,7 +38,11 @@ local entrender = {}
 -- idle, recreates inside the exclusive build slot, and runs the work in a
 -- deferred task rather than the Heartbeat callback itself.
 local ANNEAL_DELAY = 0.4
-local ANNEAL_QUIET = 0.3 -- build-queue idle seconds required before draining
+-- Build-queue idle seconds required before draining. Gallery boot
+-- evidence: 0.3s let recreations run in the gaps BETWEEN sighting-burst
+-- builds (teleport sweep cadence ~1.2s) and those zombied exactly like
+-- the originals; only well-after-the-burst recreations have ever healed.
+local ANNEAL_QUIET = 1.5
 local annealQueue: { { def: ModelDef, field: string, at: number } } = {}
 local annealConn: RBXScriptConnection? = nil
 local annealCount = 0
@@ -103,6 +107,20 @@ local function queueAnneal(def: ModelDef, field: string)
 	table.insert(annealQueue, { def = def, field = field, at = os.clock() + ANNEAL_DELAY })
 	if not annealConn then
 		annealConn = game:GetService("RunService").Heartbeat:Connect(drainAnneal)
+	end
+end
+
+-- Re-queue every image a def owns (RQDBG_SelfTest re-anneal hook; also
+-- lets a caller force a late pass after a known-hot stretch)
+function entrender.annealDefImages(def: ModelDef)
+	if def.skinImages then
+		queueAnneal(def, "skinImages")
+	end
+	if def.spriteImages then
+		queueAnneal(def, "spriteImages")
+	end
+	if def.translatedSkins and next(def.translatedSkins :: any) then
+		queueAnneal(def, "translatedSkins")
 	end
 end
 

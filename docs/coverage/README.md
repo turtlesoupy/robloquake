@@ -108,6 +108,13 @@ rows.
   recreates inside the exclusive build slot, and runs in task.defer
   rather than the Heartbeat callback. RQDBG_AnnealCount workspace attr
   counts swapped images for protocol observability.
+- ANNEAL_QUIET raised 0.3s→1.5s after boot 3: 0.3s let recreations run in
+  the idle gaps BETWEEN sweep builds (~1.2s teleport cadence) and those
+  zombied like the originals; at 1.5s the anneal drains only after the
+  burst truly ends and the gallery came up fully textured — first clean
+  gallery boot (all 5 def tiles show art, console zero budget-limit
+  lines). entrender.annealDefImages + RQDBG_AnnealGo attr hook re-queue
+  every def's images on demand (selftest-gated).
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified
