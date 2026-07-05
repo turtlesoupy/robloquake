@@ -380,6 +380,94 @@ do
 	t.eq(cl.disconnected_reason, "server disconnected", "svc_disconnect records the reason")
 end
 
+-- crafted-parse battery: CL_ParseStatic / CL_ParseStaticSound /
+-- svc_stopsound / FlushEntityPacket
+do
+	local function packet(fill: (sb: msg.SizeBuf) -> ()): msg.Reader
+		local sb = msg.newBuf(128)
+		fill(sb)
+		local pkt = buffer.create(sb.cursize)
+		buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+		return msg.reader(pkt)
+	end
+
+	-- CL_ParseStatic (cl_ents.c): baseline layout with INTERLEAVED
+	-- origin[i]/angles[i] coord/angle pairs
+	local nStatics = #cl.static_entities
+	qwcl.parseServerMessage(cl, packet(function(sb)
+		msg.writeByte(sb, qwp.svc_spawnstatic)
+		msg.writeByte(sb, 3) -- modelindex
+		msg.writeByte(sb, 2) -- frame
+		msg.writeByte(sb, 0) -- colormap
+		msg.writeByte(sb, 1) -- skinnum
+		msg.writeCoord(sb, 100)
+		msg.writeAngle(sb, 90)
+		msg.writeCoord(sb, -50)
+		msg.writeAngle(sb, 0)
+		msg.writeCoord(sb, 24)
+		msg.writeAngle(sb, 0)
+	end))
+	t.eq(#cl.static_entities, nStatics + 1, "svc_spawnstatic appends a static entity")
+	local st = cl.static_entities[#cl.static_entities]
+	t.check(st.modelindex == 3 and st.frame == 2 and st.skinnum == 1, "static fields parsed")
+	t.check(vector.magnitude(st.origin - vector.create(100, -50, 24)) < 0.5, "static origin from the interleaved coord/angle layout")
+
+	-- CL_ParseStaticSound
+	local nSS = #cl.static_sounds
+	qwcl.parseServerMessage(cl, packet(function(sb)
+		msg.writeByte(sb, qwp.svc_spawnstaticsound)
+		msg.writeCoord(sb, 10)
+		msg.writeCoord(sb, 20)
+		msg.writeCoord(sb, 30)
+		msg.writeByte(sb, 4) -- sound num
+		msg.writeByte(sb, 200) -- vol
+		msg.writeByte(sb, 2) -- atten
+	end))
+	t.eq(#cl.static_sounds, nSS + 1, "svc_spawnstaticsound appends")
+	local ss = cl.static_sounds[#cl.static_sounds]
+	t.check(ss.num == 4 and ss.vol == 200 and ss.atten == 2 and ss.pos == vector.create(10, 20, 30), "static sound fields parsed")
+
+	-- svc_stopsound -> num=-1 sentinel in the sounds sink (S_StopSound input)
+	table.clear(cl.sounds)
+	qwcl.parseServerMessage(cl, packet(function(sb)
+		msg.writeByte(sb, qwp.svc_stopsound)
+		msg.writeShort(sb, 5 * 8 + 3) -- ent 5, channel 3
+	end))
+	t.check(#cl.sounds == 1 and cl.sounds[1].num == -1 and cl.sounds[1].ent == 5 and cl.sounds[1].channel == 3, "svc_stopsound queues the ent/channel stop sentinel")
+
+	-- FlushEntityPacket: a delta from a >= UPDATE_BACKUP-1 stale frame is
+	-- read-and-discarded with the frame invalidated and validsequence 0
+	local mask = 63 -- UPDATE_MASK
+	local seq = cl.netchan.incoming_sequence
+	local frame = cl.frames[bit32.band(seq, mask)]
+	frame.delta_sequence = seq - 70 -- hopelessly old
+	cl.netchan.outgoing_sequence = seq
+	cl.validsequence = 12345
+	qwcl.parseServerMessage(cl, packet(function(sb)
+		msg.writeByte(sb, qwp.svc_deltapacketentities)
+		msg.writeByte(sb, bit32.band(seq - 70, mask)) -- matching 'from'
+		msg.writeShort(sb, 0) -- empty entity list terminator
+	end))
+	t.check(frame.invalid == true, "FlushEntityPacket: frame marked invalid")
+	t.eq(cl.validsequence, 0, "FlushEntityPacket: validsequence reset to 0")
+
+	-- Con_DPrintf hook: the delta 'from' mismatch warning goes through
+	-- cl.dprint (developer print channel)
+	local dprints = {}
+	local oldDprint = cl.dprint
+	cl.dprint = function(msg_: string)
+		table.insert(dprints, msg_)
+	end
+	frame.delta_sequence = seq - 1 -- fresh enough, but 'from' won't match
+	qwcl.parseServerMessage(cl, packet(function(sb)
+		msg.writeByte(sb, qwp.svc_deltapacketentities)
+		msg.writeByte(sb, bit32.band(seq - 5, mask)) -- mismatched from
+		msg.writeShort(sb, 0)
+	end))
+	cl.dprint = oldDprint
+	t.check(#dprints > 0 and dprints[1]:find("mismatch") ~= nil, "Con_DPrintf hook fires on the delta from-mismatch warning")
+end
+
 -- CL_AllocDlight / CL_DecayLights (cl_ents.c:42, shared pool in qwcl)
 do
 	cl.time = 100

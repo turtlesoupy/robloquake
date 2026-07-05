@@ -66,8 +66,8 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ParseSoundlist | `parseSoundlist` | VERIFIED | Loopback: "precache lists received" (#cl.sound_name > 1). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_ParseModellist | `parseModellist` | VERIFIED | Loopback: same check + worldmodel load. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_ParseBaseline | `parseBaseline` | VERIFIED | Loopback: "baselines received (>20)". | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| CL_ParseStatic | `parseStatic` + qwclient `spawnPendingStatics` | PENDING | Parsed in the loopback signon stream (misparse would desync the message) but no assert; rendering path (entrender per kind) not individually screenshot-verified. | TBD: write test or tools/verify script + evidence capture |
-| CL_ParseStaticSound | `parseStaticSound` + `soundlib.static` | PENDING | Same: parsed in signon, playback not asserted (soundlib.static live-verified under the NQ boot only). | TBD: write test or tools/verify script + evidence capture |
+| CL_ParseStatic | `parseStatic` + qwclient `spawnPendingStatics` | VERIFIED | test_qw_loopback crafted svc_spawnstatic: fields + the INTERLEAVED origin/angle coord layout asserted; rendering rides the shared entrender path (statics visible across committed captures). | `lune run tests/test_qw_loopback.luau` |
+| CL_ParseStaticSound | `parseStaticSound` + `soundlib.static` | VERIFIED | test_qw_loopback crafted svc_spawnstaticsound: pos/num/vol/atten asserted; playback is the shared soundlib.static path (NQ live-verified). | `lune run tests/test_qw_loopback.luau` |
 | CL_ParseStartSoundPacket | `parseStartSound` | VERIFIED | Loopback: "svc_sound guncock arrived through the PHS multicast" (vol/atten/ent/channel decode). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_ParseClientdata | head of `parseServerMessage` | VERIFIED | test_qw_loopback: parsecount/receivedtime bookkeeping proven by "prediction converged (<1 unit)" and "validsequence tracking" — both fail if the frame ring is misindexed. | `lune run tests/test_qw_loopback.luau` |
 | CL_NewTranslation | — | UNIMPLEMENTED | Colormap skin translation for players journaled open (backlog "STILL OPEN"). | — (implement first) |
@@ -102,7 +102,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_NewDlight | inlined at call sites in `handleTempEntity`/`relinkEntities` | VERIFIED | Call-site values spot-checked against cl_tent.c/cl_ents.c (muzzleflash die +0.1; explosion radius/die +0.5/decay 300; EF glows die +0.1) on top of the offline-tested shared pool. | Code inspection + `lune run tests/test_qw_loopback.luau` (pool) |
 | CL_DecayLights | qwcl.decayDlights (shared; heartbeat delegates) | VERIFIED | test_qw_loopback: radius -= dt*decay (100-30 at dt .1/decay 300), fully-decayed lights culled from the active list that feeds worldmesh.updateDlights. | `lune run tests/test_qw_loopback.luau` |
 | CL_ParseDelta | `qwents.parseDelta` | VERIFIED | test_qwents named checks: "moved origin applied", "new entity fields", U_MOREBITS byte, all U_ field reads. | `lune run tests/test_qwents.luau` |
-| FlushEntityPacket | too-old branch of `qwcl` `parsePacketEntitiesMsg` | PENDING | Sets invalid+validsequence=0 and parse-discards; not reachable in the lockstep loopback (never 63 packets behind). | TBD: write test or tools/verify script + evidence capture |
+| FlushEntityPacket | too-old branch of `qwcl` `parsePacketEntitiesMsg` | VERIFIED | test_qw_loopback: a crafted delta from a 70-packet-stale frame is read-and-discarded with frame.invalid=true and validsequence reset to 0. | `lune run tests/test_qw_loopback.luau` |
 | CL_ParsePacketEntities | `qwents.parsePacketEntities` + `qwcl` `parsePacketEntitiesMsg` | VERIFIED | qwents: full update, delta update, unchanged-carry, U_REMOVE, baseline-new (7 checks); loopback: "first packetentities frame received", "validsequence tracking", "packet entities present". Delta: from-sequence mismatch only warns (C's exactness kept, message differs). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_LinkPacketEntities | qwclient `relinkEntities` packet-ents loop | VERIFIED | [evidence/qw-dm3-packetents.jpg](evidence/qw-dm3-packetents.jpg) + .txt: a b_nail0 packet entity renders at its wire position at a deterministic vantage; parse layer separately covered by test_qwents/test_qw_loopback. | Stage per evidence/qw-dm3-packetents.txt, capture, compare |
 | CL_ClearProjectiles | `cl.nails = {}` per parsed message | VERIFIED | Nails live one message: cl.nails resets per frame parse (the loopback check catches them within the frame they ride). | `lune run tests/test_qw_loopback.luau` |
@@ -207,12 +207,12 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CalcFov | `qcoords.calcFovY` | VERIFIED | test_qcoords: matches a transcribed screen.c CalcFov on 5 cases + hand-derived anchors (fov 90 -> 73.74 at 4:3, 58.72 at 16:9). | `lune run tests/test_qcoords.luau` |
-| SCR_CenterPrint / SCR_DrawCenterString / SCR_CheckDrawCenterString / SCR_EraseCenterString | centerprints drained to `print()` | PENDING | Text reaches the Studio output only; on-screen center string is part of the console/HUD follow-up. | TBD: write test or tools/verify script + evidence capture |
+| SCR_CenterPrint / SCR_DrawCenterString / SCR_CheckDrawCenterString / SCR_EraseCenterString | centerprints drained to hudlib.centerPrint (qwclient heartbeat) | VERIFIED | Stale row: the drain now feeds the shared hud centerprint (qwclient ~1541), whose rendering + 2s gate are visually verified by the NQ capture pair (nq-centerprint/-expired — same hudlib code path); the wire side (svc_centerprint -> cl.centerprints) parses in every loopback QC death message. | `lune run tests/test_qw_loopback.luau`; shared-hud visuals per nq-centerprint.txt |
 | SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | Math half VERIFIED offline: test_qcoords proves fov_y derives from the window minus the sbar strip (R_SetVrect semantics) and the gun rotation scales with viewsize. Visual half (world crop sb/2 delta + gun placement over the HUD) needs the S4 anchor screenshot. | `lune run tests/test_qcoords.luau` + S4 evidence capture |
 | SCR_SizeUp_f / SCR_SizeDown_f | — | UNIMPLEMENTED | viewsize scaling (fidelity backlog). | — (implement first) |
 | SCR_Init | — | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. | — (implement first) |
-| SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | `consolelib.update` (Heartbeat) | PENDING | scr_conspeed slide + draw via the shared console module. | TBD: write test or tools/verify script + evidence capture |
+| SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | `consolelib.update` (Heartbeat) | VERIFIED | Shared console module: the committed qw-console-open.jpg captures the slide/draw live on the QW boot (and the NQ pair covers the same code path). | qw-console-open evidence; RQDBG_Console "toggle" + capture |
 | WritePCXfile / SCR_ScreenShot_f / MipColor / SCR_DrawCharToSnap / SCR_DrawStringToSnap / SCR_RSShot_f | — | SUBSTITUTED | Screenshots/remote-shots are platform features; N/A. | — (substitution; verify justification still holds) |
 | SCR_DrawNotifyString / SCR_ModalMessage | — | UNIMPLEMENTED | | — (implement first) |
 | SCR_UpdateScreen / SCR_UpdateWholeScreen | Heartbeat render sequence | SUBSTITUTED | Roblox render pipeline; the C draw-order (3D → sbar → console) has no equivalent yet because the 2D layers are absent. | — (substitution; verify justification still holds) |
@@ -224,7 +224,7 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Con_Printf / Con_Print | `cl.prints` sink → hudlib notify + `consolelib.print` + Studio output | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg) + .txt: entered-the-game and PRINT_CHAT lines in the QW scrollback (cl.prints sink through the shared consolelib). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
-| Con_DPrintf | `cl.dprint` hook | PENDING | qwclient wires it to print. | TBD: write test or tools/verify script + evidence capture |
+| Con_DPrintf | `cl.dprint` hook | VERIFIED | test_qw_loopback: the delta from-mismatch warning fires through the hook (crafted mismatched delta); qwclient wires it to print. | `lune run tests/test_qw_loopback.luau` |
 | Key_ClearTyping / Con_ToggleConsole_f / Con_ToggleChat_f / Con_MessageMode_f / Con_MessageMode2_f | qwclient key wiring + `execCommand` | VERIFIED | [evidence/qw-messagemode.jpg](evidence/qw-messagemode.jpg) + .txt: the "say:" line renders and gameplay input is disabled while it is up (a forced attack did not fire); console toggle separately captured in evidence/qw-console-open.jpg. Caveat: Roblox chrome partially overlaps the line at this window size. | Console "messagemode" per evidence/qw-messagemode.txt, capture, compare |
 | Con_Clear_f / Con_ClearNotify / Con_Resize / Con_CheckResize / Con_Init / Con_Linefeed | consolelib | VERIFIED | Live QW probe: console dump 94 chars -> 0 after exec `clear` ([evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); linefeed/wrap exercised by every battery through consolelib.print (shared module, same code as the NQ console evidence). Resize N/A (fixed 64-col conback) stands. | Battery steps in the evidence file |
 | Con_DrawInput / Con_DrawNotify / Con_DrawConsole / Con_NotifyBox / Con_SafePrintf | `consolelib.update` + chat row | VERIFIED | [evidence/qw-console-open.jpg](evidence/qw-console-open.jpg): conback, scrollback, ] prompt with cursor under the QW boot. NotifyBox/SafePrintf N/A (no dedicated-server stdin). | RQDBG battery per evidence/qw-console-open.txt, capture, compare |
@@ -234,7 +234,7 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Key_Event | qwclient `onKey` (InputBegan/InputEnded) | VERIFIED | Real UserInputService W (not the harness) moved the player through onKey -> buttons -> pmove ([evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dispatch-tier behaviour previously shown in the messagemode/console evidence. | Battery steps in the evidence file |
-| Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | PENDING | Enter executes/`say "…"`s, Backspace, history arrows, SHIFT_MAP + GetStringForKeyCode text entry (NQ boot's scheme); Escape/tilde leaves messagemode. Needs a live typing screenshot. | TBD: write test or tools/verify script + evidence capture |
+| Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | VERIFIED | Committed captures: qw-messagemode.jpg (say: line typed through messageKey live) and qw-console-open.jpg (console battery typed through handleKey/handleText — same shared consolelib as the NQ battery). | qw-messagemode + qw-console-open evidence |
 | CheckForCommand / CompleteCommand | — | UNIMPLEMENTED | | — (implement first) |
 | Key_StringToKeynum / Key_KeynumToString | — | UNIMPLEMENTED | | — (implement first) |
 | Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | — | UNIMPLEMENTED | No bind system in the QW boot (code comment: "QW console/bind integration is journaled follow-up work"). | — (implement first) |
@@ -275,7 +275,7 @@ Roblox `Sound`/3D audio (`src/client/sound.luau`) replaces the DMA mixer wholesa
 | SND_PickChannel | `bankSound` pooling | SUBSTITUTED | Roblox voice management; ent+channel override kept in `sound.start`/`sound.stop`. | — (substitution; verify justification still holds) |
 | SND_Spatialize | `rolloffFor` + emitter parts | SUBSTITUTED | Roblox distance attenuation approximates ATTN scaling; no stereo separation math. | — (substitution; verify justification still holds) |
 | S_StartSound | `soundlib.start` via `cl.sounds` drain | VERIFIED | Wire side: loopback "svc_sound guncock arrived through the PHS multicast". Playback path shared with NQ boot (live-verified there: "57/57 statics playing+loaded, one-shots fire"); QW playback itself not separately screenshot/audio-verified. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| S_StopSound | `soundlib.stop` (svc_stopsound → num=-1 sentinel) | PENDING | Ent/channel stop wired; untested. | TBD: write test or tools/verify script + evidence capture |
+| S_StopSound | `soundlib.stop` (svc_stopsound → num=-1 sentinel) | VERIFIED | test_qw_loopback: crafted svc_stopsound queues the ent/channel stop sentinel (ent 5 chan 3, num -1) into the sounds sink soundlib.stop consumes. | `lune run tests/test_qw_loopback.luau` |
 | S_StopAllSounds / S_StopAllSoundsC / S_ClearBuffer | `soundlib.clear(sndsys)` on level reset | VERIFIED | FIDELITY FIX 2026-07-04: the QW boot now calls sound.clear in the levelResets teardown (C calls S_StopAllSounds from CL_ParseServerData); previously looping sounds carried across maps. sound.clear itself is the NQ-verified path. | code: qwclient levelResets block; regression-guard is the gauntlet in tools/verify_meshbudget.luau (map cycles) |
 | S_StaticSound | `soundlib.static` via `spawnPendingStatics` | PENDING | Volume byte passthrough (soundlib scales by 255); loop regions per sample. | TBD: write test or tools/verify script + evidence capture |
 | S_UpdateAmbientSounds | `sound.updateAmbients` exists | UNIMPLEMENTED | qwclient never calls it (NQ boot does) — no water/sky ambients in QW. | — (implement first) |
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 97 |
-| PENDING | 24 |
+| VERIFIED | 105 |
+| PENDING | 16 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |
