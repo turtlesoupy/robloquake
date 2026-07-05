@@ -1249,6 +1249,9 @@ return function()
 			worldBuilt = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
+			for _, def in modelDefs do
+				entrender.destroyDef(def)
+			end
 			table.clear(modelDefs)
 			-- release the old level's meshes SYNCHRONOUSLY: Destroying
 			-- signals are deferred, so ClearAllChildren alone still holds

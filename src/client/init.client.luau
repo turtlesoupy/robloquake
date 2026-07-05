@@ -345,6 +345,9 @@ c.onServerInfo = function()
 	end
 	entFolder:ClearAllChildren()
 	soundlib.clear(snd)
+	for _, def in modelDefs do
+		entrender.destroyDef(def)
+	end
 	table.clear(modelDefs)
 	table.clear(brushTemplates)
 	table.clear(renderEnts)
@@ -361,6 +364,9 @@ c.onServerInfo = function()
 	assert(buf, "world bsp missing: " .. worldName)
 	worldModels = bsplib.load(worldName, buf)
 	table.clear(lightAnim)
+	-- the old anim images were just destroyed synchronously above; stop
+	-- the 10Hz pump from writing to them during the one-frame build gap
+	table.clear(textureAnims)
 	table.clear(styleValues)
 	table.clear(dlights)
 	worldmesh.resetLighting(styleValueFor)
@@ -380,7 +386,6 @@ c.onServerInfo = function()
 		for _, e in anim do
 			table.insert(lightAnim, e)
 		end
-		table.clear(textureAnims)
 		for _, ta in worldmesh.takeTextureAnims() do
 			table.insert(textureAnims, ta)
 		end

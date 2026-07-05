@@ -178,7 +178,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | — (implement first) |
 | Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | — (implement first) |
 | Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots hide the area under Roblox chrome (recorded divergence: below-topbar inset). Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
+| Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots usually hide the area under Roblox chrome (recorded divergence: below-topbar inset) — but [evidence/nq-notify-thunderbolt.jpg](evidence/nq-notify-thunderbolt.jpg) catches a pickup notify line rendered in conchars. Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
 | Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_NotifyBox | — | UNIMPLEMENTED | | — (implement first) |
 
@@ -390,7 +390,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | R_AddDynamicLights | lightatlas addDynamicLights | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the radial falloff is visible across the floor texels around the impact. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | R_BuildLightMap | lightatlas.writeRegion | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the atlas region rewrites under the flash and restores after decay (static lava tiles unchanged in both frames). | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
-| R_TextureAnimation | init.client wall-anim tick + worldmesh "wall" TextureAnims | PENDING | tests/test_texanim.luau proves the +N/+a chain data and the anim_min/anim_max walk math on e1m2/start; base chain only (world frame 0), swaps chunk TextureContent between prebuilt frame images — visual confirmation pending | TBD: write test or tools/verify script + evidence capture |
+| R_TextureAnimation | init.client wall-anim tick + worldmesh "wall" TextureAnims | VERIFIED | tests/test_texanim.luau (chain data + anim_min/anim_max walk) PLUS the live probe: the +0slip world part cycles 7 distinct frame images at the 10Hz tick ([evidence/nq-texanim-probe.txt](evidence/nq-texanim-probe.txt)). FIDELITY FIX same commit: EditableImage teardown leak silently starved anim-frame creation after map cycles (walls stopped animating); images now retained per build and destroyed synchronously. | `lune run tests/test_texanim.luau`; live probe per the evidence file |
 | R_DrawSurface / R_DrawSurfaceBlock8_mip0-3 / R_DrawSurfaceBlock16 | — | SUBSTITUTED | surface-cache block drawing; GPU samples texture × lightmap overlay instead | — (substitution; verify justification still holds) |
 | R_GenTurbTile / R_GenTurbTile16 | textures.writeTurbFrame (pure half: turbFramePixels) | SUBSTITUTED | Texture-space approximation of the C tile warp, pinned by test_render_misc: perpendicular sine displacement with tiling wrap, but period 32 px / 2 rad/s / amp ±8 centered vs C's CYCLE=128 / SPEED=20 / AMP 8±8 (r_surf.c R_GenTurbTile + r_main.c sintable). Expiry: adopt the C constants if playtesting reports the water warp looking too busy/fast. | `lune run tests/test_render_misc.luau` |
 | R_GenTile | — | SUBSTITUTED | | — (substitution; verify justification still holds) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 120
-- PENDING: 12
+- VERIFIED: 121
+- PENDING: 11
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

@@ -26,6 +26,7 @@ end
 -- budget; a FixedSize copy only reserves its actual size, which is why
 -- every builder goes dynamic → fixed copy → destroy dynamic.
 local liveMeshes: { [Instance]: { EditableMesh } } = {}
+local liveImages: { [Instance]: { EditableImage } } = {}
 
 local function retainMesh(container: Instance, em: EditableMesh)
 	local list = liveMeshes[container]
@@ -60,7 +61,27 @@ function worldmesh.destroyBuild(container: Instance)
 			m:Destroy()
 		end
 	end
+	-- EditableImages share the same budget-starvation failure mode: parts
+	-- reference them via Content, so nothing destroys them until GC — long
+	-- sessions starved texture/anim-frame creation (e.g. +slip chains
+	-- silently losing their animation)
+	local imgs = liveImages[container]
+	liveImages[container] = nil
+	if imgs then
+		for _, img in imgs do
+			img:Destroy()
+		end
+	end
 	container:Destroy()
+end
+
+local function retainImage(container: Instance, img: EditableImage)
+	local list = liveImages[container]
+	if not list then
+		list = {}
+		liveImages[container] = list
+	end
+	table.insert(list, img)
 end
 
 export type BuiltModel = {
@@ -229,6 +250,9 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		end
 		local img = textures.createImage(tex.pixels, tex.width, tex.height, pal, false)
 		texImages[miptex] = img
+		if img then
+			retainImage(container, img)
+		end
 		if img then
 			local first = tex.name:sub(1, 1)
 			if first == "*" then
@@ -419,7 +443,11 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				-- fullbright pixels reassert above the darkness overlay
 				if tex then
 					if fbImages[miptex] == nil then
-						fbImages[miptex] = textures.createFullbrightImage(tex.pixels, tex.width, tex.height, pal) or false :: any
+						local fb = textures.createFullbrightImage(tex.pixels, tex.width, tex.height, pal)
+						if fb then
+							retainImage(container, fb)
+						end
+						fbImages[miptex] = fb or false :: any
 					end
 					if fbImages[miptex] then
 						local fbd: FaceData = { pos = {}, uv = {} }
@@ -454,8 +482,10 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 					if not frames[t.name] then
 						local fimg = textures.createImage(t.pixels, t.width, t.height, pal, false)
 						if not fimg then
+							warn(`[robloquake] anim frame image failed for {t.name}; chain stays static`)
 							return false -- image budget exhausted; stay on the base frame
 						end
+						retainImage(container, fimg)
 						frames[t.name] = fimg
 					end
 					t = t.anim_next

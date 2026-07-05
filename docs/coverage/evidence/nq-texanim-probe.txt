@@ -1,0 +1,38 @@
+NQ R_TextureAnimation live probe + EditableImage retention fix
+===============================================================
+(2026-07-04, NQ boot, map start "Introduction", id1 registered 1.06)
+
+PROBE (re-runnable from the executor, object-identity dedup — tostring
+on Content does NOT distinguish EditableImage objects):
+  find the world MeshPart named "+0slip" under workspace.QuakeWorld,
+  sample part.TextureContent.Object every 100ms for 3s.
+RESULT: 7 DISTINCT frame images cycling (first-seen at ticks
+1,2,4,6,8,10,12) = the full +0slip..+6slip chain swapped by the 10Hz
+R_TextureAnimation tick. Chain data + anim_min/anim_max walk math were
+already offline-verified (tests/test_texanim.luau); this closes the
+visual/live half.
+
+FIX IN THIS COMMIT (found because the chain FAILED to register before
+it): EditableImages were never destroyed at teardown — parts reference
+them via Content, so only GC released them, and after several map
+loads the image budget starved createImage. Symptoms: anim-frame
+images silently failing (walls stop animating: "world built ...
+(4 animated textures)" on start instead of 9), and the pre-mesh-fix
+gauntlet logs' "Failed to create empty EditableImage" spam. Now:
+worldmesh retains every created image per build container and
+destroyBuild destroys them synchronously; entrender.destroyDef
+releases skin/sprite/translation images and both clients call it on
+level teardown; init.client clears textureAnims in the SYNC teardown
+(the anim pump must stop writing to just-destroyed sky/turb images
+during the one-frame deferred-build gap — caught as a WritePixelsBuffer
+bounds spam on changelevel mid-verify).
+VERIFY: boot -> map e1m1 -> map start; console must show
+"(9 animated textures)" for start each time with zero
+EditableImage/WritePixelsBuffer errors.
+
+Also committed: nq-notify-thunderbolt.jpg — the "YOU GOT THE
+THUNDERBOLT" pickup notify line rendered in conchars top-left
+(Con_DrawNotify visually, complementing the glyph-census evidence).
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.

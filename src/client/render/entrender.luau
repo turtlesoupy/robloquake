@@ -405,6 +405,27 @@ function entrender.setLight(re: RenderEnt, light: number)
 	part.Color = Color3.new(l, l, l)
 end
 
+-- release a ModelDef's EditableImages NOW (skins/sprites/translations):
+-- parts hold them only via Content, so GC is the only other releaser and
+-- long sessions starve the image budget (same class as the mesh leak)
+function entrender.destroyDef(def: ModelDef)
+	for _, list in { def.skinImages, def.spriteImages } do
+		if list then
+			for _, img in list do
+				img:Destroy()
+			end
+		end
+	end
+	if def.translatedSkins then
+		for _, img in def.translatedSkins do
+			img:Destroy()
+		end
+		def.translatedSkins = nil
+	end
+	def.skinImages = nil
+	def.spriteImages = nil
+end
+
 function entrender.destroy(re: RenderEnt)
 	if re.part then
 		re.part:Destroy()
