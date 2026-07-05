@@ -444,7 +444,7 @@ c.onServerInfo = function()
 						local q = mkQuad:Clone()
 						q.Name = "RQDBG_GalleryQuad" .. made
 						q.TextureContent = Content.fromObject(imgs[1])
-						q.CFrame = base * CFrame.new((made % 8 - 3.5) * 1.3, (math.floor(made / 8) - 1) * 1.3, -9)
+						q.CFrame = base * CFrame.new((made % 5 - 2) * 1.0, (math.floor(made / 5) - 0.5) * 1.0, -4.5)
 						q.Parent = workspace
 						made += 1
 						table.insert(names, tostring(c.model_precache[idx + 1]))
