@@ -123,6 +123,35 @@ function textures.createFullbrightImage(pixels: buffer, width: number, height: n
 	return img
 end
 
+-- MeshPart TextureContent silently renders BLACK for non-power-of-two
+-- EditableImages (platform constraint found via the black-entities
+-- playtest bug: alias skins like the 300x194 soldier). Pad the image up
+-- to the next power of two; callers scale their UVs by (w/padW, h/padH).
+local function nextPow2(n: number): number
+	local p = 1
+	while p < n do
+		p *= 2
+	end
+	return p
+end
+
+function textures.createImagePow2(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): (EditableImage?, number, number)
+	local padW, padH = nextPow2(width), nextPow2(height)
+	if padW == width and padH == height then
+		return textures.createImage(pixels, width, height, pal, alphaIndex), padW, padH
+	end
+	local ok, img = pcall(function()
+		local image = AssetService:CreateEditableImage({ Size = Vector2.new(padW, padH) })
+		local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
+		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+		return image
+	end)
+	if not ok then
+		return nil, padW, padH
+	end
+	return img, padW, padH
+end
+
 -- Player color translation (CL_NewTranslation): shirt row 16-31 and pants
 -- row 96-111 are remapped from the top/bottom color ranges. Backwards
 -- ranges (>= 128) are reversed.
