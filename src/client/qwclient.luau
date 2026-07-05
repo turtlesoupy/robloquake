@@ -575,125 +575,17 @@ return function()
 	end
 
 	----------------------------------------------------------------------
-	-- spectator autocam (cl_cam.c): always-on cl_hightrack target pick,
-	-- Cam_Lock chase view through the tracked player, BUTTON_JUMP cycling
-	local BUTTON_JUMP = 2
-	local CAM_NONE, CAM_TRACK = 0, 1
-	local autocam = CAM_NONE
-	local spec_track = 0 -- player# of who we are tracking
-	local camLocked = false
-	local camOldbuttons = 0
-
-	-- Cam_Unlock
-	local function camUnlock()
-		if autocam ~= CAM_NONE then
-			qwcl.sendStringCmd(cl, "ptrack")
-			autocam = CAM_NONE
-			camLocked = false
-		end
-	end
-
-	-- Cam_Lock (the port's view is the cl_chasecam-style lock straight on
-	-- the player, so no InitFlyby search: lock immediately)
-	local function camLock(playernum: number)
-		qwcl.sendStringCmd(cl, `ptrack {playernum}`)
-		spec_track = playernum
-		autocam = CAM_TRACK
-		camLocked = true
-	end
-
-	-- Cam_CheckHighTarget: track whoever has the most frags
-	local function camCheckHighTarget()
-		local j, max = -1, -9999
-		for i = 0, qwp.MAX_CLIENTS - 1 do
-			local s = cl.players[i]
-			if s and s.name ~= "" and not s.spectator and s.frags > max then
-				max = s.frags
-				j = i
-			end
-		end
-		if j >= 0 then
-			local cur = cl.players[spec_track]
-			if not camLocked or not cur or cl.players[j].frags > cur.frags then
-				camLock(j)
-			end
-		else
-			camUnlock()
-		end
-	end
-
-	-- the tracked playerstate for this parse frame, or nil (gates both the
-	-- camera override and Cam_DrawPlayer)
+	-- spectator autocam (cl_cam.c): logic lives in qwcl (offline-tested);
+	-- these thin views adapt it for the render loop
+	local CAM_NONE = 0
 	local function camTrackedState(): qwcl.PlayerState?
-		if not (cl.spectator and autocam ~= CAM_NONE and camLocked) then
-			return nil
-		end
-		local ps = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[spec_track]
-		if ps and ps.messagenum == cl.parsecount then
-			return ps
-		end
-		return nil
+		return qwcl.camTrackedState(cl)
 	end
-
-	-- Cam_Track + Cam_FinishMove essentials, once per sent cmd. Delta from
-	-- C: hightrack retargeting only runs while unlocked so the jump-cycle
-	-- choice sticks (pure cl_hightrack would return before the jump check).
 	local function camTrack(buttons: number)
-		if not cl.spectator or cl.state ~= "active" then
-			return
+		local msgText = qwcl.camTrack(cl, buttons)
+		if msgText then
+			consolelib.print(con, msgText)
 		end
-		if not camLocked then
-			camCheckHighTarget()
-		end
-		if autocam == CAM_NONE then
-			return
-		end
-		-- tracked player gone or turned spectator: retarget
-		local ts = cl.players[spec_track]
-		if camLocked and (not ts or ts.name == "" or ts.spectator) then
-			camLocked = false
-			camCheckHighTarget()
-			return
-		end
-		-- cl_chasecam path of Cam_Track: clc_tmove keeps the spectator
-		-- entity riding the tracked player on the server
-		local ps = camTrackedState()
-		if ps and vector.magnitude(ps.origin - cl.simorg) > 16 then
-			msg.writeByte(cl.netchan.message, qwp.clc_tmove)
-			msg.writeCoord(cl.netchan.message, ps.origin.x)
-			msg.writeCoord(cl.netchan.message, ps.origin.y)
-			msg.writeCoord(cl.netchan.message, ps.origin.z)
-		end
-		-- BUTTON_JUMP cycles to the next player (Cam_FinishMove)
-		if camLocked then
-			if bit32.band(buttons, BUTTON_JUMP) ~= 0 and bit32.band(camOldbuttons, BUTTON_JUMP) ~= 0 then
-				return -- don't pogo stick
-			end
-			if bit32.band(buttons, BUTTON_JUMP) == 0 then
-				camOldbuttons = bit32.band(camOldbuttons, bit32.bnot(BUTTON_JUMP))
-				return
-			end
-			camOldbuttons = bit32.bor(camOldbuttons, BUTTON_JUMP) -- don't jump again until released
-		end
-		local endi = if camLocked and autocam ~= CAM_NONE then (spec_track + 1) % qwp.MAX_CLIENTS else spec_track
-		local i = endi
-		repeat
-			local s = cl.players[i]
-			if s and s.name ~= "" and not s.spectator then
-				camLock(i)
-				return
-			end
-			i = (i + 1) % qwp.MAX_CLIENTS
-		until i == endi
-		-- stay on same guy?
-		local s = cl.players[spec_track]
-		if s and s.name ~= "" and not s.spectator then
-			camLock(spec_track)
-			return
-		end
-		consolelib.print(con, "No target found ...")
-		autocam = CAM_NONE
-		camLocked = false
 	end
 
 	----------------------------------------------------------------------
@@ -793,7 +685,7 @@ return function()
 				continue
 			end
 			-- Cam_DrawPlayer: don't draw the target we are chase camming
-			if cl.spectator and autocam ~= CAM_NONE and camLocked and num == spec_track then
+			if cl.spectator and cl.cam.autocam ~= CAM_NONE and cl.cam.locked and num == cl.cam.spec_track then
 				continue
 			end
 			local angles = vector.create(-ps.viewangles.x / 3, ps.viewangles.y, 0)
@@ -1301,7 +1193,7 @@ return function()
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)
 			camTrack(buttons)
-			local camOn = cl.spectator and autocam ~= CAM_NONE and camLocked
+			local camOn = cl.spectator and cl.cam.autocam ~= CAM_NONE and cl.cam.locked
 			qwcl.sendCmd(cl, {
 				angles = viewangles,
 				forwardmove = if camOn then 0 else st.forwardmove,
@@ -1402,7 +1294,7 @@ return function()
 			-- Cam_Track chase lock: through the tracked player's eyes at
 			-- their predicted origin (stats already mirror the target)
 			local predicted = qwcl.predictedPlayerOrigins(cl)
-			eye = (predicted[spec_track] or trackPs.origin) + vector.create(0, 0, viewheight)
+			eye = (predicted[cl.cam.spec_track] or trackPs.origin) + vector.create(0, 0, viewheight)
 			angles = trackPs.viewangles
 			-- Cam_DrawViewModel true while chase locked; self->weaponframe
 			-- = player->weaponframe

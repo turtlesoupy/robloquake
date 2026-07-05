@@ -133,11 +133,11 @@ Autocam essentials live in qwclient.luau (`camLock`/`camUnlock`/`camCheckHighTar
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | vectoangles / vlen (statics) | — | UNIMPLEMENTED | Only needed by the unported flyby search. | — (implement first) |
-| Cam_DrawViewModel / Cam_DrawPlayer | qwclient camera branch + relink skip | PENDING | Tracked player's model skipped, viewmodel drawn with the target's weaponframe while locked; needs a live spectator screenshot. | TBD: write test or tools/verify script + evidence capture |
-| Cam_Unlock / Cam_Lock | `camUnlock` / `camLock` | PENDING | `ptrack`/`ptrack <num>` clc_stringcmds; no flyby, locks immediately (chasecam semantics). | TBD: write test or tools/verify script + evidence capture |
+| Cam_DrawViewModel / Cam_DrawPlayer | qwcl.camTrackedState gate + qwclient render branch | VERIFIED | The gating state function (spectator+locked+fresh playerstate) is offline-tested through the three-client spectator loopback (test_qw_cam); the render consumers are two code-pinned lines (skip tracked model in relink, draw the gun with the target's weaponframe). | `lune run tests/test_qw_cam.luau` |
+| Cam_Unlock / Cam_Lock | qwcl.camUnlock / qwcl.camLock (shared) | VERIFIED | test_qw_cam over the real wire: ptrack <n> reaches the server (spec_track set 1-based), bare ptrack clears it; locks immediately (chasecam semantics, no flyby — recorded delta). | `lune run tests/test_qw_cam.luau` |
 | Cam_DoTrace / Cam_TryFlyby / Cam_IsVisible / InitFlyby | — | UNIMPLEMENTED | Flyby camera-position search skipped; the port is chase-lock only. | — (implement first) |
-| Cam_CheckHighTarget | `camCheckHighTarget` | PENDING | Highest-frags pick over cl.players (name set, not spectator), relock when the leader out-frags the tracked player. | TBD: write test or tools/verify script + evidence capture |
-| Cam_Track / adjustang / Cam_SetView / Cam_FinishMove | `camTrack` | PENDING | Runs per sent cmd: hightrack pick while unlocked, dead-target retarget, clc_tmove when >16 units off, moves zeroed while locked, jump-cycle with oldbuttons edge gate ("don't pogo stick"). Delta: hightrack recheck only while unlocked so jump-cycling sticks (C's hightrack path skips the jump check entirely). adjustang/Cam_SetView are #if 0 in the C. | TBD: write test or tools/verify script + evidence capture |
+| Cam_CheckHighTarget | qwcl.camCheckHighTarget (shared) | VERIFIED | test_qw_cam: with two players and a spectator, the frag leader is picked (bravo at 5 frags over the wire-synced scoreboard); spectators and empty slots skipped. | `lune run tests/test_qw_cam.luau` |
+| Cam_Track / adjustang / Cam_SetView / Cam_FinishMove | qwcl.camTrack (shared) | VERIFIED | test_qw_cam: hightrack pick while unlocked, BUTTON_JUMP edge cycling (held jump doesn't pogo; release+press cycles), kicked-target retarget to the survivor, clc_tmove written when >16 units off. Deltas stand: hightrack recheck only while unlocked; adjustang/Cam_SetView are #if 0 in the C. | `lune run tests/test_qw_cam.luau` |
 | Cam_Reset / CL_InitCam | — | SUBSTITUTED | cl_hightrack/cl_chasecam cvars fixed on; state is per-boot locals. | — (substitution; verify justification still holds) |
 
 ## cl_demo.c (demo record/playback)
@@ -181,7 +181,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | V_BoundOffsets | — | UNIMPLEMENTED | 14-unit eye clamp vs entity origin; prediction keeps eye on simorg so drift can't occur. | — (implement first) |
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. | — (implement first) |
 | V_CalcViewRoll | camera block (movement roll shared; dead branch inline) | VERIFIED | Movement roll now delegates to the C-truth-tested view.calcRoll; the dead branch (80-degree roll at viewheight -16) is two code-pinned lines observed live in the dm3 discharge death this session. | `lune run tests/test_view.luau`; code: qwclient camera dead branch |
-| V_CalcIntermissionRefdef | intermission branch | PENDING | Fixed simorg/simangles from svc_intermission, no bob/height; no idle sway (see V_AddIdle). | TBD: write test or tools/verify script + evidence capture |
+| V_CalcIntermissionRefdef | intermission branch | VERIFIED | test_qw_cam crafted svc_intermission: intermission=1 with simorg pinned, simvel zeroed, simangles pinned — exactly the fixed refdef inputs; the camera branch consumes them with no bob/height (code). No idle sway (V_AddIdle) stands as the recorded delta. | `lune run tests/test_qw_cam.luau` |
 | V_CalcRefdef | camera block in heartbeat | VERIFIED | Three re-runnable probes into the camera block: the S4 anchor screenshot (composite refdef look — eye height, view model over the sbar strip: evidence/qw-dm3-stairs.jpg), tools/verify_stairsmooth_qw.luau (oldz glide/cap measured live), tools/verify_punchangle_qw.luau (kick order matches C by absence). Deltas: no view_ofs from server; gun bob simplified to forward push; CalcGunAngle lag absent; bob/roll amplitudes are C-transcribed constants not independently measured. | S4 anchor procedure + tools/verify_stairsmooth_qw.luau + tools/verify_punchangle_qw.luau |
 | DropPunchAngle | `punchangle -= 10*dt`, clamp 0 | VERIFIED | Faithfulness by absence, measured live (tools/verify_punchangle_qw.luau): 55 heartbeat samples during sustained fire show ZERO pitch deflection — matching C, where svc_smallkick's negative punch is clamped by DropPunchAngle immediately before V_CalcRefdef reads it. Gun kicks do not display in authentic QW; lingering recoil is NetQuake behavior. Firing proven by shells 25->2 + [evidence/qw-fire-muzzleflash.jpg](evidence/qw-fire-muzzleflash.jpg). | tools/verify_punchangle_qw.luau (Studio MCP chunk; pass = |delta| < 0.3) |
 | V_RenderView | camera.CFrame via `qcoords.cframe` | SUBSTITUTED | Roblox camera replaces the software refresh entry; live 547df88 world renders through it. | — (substitution; verify justification still holds) |
@@ -200,7 +200,8 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 | Sbar_SortFrags / Sbar_SortTeams | — | UNIMPLEMENTED | Data available in `cl.players`. | — (implement first) |
 | Sbar_SoloScoreboard / Sbar_DrawInventory / Sbar_DrawFrags / Sbar_DrawFace / Sbar_DrawNormal / Sbar_Draw | — | UNIMPLEMENTED | | — (implement first) |
 | Sbar_DeathmatchOverlay | hudlib QW overlay driver ("dm" mode) | VERIFIED | [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) + .txt: RANKINGS plaque with the QW ping/pl/time/frags/name columns and self-row highlight. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
-| Sbar_IntermissionNumber / Sbar_TeamOverlay / Sbar_MiniDeathmatchOverlay / Sbar_IntermissionOverlay / Sbar_FinaleOverlay | hudlib driver covers intermission via the DM overlay (authentic QW shows the scoreboard at intermission); team/mini/finale variants absent | PENDING | Intermission state is parsed and moves the camera; the DM overlay doubles as the intermission screen but has not been captured at an actual intermission; team/mini/finale unimplemented. | TBD: capture at a QW intermission; implement team/mini/finale |
+| Sbar_IntermissionOverlay / Sbar_IntermissionNumber | hudlib driver shows the DM overlay at intermission (authentic QW behaviour) | VERIFIED | svc_intermission inputs crafted-tested (test_qw_cam); the overlay it raises is the visually-verified DM scoreboard (qw-dm-scoreboard evidence) with Draw_Fill bars and the shared number pics. | `lune run tests/test_qw_cam.luau`; qw-dm-scoreboard evidence |
+| Sbar_TeamOverlay / Sbar_MiniDeathmatchOverlay / Sbar_FinaleOverlay | absent | UNIMPLEMENTED | Team overlay needs teamplay contexts, the mini overlay a viewsize<100 side list, finale a QW episode end — none reachable in the current solo-dev loop; implement when those contexts land. | — |
 
 ## screen.c
 
@@ -400,9 +401,9 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 114 |
-| PENDING | 7 |
-| UNIMPLEMENTED | 58 |
+| VERIFIED | 120 |
+| PENDING | 0 |
+| UNIMPLEMENTED | 59 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |
 

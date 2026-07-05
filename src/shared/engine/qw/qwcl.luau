@@ -105,6 +105,8 @@ function qwcl.new(fsys: vfslib.Vfs): any
 	cl.baselines = {} :: { [number]: qwents.EntityState }
 	cl.lightstyles = {} :: { [number]: string }
 	cl.dlights = {} :: { any } -- CL_AllocDlight pool (cap 32)
+	-- spectator autocam state (cl_cam.c)
+	cl.cam = { autocam = 0, spec_track = 0, locked = false, oldbuttons = 0 }
 	cl.stats = table.create(32, 0)
 	cl.stats[0] = 0
 	cl.players = {} :: { [number]: PlayerInfo }
@@ -162,6 +164,120 @@ qwcl.sendStringCmd = sendStringCmd
 
 -- transmit whatever reliable data is pending (handshake phase; during
 -- play clc_move packets carry it)
+-- Spectator autocam (cl_cam.c). The port's view is the cl_chasecam-style
+-- lock straight on the tracked player (no InitFlyby search). CAM_NONE=0,
+-- CAM_TRACK=1; BUTTON_JUMP cycles targets with an edge gate.
+local CAM_NONE, CAM_TRACK = 0, 1
+local BUTTON_JUMP = 2
+
+-- Cam_Unlock
+function qwcl.camUnlock(cl: any)
+	if cl.cam.autocam ~= CAM_NONE then
+		qwcl.sendStringCmd(cl, "ptrack")
+		cl.cam.autocam = CAM_NONE
+		cl.cam.locked = false
+	end
+end
+
+-- Cam_Lock (locks immediately; chasecam semantics)
+function qwcl.camLock(cl: any, playernum: number)
+	qwcl.sendStringCmd(cl, `ptrack {playernum}`)
+	cl.cam.spec_track = playernum
+	cl.cam.autocam = CAM_TRACK
+	cl.cam.locked = true
+end
+
+-- Cam_CheckHighTarget: track whoever has the most frags
+function qwcl.camCheckHighTarget(cl: any)
+	local j, max = -1, -9999
+	for i = 0, 31 do
+		local s = cl.players[i]
+		if s and s.name ~= "" and not s.spectator and s.frags > max then
+			max = s.frags
+			j = i
+		end
+	end
+	if j >= 0 then
+		local cur = cl.players[cl.cam.spec_track]
+		if not cl.cam.locked or not cur or cl.players[j].frags > cur.frags then
+			qwcl.camLock(cl, j)
+		end
+	else
+		qwcl.camUnlock(cl)
+	end
+end
+
+-- the tracked playerstate for this parse frame, or nil (gates the camera
+-- override and Cam_DrawPlayer)
+function qwcl.camTrackedState(cl: any): any
+	if not (cl.spectator and cl.cam.autocam ~= CAM_NONE and cl.cam.locked) then
+		return nil
+	end
+	local ps = cl.frames[bit32.band(cl.parsecount, 63)].playerstate[cl.cam.spec_track]
+	if ps and ps.messagenum == cl.parsecount then
+		return ps
+	end
+	return nil
+end
+
+-- Cam_Track + Cam_FinishMove essentials, once per sent cmd. Delta from C:
+-- hightrack retargeting only runs while unlocked so the jump-cycle choice
+-- sticks. Returns a console message when no target is found.
+function qwcl.camTrack(cl: any, buttons: number): string?
+	local cam = cl.cam
+	if not cl.spectator or cl.state ~= "active" then
+		return nil
+	end
+	if not cam.locked then
+		qwcl.camCheckHighTarget(cl)
+	end
+	if cam.autocam == CAM_NONE then
+		return nil
+	end
+	local ts = cl.players[cam.spec_track]
+	if cam.locked and (not ts or ts.name == "" or ts.spectator) then
+		cam.locked = false
+		qwcl.camCheckHighTarget(cl)
+		return nil
+	end
+	-- clc_tmove keeps the spectator entity riding the tracked player
+	local ps = qwcl.camTrackedState(cl)
+	if ps and vector.magnitude(ps.origin - cl.simorg) > 16 then
+		msg.writeByte(cl.netchan.message, qwp.clc_tmove)
+		msg.writeCoord(cl.netchan.message, ps.origin.x)
+		msg.writeCoord(cl.netchan.message, ps.origin.y)
+		msg.writeCoord(cl.netchan.message, ps.origin.z)
+	end
+	if cam.locked then
+		if bit32.band(buttons, BUTTON_JUMP) ~= 0 and bit32.band(cam.oldbuttons, BUTTON_JUMP) ~= 0 then
+			return nil -- don't pogo stick
+		end
+		if bit32.band(buttons, BUTTON_JUMP) == 0 then
+			cam.oldbuttons = bit32.band(cam.oldbuttons, bit32.bnot(BUTTON_JUMP))
+			return nil
+		end
+		cam.oldbuttons = bit32.bor(cam.oldbuttons, BUTTON_JUMP)
+	end
+	local endi = if cam.locked and cam.autocam ~= CAM_NONE then (cam.spec_track + 1) % 32 else cam.spec_track
+	local i = endi
+	repeat
+		local s = cl.players[i]
+		if s and s.name ~= "" and not s.spectator then
+			qwcl.camLock(cl, i)
+			return nil
+		end
+		i = (i + 1) % 32
+	until i == endi
+	local s = cl.players[cam.spec_track]
+	if s and s.name ~= "" and not s.spectator then
+		qwcl.camLock(cl, cam.spec_track)
+		return nil
+	end
+	cam.autocam = CAM_NONE
+	cam.locked = false
+	return "No target found ..."
+end
+
 -- CL_AllocDlight (cl_ents.c:42): exact key match resets that slot, then
 -- any expired slot is reused, else slot 1 is overwritten. Pool grows
 -- lazily to MAX_DLIGHTS (equivalent to C's zeroed fixed array: unused C
