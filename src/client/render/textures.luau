@@ -152,27 +152,6 @@ function textures.createImagePow2(pixels: buffer, width: number, height: number,
 	return img, padW, padH
 end
 
--- World textures TILE (face UVs run past 0..1), so the padding above
--- would break wrap sampling. GLQuake's answer (GL_Upload8 ->
--- GL_ResampleTexture): nearest-neighbour stretch the texture up to the
--- next power of two — one repeat still spans UV 0..1, so tiling and the
--- callers' normalized UVs are unchanged. Pure so lune can cover it.
-function textures.resamplePixelsPow2(pixels: buffer, width: number, height: number): (buffer, number, number)
-	local w2, h2 = nextPow2(width), nextPow2(height)
-	if w2 == width and h2 == height then
-		return pixels, width, height
-	end
-	local out = buffer.create(w2 * h2)
-	for y = 0, h2 - 1 do
-		local srow = math.floor(y * height / h2) * width
-		local drow = y * w2
-		for x = 0, w2 - 1 do
-			buffer.writeu8(out, drow + x, buffer.readu8(pixels, srow + math.floor(x * width / w2)))
-		end
-	end
-	return out, w2, h2
-end
-
 -- Shared image pages: the platform renders Object-content bindings from a
 -- LIMITED pool — around ~128 live EditableImages, every bind past the cap
 -- silently draws BLACK (playtest "more dark textures"; a session sat at
