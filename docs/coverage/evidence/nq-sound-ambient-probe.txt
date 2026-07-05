@@ -1,0 +1,24 @@
+NQ sound probes: S_UpdateAmbientSounds + S_StopAllSounds (2026-07-04)
+======================================================================
+
+Engine: NQ boot, map start ("Introduction"), id1 registered 1.06.
+Instrumentation in the same commit: the two ambient channel Sounds are
+named RQAmbient_water1 / RQAmbient_wind2 (RQ_* diagnostic family), so
+the executor can read their volumes.
+
+S_UpdateAmbientSounds — leaf-driven volumes, matched against offline
+leaf dumps (bsplib.pointInLeaf on start.bsp):
+  spawn hall   leaf ambient {255,255,0,0} -> water1 0.300, wind2 0.300
+  pool edge    leaf ambient {255,255,0,0} -> water1 0.300, wind2 0.300
+  slipgate hall leaf ambient {0,255,0,0}  -> water1 0.000, wind2 0.300
+0.300 = ambient_level(0.3) * 255 / 255 exactly; the water1 drop to
+0.000 happened within the 2s window = the ambient_fade 100/s ramp.
+
+S_StopAllSounds — sound.clear on serverinfo: across a `map start`
+reload the OLD RQAmbient_water1 instance is destroyed (Parent nil) and
+a NEW instance exists for the new level (object identity differs).
+GOTCHA recorded: a raw IsPlaying census is useless for this row — the
+soundbank warm pool keeps ~55-60 Sounds playing at all times, so probe
+object lifecycle instead of counts.
+
+id1 CONTENT NOTE: local repo only.

@@ -255,10 +255,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SND_Spatialize | Roblox RollOffMode.Linear, max = 1000/atten scaled | SUBSTITUTED | FIDELITY: Roblox rolloff approximating the linear curve; no stereo pan math | — (substitution; verify justification still holds) |
 | S_StartSound | sound.start | VERIFIED | Numeric census (procedure in evidence/nq-main-menu.txt): a forced shotgun burst raises the playing-Sound instance count; wire delivery separately proven by the loopback sound checks. | Census chunk per evidence/nq-main-menu.txt |
 | S_StopSound | sound.stop exists but is never called | UNIMPLEMENTED | svc_stopsound is parsed and discarded in cl.luau — looped entity sounds can't be stopped | — (implement first) |
-| S_StopAllSounds | sound.clear on serverinfo | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| S_StopAllSounds | sound.clear on serverinfo | VERIFIED | Object-lifecycle probe across a map reload: the old ambient channel Sound is destroyed (Parent nil) and a fresh instance spawns for the new level ([evidence/nq-sound-ambient-probe.txt](evidence/nq-sound-ambient-probe.txt)); raw IsPlaying censuses are confounded by the warm pool (gotcha recorded). | Probe per the evidence file |
 | S_ClearBuffer | — | SUBSTITUTED | no mix buffer | — (substitution; verify justification still holds) |
 | S_StaticSound | sound.static (looped, vol/255, atten/64) | VERIFIED | Numeric census: 16 looping ambient Sounds playing at the e1m1 vantage (statics started from the signon); event delivery proven by test_loopback "ambient sounds spawned". | Census chunk per evidence/nq-main-menu.txt; `lune run tests/test_loopback.luau` |
-| S_UpdateAmbientSounds | sound.updateAmbients | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: water1/wind2 from view-leaf levels, ambient_level 0.3 / fade 100 | TBD: write test or tools/verify script + evidence capture |
+| S_UpdateAmbientSounds | sound.updateAmbients | VERIFIED | Live three-location series matches offline leaf dumps exactly: {255,255} leafs -> both channels 0.300 (= 0.3 * 255/255), the {0,255} slipgate hall -> water1 fades to 0.000 within the 100/s window while wind2 holds ([evidence/nq-sound-ambient-probe.txt](evidence/nq-sound-ambient-probe.txt)). | Probe per the evidence file |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Roblox engine mixes and paints | — (substitution; verify justification still holds) |
 | S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities | — (implement first) |
 | S_LocalSound | — | UNIMPLEMENTED | menu/console beeps absent | — (implement first) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 121
-- PENDING: 11
+- VERIFIED: 123
+- PENDING: 9
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

@@ -230,6 +230,7 @@ function sound.updateAmbients(sys: System, leafAmbient: { number }?, dt: number)
 			local snd: Sound? = nil
 			if r then
 				snd = bankSound(sys, r, true)
+				snd.Name = "RQAmbient_" .. AMBIENT_SAMPLES[i]:match("([^/]+)%.wav") :: string
 				snd.Volume = 0
 				snd.Parent = sys.folder -- no Part: unspatialized, like channels 0-1
 				snd:Play()
