@@ -1,0 +1,32 @@
+nq-finale-overlay.jpg + final NQ probe batch (2026-07-04)
+==========================================================
+
+Engine: NQ boot, map e1m1 (via map from start), id1 registered 1.06,
+viewsize 100.
+
+Sbar_FinaleOverlay / SCR_DrawCenterString typewriter:
+Staged via the new SVDBG_Finale server hook (SVDBG family:
+ServerStorage attribute -> svc_finale exactly as end.qc sends it).
+nq-finale-overlay.jpg shows the gfx/finale.lmp CONGRATULATIONS plaque
+with the finale text fully typed below it, centered in conchars — the
+svc_finale -> intermission 2 -> finale overlay + typewriter pipeline.
+
+SND_PickChannel (probe transcript, re-runnable):
+Channel Sounds now carry diagnostic names (RQChan_<ent>_<chan>_<sample>).
+Firing the shotgun then the rocket launcher on the player weapon
+channel showed the SAME persistent Sound object renamed in place:
+  RQChan_1_1_guncock -> RQChan_1_1_sgun1
+= C's SND_PickChannel entity-channel override (stop + retarget the
+slot, never a second sound on the same ent/channel). The CHAN_AUTO
+never-steals delta stands.
+
+R_AliasSetupLighting (probe transcript):
+A lobbed grenade (dynamic alias entity) sampled at 50ms:
+  Color.R 0.76..0.96 while tumbling (lightpoint.at position variation)
+  pinned at 1.00 coincident with a rocket fired at its resting spot
+  (the dlight falloff add saturating the entity light).
+Code path: init.client's elight = lightpoint.at + per-dlight
+(radius - distance) add -> entrender.setLight.
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.

@@ -325,6 +325,18 @@ RunService.Heartbeat:Connect(function(dt: number)
 				end
 			end
 
+			-- debug finale trigger (SVDBG family): send svc_finale exactly
+			-- like end.qc's finale text so the client overlay can be staged
+			local fin = ServerStorage:GetAttribute("SVDBG_Finale")
+			if typeof(fin) == "string" and fin ~= "" then
+				ServerStorage:SetAttribute("SVDBG_Finale", nil)
+				local msglib = require(engine.common.msg)
+				local proto = require(engine.protocol)
+				msglib.writeByte(c1.message, proto.svc_finale)
+				msglib.writeString(c1.message, fin)
+				print("[svdbg] finale sent")
+			end
+
 			-- debug teleport request: try the exact spot, then nearby offsets,
 			-- keeping the first position the player isn't stuck in
 			local tp = ServerStorage:GetAttribute("SVDBG_SetOrigin")

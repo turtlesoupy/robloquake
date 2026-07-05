@@ -1,0 +1,28 @@
+nq-inventory-steady.jpg (2026-07-04) — USER PLAYTEST FIX
+=========================================================
+
+USER REPORT: "the highlights on all the items when one is selected.
+The selection highlight is off and brighter than comparable
+screenshots" — every owned weapon slot stuck on its bright
+pickup-flash frame long after acquisition (their finale screenshot;
+the previously committed nq-inventory-flash.jpg shows the same state
+and was mislabelled as a normal pickup flash — it is the BUG's
+before-image).
+
+ROOT CAUSE: C's CL_ClearState memsets the whole cl struct on
+serverinfo; the port's parseServerInfo kept item_gettime, stats and
+the clocks. Across a level change, gettime stamps taken on the OLD
+level's large clock sit AHEAD of the re-anchored c.time, so
+Sbar_DrawInventory's flashon = (time - gettime)*10 goes NEGATIVE —
+and Luau's positive modulo ((negative % 5) + 2) pins every owned item
+on a flash frame forever. Fixed by wiping item_gettime/stats/
+faceanimtime/cshift percents/dmg_time/punchangle/time/mtime0/oldtime
+in parseServerInfo, matching the C memset.
+
+AFTER (this capture): NQ boot, map start -> map e1m1, impulse 9,
+3 seconds elapsed, impulse 7 selected — exactly ONE slot highlighted
+(the active RL, inv2_ variant), all other owned weapons dim inv_
+frames. C's steady-state Sbar_DrawInventory behaviour.
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.

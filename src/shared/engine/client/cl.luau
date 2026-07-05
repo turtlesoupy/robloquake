@@ -302,6 +302,21 @@ local function parseServerInfo(c: Client, r: msg.Reader)
 	c.sound_precache = { "" }
 	c.intermission = 0
 	c.items = 0
+	-- C's CL_ClearState memsets the whole cl struct: without these the
+	-- previous level's clock leaves item_gettime stamps AHEAD of the
+	-- re-anchored c.time, so (time - gettime) goes negative and Luau's
+	-- positive modulo pins every owned item on a pickup-flash frame
+	-- forever (the "all inventory icons highlighted" playtest bug)
+	c.item_gettime = {}
+	c.stats = {}
+	c.faceanimtime = 0
+	c.cshift_damage_percent = 0
+	c.cshift_bonus_percent = 0
+	c.dmg_time = 0
+	c.punchangle = vector.zero
+	c.time = 0
+	c.oldtime = 0
+	c.mtime0 = 0
 
 	local version = msg.readLong(r)
 	if version ~= proto.PROTOCOL_VERSION then

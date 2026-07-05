@@ -160,6 +160,9 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 			gc()
 		end
 		ch.sound:Stop()
+		-- diagnostic name (RQ_* family): the persistent channel Sound shows
+		-- which sample currently owns the ent/channel slot
+		ch.sound.Name = `RQChan_{entnum}_{channel}_{sample:match("([^/]+)%.wav") or sample}`
 		ch.part.Position = qcoords.toRoblox(pos)
 		ch.sound.PlaybackRegion = NumberRange.new(r.s, r.s + r.l)
 		ch.sound.TimePosition = r.s

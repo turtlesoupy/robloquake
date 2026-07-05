@@ -56,6 +56,19 @@ rows.
 
 ## Changelog
 
+### 2026-07-04 (playtest "all items highlighted": stale CL_ClearState fields — RESOLVED)
+- User playtest report: every owned weapon slot drawn with its bright
+  pickup-flash frame whenever one is selected, brighter than reference
+  screenshots. Root cause: C's CL_ClearState memsets the whole cl
+  struct on serverinfo; the port kept item_gettime/stats/clocks, so
+  level changes left gettime stamps AHEAD of the re-anchored client
+  clock — Sbar_DrawInventory's flashon went negative and Luau's
+  positive modulo pinned every icon on a flash frame forever.
+- Fixed by wiping the CL_ClearState fields in parseServerInfo.
+  Before/after evidence: nq-inventory-flash.jpg (the bug, previously
+  mislabelled as pickup flash) vs nq-inventory-steady.jpg (one
+  highlighted slot 3s after an impulse-9 grant across a map change).
+
 ### 2026-07-04 (playtest "black square": map-rebuild EditableMesh starvation — RESOLVED)
 - User playtest report: crisp black rectangle on the e1m1 wall by the
   fluorescent fixture (the *43 secret-door alcove, q(688,56,80)),

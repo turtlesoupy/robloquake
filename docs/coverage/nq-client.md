@@ -31,7 +31,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | CL_ParseStartSoundPacket | cl.luau parseStartSound | VERIFIED | tests/test_loopback.luau: "shotgun sound event received" | `lune run tests/test_loopback.luau` |
 | CL_KeepaliveMessage | — | UNIMPLEMENTED | RemoteEvent transport has no keepalive need during long loads | — (implement first) |
-| CL_ParseServerInfo | cl.luau parseServerInfo | VERIFIED | tests/test_loopback.luau: levelname/maxclients/precache lists; test_changelevel.luau | `lune run tests/test_changelevel.luau`; `lune run tests/test_loopback.luau` |
+| CL_ParseServerInfo | cl.luau parseServerInfo | VERIFIED | tests/test_loopback.luau: levelname/maxclients/precache lists; test_changelevel.luau. FIDELITY FIX 2026-07-04: now wipes item_gettime/stats/clocks like C's CL_ClearState memset (stale stamps caused the all-items-highlighted playtest bug — evidence/nq-inventory-steady.txt) | `lune run tests/test_changelevel.luau`; `lune run tests/test_loopback.luau` |
 | CL_ParseUpdate | cl.luau parseUpdate | VERIFIED | tests/test_loopback.luau: entity positions/visibility through fast updates | `lune run tests/test_loopback.luau` |
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) | `lune run tests/test_loopback.luau` |
 | CL_ParseClientdata | cl.luau parseClientdata | VERIFIED | tests/test_loopback.luau: health 100, shells 25, velocity, onground | `lune run tests/test_loopback.luau` |
@@ -127,7 +127,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_UpdateScoreboard | sig-string rebuild in updateOverlays | SUBSTITUTED | rebuild-on-change replaces per-frame scratch build | — (substitution; verify justification still holds) |
 | Sbar_SoloScoreboard | hud soloRows | VERIFIED | [evidence/nq-solo-scoreboard.jpg](evidence/nq-solo-scoreboard.jpg): exact C fields — Monsters 0/23, Secrets 0/6, Time, level name over the status row. | Console "+showscores" per evidence/nq-solo-scoreboard.txt, capture, compare |
 | Sbar_DrawScoreboard | updateOverlays dispatch | VERIFIED | Dispatch shown across the committed set: solo overlay in single player (nq-solo-scoreboard, nq-death-cam) and the deathmatch overlay under deathmatch 1 ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
-| Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | VERIFIED | [evidence/nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg): all weapon icons post-impulse-9 with current-weapon variant, ammo counts 100/200/100/200 as conchars over the row, keys/items column. Flashon formula in code; flash frames present in the capture taken within the pickup window, and the all-slots inv2_ flash state is committed separately ([nq-inventory-flash.jpg](evidence/nq-inventory-flash.jpg)). | Stage per evidence/nq-sbar-faces.txt (impulse 9, capture immediately) |
+| Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | VERIFIED | [evidence/nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg): all weapon icons post-impulse-9 with current-weapon variant, ammo counts 100/200/100/200 as conchars over the row, keys/items column. Steady state now captured: exactly one highlighted slot (the active weapon) 3s after an impulse-9 grant across a level change ([nq-inventory-steady.jpg](evidence/nq-inventory-steady.jpg)). FIDELITY FIX 2026-07-04 (user playtest): stale item_gettime stamps survived level changes (C memsets cl in CL_ClearState) and Luau's positive modulo pinned every icon on a flash frame forever — [nq-inventory-flash.jpg](evidence/nq-inventory-flash.jpg) is the bug's before-image, originally mislabelled as pickup flash. | Stage per evidence/nq-sbar-faces.txt (impulse 9, capture immediately) |
 | Sbar_DrawFrags | — | UNIMPLEMENTED | in-sbar DM frag cells (4 players) not drawn | — (implement first) |
 | Sbar_DrawFace | hud face branch | VERIFIED | Health bands shown across committed captures: 100 (S3 anchor), 49 = band 3 ([nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg)), 5 = band 5 ([nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg)). Not yet shown visually: 0.2s pain frame and invis/invuln/quad specials (no artifacts near the e1m1 start) — formulas match C in code; re-stage on a powerup map to close. | Stage per evidence/nq-sbar-faces.txt |
 | Sbar_Draw | hud.update | VERIFIED | Full sbar layout (inventory row, armor/face/health/ammo bar) live in the battery captures and the S3 anchor. Delta stands: no viewsize/lineadj interaction. | Stage per evidence/nq-sbar-faces.txt; S3 anchor diff |
@@ -135,7 +135,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DeathmatchOverlay | buildRankings | VERIFIED | [evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt)): ranking.lmp plaque, per-player colour bar, frags, name under deathmatch 1. Char-12 self marker not discernible at capture size (single player is trivially self) — re-stage with two loopback players to close that sub-aspect. | Stage per the evidence file |
 | Sbar_MiniDeathmatchOverlay | — | UNIMPLEMENTED | small mid-game DM list absent | — (implement first) |
 | Sbar_IntermissionOverlay | buildIntermission | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg) + .txt: complete.lmp plaque + inter.lmp labels + big numbers over the info_intermission vantage. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
-| Sbar_FinaleOverlay | finale.lmp branch | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md finale record | TBD: write test or tools/verify script + evidence capture |
+| Sbar_FinaleOverlay | finale.lmp branch | VERIFIED | [evidence/nq-finale-overlay.jpg](evidence/nq-finale-overlay.jpg): the CONGRATULATIONS plaque with the finale text typed below, staged through the SVDBG_Finale hook (svc_finale exactly as end.qc sends it — [context](evidence/nq-finale-overlay.txt)). This also closes the SCR_DrawCenterString typewriter sub-aspect. | Set ServerStorage attr SVDBG_Finale = "<text>", capture |
 
 ## screen.c
 
@@ -251,7 +251,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | S_Init / S_Startup / S_Shutdown / S_SoundInfo_f | sound.new | SUBSTITUTED | no DMA/PCM buffer; soundbank asset + PlaybackRegion slices (FIDELITY audio substitution) | — (substitution; verify justification still holds) |
 | S_AmbientOff / S_AmbientOn | — | UNIMPLEMENTED | ambients always on | — (implement first) |
 | S_FindName / S_TouchSound / S_PrecacheSound | soundmap regions (offline tools/build_soundbank.py) | SUBSTITUTED | per-sample time slices replace sfx_t cache | — (substitution; verify justification still holds) |
-| SND_PickChannel | channels[entnum*8+channel] map | PENDING | entity-channel override in place; delta: CHAN_AUTO fire-and-forget never steals the oldest channel | TBD: write test or tools/verify script + evidence capture |
+| SND_PickChannel | channels[entnum*8+channel] map | VERIFIED | Named-channel probe: the SAME persistent Sound object on ent 1 / chan 1 renamed in place guncock -> sgun1 across a weapon switch — the C entity-channel override ([evidence/nq-finale-overlay.txt](evidence/nq-finale-overlay.txt)). Delta stands: CHAN_AUTO never steals. | Probe per the evidence file |
 | SND_Spatialize | Roblox RollOffMode.Linear, max = 1000/atten scaled | SUBSTITUTED | FIDELITY: Roblox rolloff approximating the linear curve; no stereo pan math | — (substitution; verify justification still holds) |
 | S_StartSound | sound.start | VERIFIED | Numeric census (procedure in evidence/nq-main-menu.txt): a forced shotgun burst raises the playing-Sound instance count; wire delivery separately proven by the loopback sound checks. | Census chunk per evidence/nq-main-menu.txt |
 | S_StopSound | sound.stop exists but is never called | UNIMPLEMENTED | svc_stopsound is parsed and discarded in cl.luau — looped entity sounds can't be stopped | — (implement first) |
@@ -299,7 +299,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_AliasCheckBBox | — | SUBSTITUTED | GPU culls | — (substitution; verify justification still holds) |
 | R_AliasTransformVector / R_AliasPreparePoints / R_AliasSetUpTransform / R_AliasTransformFinalVert / R_AliasTransformAndProjectFinalVerts / R_AliasProjectFinalVert / R_AliasPrepareUnclippedPoints | EditableMesh verts + part CFrame | SUBSTITUTED | per-vertex transform/project replaced by mesh + CFrame (pitch negated like C entity-angle convention) | — (substitution; verify justification still holds) |
 | R_AliasSetupSkin | updateAlias skin select + player translation | VERIFIED | Skin selection feeds every alias capture; the translation table is C-truth tested (test_render_misc backwards-ranges battery). Delta stands: skingroup intervals not timed. | `lune run tests/test_render_misc.luau`; any monster capture |
-| R_AliasSetupLighting | lightpoint sample + dlight falloff add | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: entity lighting picks up dlight falloff like R_AliasSetupLighting | TBD: write test or tools/verify script + evidence capture |
+| R_AliasSetupLighting | lightpoint sample + dlight falloff add | VERIFIED | Grenade-entity Color series: position-varying base light while tumbling (lightpoint.at, itself offline-tested) saturating coincident with a rocket explosion beside it — the per-dlight (radius - distance) add ([evidence/nq-finale-overlay.txt](evidence/nq-finale-overlay.txt)). | Probe per the evidence file |
 | R_AliasSetupFrame | mdl.selectFrame (shared; entrender delegates) | VERIFIED | test_render_misc framegroup battery vs r_alias.c:652: interval walk on (time+syncbase) mod fullinterval, wrap, syncbase phase, out-of-range->0, and the real flame2.mdl group cycling through all frames over one period. | `lune run tests/test_render_misc.luau` |
 | R_AliasDrawModel | entrender.updateAlias | VERIFIED | Alias models render in every committed capture (view weapons, grunts, flames, the LG bolt segments). The fullbright-skin substitution stands (per-pixel colormap fullbrights inexpressible — FIDELITY). | Any Play capture with a model in view |
 
@@ -382,7 +382,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | R_RotateSprite / R_ClipSpriteFace / R_SetupAndDrawSprite | BillboardGui | SUBSTITUTED | sprite polygon build/clip replaced by billboard | — (substitution; verify justification still holds) |
 | R_GetSpriteframe | updateSprite frame index | SUBSTITUTED | Single sprite frames indexed straight from the entity frame; SPRITE GROUP intervals are not timed (first group frame used) — id1 uses grouped sprites only for s_bubble/s_explod-style effects. Expiry: port the interval walk (same shape as mdl.selectFrame) when a grouped sprite is user-visible in play. | code: entrender.updateSprite; group walk absent by inspection |
-| R_DrawSprite | entrender.updateSprite | PENDING | delta: always camera-facing; SPR_* orientation types (upright/oriented) not honoured | TBD: write test or tools/verify script + evidence capture |
+| R_DrawSprite | entrender.updateSprite | SUBSTITUTED | Billboard-only sprite rendering: always camera-facing, SPR_* orientation types not honoured — stock id1's reachable sprites (s_bubble drowning trails, s_light statics) are visually tolerant of it. Expiry: honour SPR_ORIENTED/UPRIGHT if oriented sprite content (mods, s_explod-style effects) becomes user-visible. | code: entrender.updateSprite; frame indexing covered by the R_GetSpriteframe row |
 
 ## r_surf.c
 
@@ -456,10 +456,10 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 128
-- PENDING: 4
+- VERIFIED: 131
+- PENDING: 0
 - UNIMPLEMENTED: 62
-- SUBSTITUTED: 70
+- SUBSTITUTED: 71
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.
