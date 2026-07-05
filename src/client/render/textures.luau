@@ -69,32 +69,10 @@ function textures.toRGBA(pixels: buffer, count: number, pal: Palette, alphaIndex
 	return out
 end
 
--- Shared "GPU creation heat" clock for the zombie-object platform
--- defect: editable objects created while other creations are in flight
--- can silently lose their GPU upload and render black forever. Every
--- creation site bumps this; healing passes (mesh regen/cure, pool
--- prewarm suspect-marking, brush template rebuilds) gate on it so
--- their recreations land in genuinely quiet moments.
-local lastCreation = 0
-local creations = 0
-function textures.noteCreation()
-	lastCreation = os.clock()
-	creations += 1
-end
-function textures.timeSinceCreation(): number
-	return os.clock() - lastCreation
-end
--- monotone creation counter: healing passes snapshot it after their own
--- builds to tell "the clock is hot because of ME" from foreign activity
-function textures.creationCount(): number
-	return creations
-end
-
 -- Create an EditableImage from palettized pixels. Returns nil when the
 -- Mesh & Image APIs are not enabled for the experience (Game Settings →
 -- Security); callers must tolerate untextured output.
 function textures.createImage(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): EditableImage?
-	textures.noteCreation()
 	local ok, img = pcall(function()
 		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
 		local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
@@ -195,25 +173,6 @@ function textures.pageAlloc(page: ImagePage, pixels: buffer, width: number, heig
 	local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
 	img:WritePixelsBuffer(Vector2.new(x, y), Vector2.new(width, height), rgba)
 	return Vector2.new(x, y)
-end
-
--- PURE (lune-tested): does the source image's centre region contain any
--- bright art? Mostly-dark sources are skipped (their tiles would read
--- black legitimately).
-function textures.sourceHasArt(pixels: buffer, w: number, h: number, pal: textures.Palette): boolean
-	local samples = 0
-	for ty = 1, 3 do
-		local y = math.floor(h * ty / 4)
-		for tx = 0, 7 do
-			local x = math.floor(w * (tx + 0.5) / 8)
-			local idx = buffer.readu8(pixels, y * w + x)
-			local bright = pal.r[idx + 1] + pal.g[idx + 1] + pal.b[idx + 1]
-			if bright > 90 then
-				samples += 1
-			end
-		end
-	end
-	return samples >= 2
 end
 
 -- Player color translation (CL_NewTranslation): shirt row 16-31 and pants

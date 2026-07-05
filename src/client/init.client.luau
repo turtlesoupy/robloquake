@@ -31,7 +31,6 @@ local soundlib = require(script.sound)
 local input = require(script.input)
 local viewlib = require(engine.client.view)
 local viewmodellib = require(script.render.viewmodel)
-local texverifylib = require(script.render.texverify)
 
 --------------------------------------------------------------------------
 -- filesystem from the server-published client bundle (gfx + precached
@@ -116,7 +115,6 @@ worldFolder.Parent = Workspace
 local entFolder = Instance.new("Folder")
 entFolder.Name = "QuakeEnts"
 entFolder.Parent = Workspace
-entrender.setPoolParent(entFolder)
 
 local playerGui = player:WaitForChild("PlayerGui")
 local hud = hudlib.create(fs, pal, playerGui)
@@ -169,10 +167,6 @@ crosshairLabel.Parent = overlayGui
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
--- templates replaced by the post-settle rebuild pass: kept alive until
--- teardown (lightAnim/textureAnims entries still write to their images;
--- destroying them mid-level would error the 10Hz pumps)
-local retiredTemplates: { Model } = {}
 local worldModels: { bsplib.Model } = {}
 
 -- animated lightstyle vertices across all built brush geometry
@@ -335,10 +329,6 @@ c.onServerInfo = function()
 	for _, tpl in brushTemplates do
 		worldmesh.destroyBuild(tpl)
 	end
-	for _, tpl in retiredTemplates do
-		worldmesh.destroyBuild(tpl)
-	end
-	table.clear(retiredTemplates)
 	for _, re in renderEnts do
 		entrender.destroy(re)
 	end
@@ -400,162 +390,6 @@ c.onServerInfo = function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
-		-- Mod_LoadModel semantics (model.c): C loads EVERY precached model
-		-- during the level load, not on first sighting. Building all defs
-		-- here (behind the loading plaque, off the parse path) matches the
-		-- reference AND concentrates editable-object creation into one
-		-- window instead of scattering hot bursts across the level — the
-		-- zombie-object exposure amplifier.
-		local eagerBuilt = 0
-		for mi = 1, #c.model_precache - 1 do
-			if gen ~= worldBuildGen then
-				return -- changelevel superseded this load
-			end
-			if pcall(getModelDef, mi) then
-				eagerBuilt += 1
-			end
-		end
-		print(`[cl] precache defs built: {eagerBuilt}`)
-		-- verification/regeneration pass: AFTER the load burst settles
-		-- (quiet-window recreations survive; burst-time ones can zombie),
-		-- without holding the loading plaque
-		task.spawn(function()
-			task.wait(1.5)
-			if gen ~= worldBuildGen then
-				return
-			end
-			local slots: { any } = {}
-			for mi = 1, #c.model_precache - 1 do
-				local def = modelDefs[mi]
-				if def then
-					entrender.collectVerifySlots(def, pal, slots)
-				end
-			end
-			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
-			print(`[cl] texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
-			-- pre-warm per-entity mesh pools, still inside the settle window:
-			-- mid-play mesh creation is the zombie exposure (a backpack drops
-			-- the same frame as the kill's gib burst), so instances are built
-			-- NOW and recycled for the rest of the level. Baselines give an
-			-- exact census of level entities per model; dynamically-spawned
-			-- models (projectiles/gibs/heads/backpacks) have no baselines and
-			-- use fixed counts.
-			local counts: { [entrender.ModelDef]: number } = {}
-			local baseCounts: { [number]: number } = {}
-			for _, e in c.entities do
-				local bmi = if e.baseline then e.baseline.modelindex else 0
-				if bmi and bmi > 0 then
-					baseCounts[bmi] = (baseCounts[bmi] or 0) + 1
-				end
-			end
-			local function addCount(mi: number, n: number)
-				local def = modelDefs[mi]
-				if def and def.kind == "alias" and n > (counts[def] or 0) then
-					counts[def] = n
-				end
-			end
-			for mi, n in baseCounts do
-				addCount(mi, n)
-			end
-			for mi = 1, #c.model_precache - 1 do
-				local n = entrender.dynamicPoolCount(c.model_precache[mi])
-				if n then
-					addCount(mi, n)
-				end
-			end
-			-- brush template rebuild FIRST (before pool prewarm): templates
-			-- (doors/plats/buttons "*N" + b_*.bsp health/ammo boxes) are
-			-- born in the load burst, and a zombied template renders black
-			-- through EVERY clone all level. Rebuild each in a measured-
-			-- quiet moment, swap into the def, re-clone live ents. Ordered
-			-- by what the player meets first: item boxes, then submodels in
-			-- map order (buttons/doors early). The creation COUNTER tells
-			-- our own builds from foreign ones so the pass moves at ~0.6s/
-			-- template instead of over-waiting on its own heat. Old
-			-- templates retire until teardown (anim pumps hold their
-			-- images). Each template is pcalled so one failure (budget
-			-- wall) cannot silently kill the rest of the pass.
-			local rebuilt = 0
-			local templateNames = {}
-			for name in brushTemplates do
-				table.insert(templateNames, name)
-			end
-			local function templatePriority(n: string): number
-				if n:sub(1, 1) ~= "*" then
-					return 0 -- b_*.bsp items first: the most-seen brush ents
-				end
-				return 1 + (tonumber(n:sub(2)) or 0)
-			end
-			table.sort(templateNames, function(a, b)
-				return templatePriority(a) < templatePriority(b)
-			end)
-			local selfMark, myLast = -1, 0
-			for _, name in templateNames do
-				local oldTpl = brushTemplates[name]
-				if not oldTpl then
-					continue
-				end
-				repeat
-					task.wait(0.1)
-				until gen ~= worldBuildGen
-					or textures.timeSinceCreation() > 1.5
-					or (textures.creationCount() == selfMark and os.clock() - myLast > 0.6)
-				if gen ~= worldBuildGen then
-					return
-				end
-				local ok, err = pcall(function()
-					local sourceModel: bsplib.Model? = nil
-					if name:sub(1, 1) == "*" then
-						local sub = tonumber(name:sub(2)) :: number
-						sourceModel = worldModels[sub + 1]
-					else
-						local buf = vfslib.loadFile(fs, name, true)
-						if buf then
-							sourceModel = bsplib.load(name, buf)[1]
-						end
-					end
-					if not sourceModel then
-						return
-					end
-					local fresh, anim = worldmesh.build(sourceModel, pal, nil :: any, name)
-					for _, e in anim do
-						table.insert(lightAnim, e)
-					end
-					for _, ta in worldmesh.takeTextureAnims() do
-						table.insert(textureAnims, ta)
-					end
-					brushTemplates[name] = fresh
-					table.insert(retiredTemplates, oldTpl)
-					for _, def in modelDefs do
-						if def.kind == "brush" and def.brushModel == oldTpl then
-							def.brushModel = fresh
-							for _, re in renderEnts do
-								if re.model and re.model.Name == name then
-									entrender.refreshBrush(re, def)
-								end
-							end
-							for _, st in staticEnts do
-								if st.re.model and st.re.model.Name == name then
-									entrender.refreshBrush(st.re, def)
-								end
-							end
-						end
-					end
-					rebuilt += 1
-					workspace:SetAttribute("RQDBG_TemplatesRebuilt", rebuilt)
-				end)
-				if not ok then
-					warn(`[robloquake] template rebuild failed for {name}: {err}`)
-				end
-				selfMark = textures.creationCount()
-				myLast = os.clock()
-			end
-			print(`[cl] brush templates rebuilt: {rebuilt}`)
-			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
-				return gen == worldBuildGen
-			end)
-			print(`[cl] mesh pools prewarmed: {prewarmed}`)
-		end)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create
@@ -610,7 +444,7 @@ c.onServerInfo = function()
 						local q = mkQuad:Clone()
 						q.Name = "RQDBG_GalleryQuad" .. made
 						q.TextureContent = Content.fromObject(imgs[1])
-						q.CFrame = base * CFrame.new((made % 8 - 3.5) * 1.0, (math.floor(made / 8) - 2) * 1.0, -7)
+						q.CFrame = base * CFrame.new((made % 5 - 2) * 1.0, (math.floor(made / 5) - 0.5) * 1.0, -4.5)
 						q.Parent = workspace
 						made += 1
 						table.insert(names, tostring(c.model_precache[idx + 1]))
@@ -1551,7 +1385,6 @@ end
 local sendAccumulator = 0
 local lastStyleFrame = -1
 local diagAccumulator = 0
-local verifiedTranslationCount = 0
 local statics_spawned = false
 
 RunService.Heartbeat:Connect(function(dt: number)
@@ -1978,27 +1811,6 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if c.entities[i] and c.entities[i].visible then
 				visible += 1
 			end
-		end
-		-- verify translated skins created since the last pass (players
-		-- joining / changing colours mid-game)
-		if entrender.translationCount ~= verifiedTranslationCount then
-			local snapshot = entrender.translationCount
-			task.spawn(function()
-				task.wait(1)
-				if entrender.translationCount ~= snapshot then
-					return -- still churning; a later tick reschedules
-				end
-				verifiedTranslationCount = snapshot
-				local tslots: { any } = {}
-				for _, def in modelDefs do
-					if (def :: any).translatedSkins and next((def :: any).translatedSkins) then
-						entrender.collectVerifySlots(def, pal, tslots)
-					end
-				end
-				if #tslots > 0 then
-					texverifylib.verifySlots(tslots :: any)
-				end
-			end)
 		end
 		workspace:SetAttribute("RQ_Signon", c.signon)
 		workspace:SetAttribute("RQ_Time", c.time)

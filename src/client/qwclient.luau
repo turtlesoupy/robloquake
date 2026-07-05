@@ -26,7 +26,6 @@ local mdllib = require(engine.models.mdl)
 
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
-local texverifylib = require(script.Parent.render.texverify)
 local lightatlaslib = require(script.Parent.render.lightatlas)
 local lightpoint = require(engine.client.lightpoint)
 local viewlib = require(engine.client.view)
@@ -82,7 +81,6 @@ return function()
 	local entFolder = Instance.new("Folder")
 	entFolder.Name = "QuakeEnts"
 	entFolder.Parent = Workspace
-	entrender.setPoolParent(entFolder)
 
 	local sndsys = soundlib.new(Workspace)
 	local psys = particleslib.new(pal, Workspace)
@@ -269,9 +267,6 @@ return function()
 	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
-	-- templates replaced by the post-settle rebuild pass; destroyed at
-	-- level change only (anim pumps still hold their images)
-	local retiredTemplates: { Model } = {}
 	local worldBuilt = false
 	local seenLevelResets = 0
 	local staticsSpawned = 0
@@ -336,172 +331,7 @@ return function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[robloquake] qw world built: {cl.levelname}`)
-		-- Mod_LoadModel semantics (model.c): C builds every precached
-		-- model at level load; doing the same here concentrates
-		-- editable-object creation into one window (zombie-object
-		-- exposure; see the NQ boot's twin pass)
-		local resets = seenLevelResets
-		task.spawn(function()
-			local eagerBuilt = 0
-			for mi in cl.model_name do
-				if seenLevelResets ~= resets then
-					return -- level change superseded this load
-				end
-				if pcall(getModelDef, mi) then
-					eagerBuilt += 1
-				end
-			end
-			print(`[robloquake] qw precache defs built: {eagerBuilt}`)
-			-- verification/regeneration pass after the burst settles
-			task.wait(1.5)
-			if seenLevelResets ~= resets then
-				return
-			end
-			local slots: { any } = {}
-			for mi in cl.model_name do
-				local def = modelDefs[mi]
-				if def then
-					entrender.collectVerifySlots(def, pal, slots)
-				end
-			end
-			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
-			print(`[robloquake] qw texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
-			-- pre-warm per-entity mesh pools inside the settle window (see
-			-- the NQ twin): baselines census the level's entities per model;
-			-- dynamics (projectiles/gibs/backpacks) use fixed counts. QW
-			-- player models have no baselines — pool per client slot.
-			local counts: { [entrender.ModelDef]: number } = {}
-			local baseCounts: { [number]: number } = {}
-			for _, b in cl.baselines do
-				local bmi = b.modelindex
-				if bmi and bmi > 0 then
-					baseCounts[bmi] = (baseCounts[bmi] or 0) + 1
-				end
-			end
-			local function addCount(mi: number, n: number)
-				local def = modelDefs[mi]
-				if def and def.kind == "alias" and n > (counts[def] or 0) then
-					counts[def] = n
-				end
-			end
-			for mi, n in baseCounts do
-				addCount(mi, n)
-			end
-			for mi, name in cl.model_name do
-				local n = entrender.dynamicPoolCount(name)
-				if name == "progs/player.mdl" or name == "progs/eyes.mdl" then
-					n = 8 -- one per client slot; QW players are not baselined
-				end
-				if n then
-					addCount(mi, n)
-				end
-			end
-			-- brush template rebuild FIRST, prioritized + counter-gated +
-			-- pcalled (see the NQ twin): a zombied load-burst template
-			-- renders black through every clone
-			local rebuilt = 0
-			local templateNames = {}
-			for tname in brushTemplates do
-				table.insert(templateNames, tname)
-			end
-			local function templatePriority(n: string): number
-				if n:sub(1, 1) ~= "*" then
-					return 0
-				end
-				return 1 + (tonumber(n:sub(2)) or 0)
-			end
-			table.sort(templateNames, function(a, b)
-				return templatePriority(a) < templatePriority(b)
-			end)
-			local selfMark, myLast = -1, 0
-			for _, tname in templateNames do
-				local oldTpl = brushTemplates[tname]
-				if not oldTpl then
-					continue
-				end
-				repeat
-					task.wait(0.1)
-				until seenLevelResets ~= resets
-					or textures.timeSinceCreation() > 1.5
-					or (textures.creationCount() == selfMark and os.clock() - myLast > 0.6)
-				if seenLevelResets ~= resets then
-					return
-				end
-				local ok, err = pcall(function()
-					local sourceBrush: any = nil
-					for mi, mname in cl.model_name do
-						if mname == tname and cl.models[mi] and cl.models[mi].kind == "brush" then
-							sourceBrush = cl.models[mi].brush
-							break
-						end
-					end
-					if not sourceBrush then
-						return
-					end
-					local fresh, anim = worldmesh.build(sourceBrush, pal, nil :: any, tname)
-					for _, e in anim do
-						table.insert(lightAnim, e)
-					end
-					for _, ta in worldmesh.takeTextureAnims() do
-						table.insert(textureAnims, ta)
-					end
-					brushTemplates[tname] = fresh
-					table.insert(retiredTemplates, oldTpl)
-					for _, def in modelDefs do
-						if def.kind == "brush" and def.brushModel == oldTpl then
-							def.brushModel = fresh
-							for _, re in renderEnts do
-								if re.model and re.model.Name == tname then
-									entrender.refreshBrush(re, def)
-								end
-							end
-							for _, re in staticRes do
-								if re.model and re.model.Name == tname then
-									entrender.refreshBrush(re, def)
-								end
-							end
-						end
-					end
-					rebuilt += 1
-					workspace:SetAttribute("RQDBG_TemplatesRebuilt", rebuilt)
-				end)
-				if not ok then
-					warn(`[robloquake] qw template rebuild failed for {tname}: {err}`)
-				end
-				selfMark = textures.creationCount()
-				myLast = os.clock()
-			end
-			print(`[robloquake] qw brush templates rebuilt: {rebuilt}`)
-			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
-				return seenLevelResets == resets
-			end)
-			print(`[robloquake] qw mesh pools prewarmed: {prewarmed}`)
-		end)
 	end
-
-	-- verify translated skins created mid-game (see the NQ twin)
-	task.spawn(function()
-		local verified = 0
-		while true do
-			task.wait(2)
-			if entrender.translationCount ~= verified then
-				local snapshot = entrender.translationCount
-				task.wait(1)
-				if entrender.translationCount == snapshot then
-					verified = snapshot
-					local tslots: { any } = {}
-					for _, def in modelDefs do
-						if (def :: any).translatedSkins and next((def :: any).translatedSkins) then
-							entrender.collectVerifySlots(def, pal, tslots)
-						end
-					end
-					if #tslots > 0 then
-						texverifylib.verifySlots(tslots :: any)
-					end
-				end
-			end
-		end
-	end)
 
 	-- statics arrive in the prespawn signon, after the world builds:
 	-- spawn whatever is new each frame
@@ -1282,6 +1112,10 @@ return function()
 			worldBuilt = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
+			for _, def in modelDefs do
+				entrender.destroyDef(def)
+			end
+			table.clear(modelDefs)
 			-- release the old level's meshes SYNCHRONOUSLY: Destroying
 			-- signals are deferred, so ClearAllChildren alone still holds
 			-- the EditableMesh budget while the new world builds, starving
@@ -1290,10 +1124,6 @@ return function()
 				worldmesh.destroyBuild(tpl)
 			end
 			table.clear(brushTemplates)
-			for _, tpl in retiredTemplates do
-				worldmesh.destroyBuild(tpl)
-			end
-			table.clear(retiredTemplates)
 			table.clear(lightAnim)
 			table.clear(textureAnims)
 			for key, re in renderEnts do
@@ -1310,14 +1140,6 @@ return function()
 				gunEnt = nil
 			end
 			gunModelIndex = 0
-			-- defs LAST: entrender.destroy above releases alias meshes into
-			-- the per-def pools, and destroyDef is what tears those pools
-			-- down (destroying a def's pool before its ents release would
-			-- leak the parked EditableMesh budget across level changes)
-			for _, def in modelDefs do
-				entrender.destroyDef(def)
-			end
-			table.clear(modelDefs)
 			for _, child in worldFolder:GetChildren() do
 				worldmesh.destroyBuild(child)
 			end
