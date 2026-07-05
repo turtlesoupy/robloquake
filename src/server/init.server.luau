@@ -162,11 +162,22 @@ local function publishAvatarRig(player: Player)
 		local ok, rig = pcall(function()
 			-- Studio multi-client test players are guests with NEGATIVE
 			-- UserIds; description fetch rejects those (and can fail on
-			-- network hiccups) — a blank description = default rig
+			-- network hiccups). Test guests borrow the place creator's
+			-- avatar (override with a test_avatar_userid attribute) so
+			-- tests exercise a REAL look — hats, layered clothing, anim
+			-- pack — instead of the blank default.
+			local fetchId = player.UserId
+			if fetchId <= 0 then
+				fetchId = if game.CreatorType == Enum.CreatorType.User then game.CreatorId else 0
+				local override = assets:GetAttribute("test_avatar_userid")
+				if typeof(override) == "number" and override > 0 then
+					fetchId = override
+				end
+			end
 			local desc: HumanoidDescription? = nil
-			if player.UserId > 0 then
+			if fetchId > 0 then
 				local okDesc, d = pcall(function()
-					return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+					return Players:GetHumanoidDescriptionFromUserId(fetchId)
 				end)
 				if okDesc then
 					desc = d
