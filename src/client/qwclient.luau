@@ -141,6 +141,51 @@ return function()
 	overlayGui.Parent = player:WaitForChild("PlayerGui")
 	local con = consolelib.create(fs, pal, overlayGui)
 
+	-- Chat compliance (see the NQ boot's twin): say/say_team submit to
+	-- TextChatService for filtering; filtered text rides cl.prints as
+	-- PRINT_CHAT so it renders like a wire chat line. The server refuses
+	-- raw wire say.
+	local generalChat: TextChannel? = nil
+	task.spawn(function()
+		local TextChatService = game:GetService("TextChatService")
+		local ok, channels = pcall(function()
+			return TextChatService:WaitForChild("TextChannels", 10)
+		end)
+		local found = if ok and channels then channels:FindFirstChild("RBXGeneral") else nil
+		if found and found:IsA("TextChannel") then
+			local tch = found :: TextChannel
+			generalChat = tch
+			tch.MessageReceived:Connect(function(m: TextChatMessage)
+				if m.Status ~= Enum.TextChatMessageStatus.Success then
+					return
+				end
+				local src = m.TextSource
+				local name = if src then src.Name else "?"
+				table.insert(cl.prints, { level = qwp.PRINT_CHAT, text = `{name}: {m.Text}\n` })
+			end)
+		else
+			warn("[robloquake] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
+		end
+	end)
+	local function sayViaTextChat(text: string)
+		if text:sub(1, 1) == '"' then
+			text = text:sub(2, -2)
+		end
+		if text == "" then
+			return
+		end
+		local ch = generalChat
+		if not ch then
+			consolelib.print(con, "chat unavailable")
+			return
+		end
+		task.spawn(function()
+			pcall(function()
+				ch:SendAsync(text)
+			end)
+		end)
+	end
+
 	-- Con_DrawNotify's "say:" input line while messagemode is up
 	local chatHolder = Instance.new("Frame")
 	chatHolder.Name = "chatline"
@@ -873,7 +918,10 @@ return function()
 			return
 		end
 		cmd = cmd:lower()
-		if cmd == "messagemode" or cmd == "messagemode2" then
+		if cmd == "say" or cmd == "say_team" then
+			-- player speech goes through Roblox filtering, never the wire
+			sayViaTextChat(args :: string)
+		elseif cmd == "messagemode" or cmd == "messagemode2" then
 			-- Con_MessageMode_f / Con_MessageMode2_f
 			chatTeam = cmd == "messagemode2"
 			chatOpen = true

@@ -133,7 +133,10 @@ local publishFile = bundle.publishFile;
 
 (svr :: any).onFileRequest = function(path: string)
 	publishFile(path) -- no-ops when the pak doesn't have it
-end
+end;
+-- player speech must pass Roblox text filtering: clients speak through
+-- TextChatService, and the server refuses raw wire say from anyone
+(svr :: any).suppressSay = true
 
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do
@@ -151,6 +154,31 @@ end
 
 -- player <-> client slot bridging
 local slotByPlayer: { [Player]: number } = {}
+
+-- host-command policy: a real NetQuake listen server only takes cheats/
+-- level control from the local console. The Roblox mapping: Studio is
+-- always the host; a private server's owner is the host (the faithful
+-- owner=listen-server mapping); the place creator counts for dev tests.
+local function playerIsHost(player: Player): boolean
+	if RunService:IsStudio() then
+		return true
+	end
+	if game.PrivateServerOwnerId ~= 0 and player.UserId == game.PrivateServerOwnerId then
+		return true
+	end
+	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
+		return true
+	end
+	return false
+end;
+(svr :: any).commandGate = function(client: svlib.Client): boolean
+	for player, slot in slotByPlayer do
+		if slot == client.num then
+			return playerIsHost(player)
+		end
+	end
+	return false
+end
 
 local function connectPlayer(player: Player)
 	local slot = host.findFreeClient(svr)

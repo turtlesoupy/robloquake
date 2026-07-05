@@ -1144,6 +1144,9 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		vmlib.edSetInt(client.edict, ent.goalentity, target.edict.num)
 	end,
 	say = function(svr, client, _args, raw)
+		if svr.suppressSay then
+			return -- platform routes player speech through filtered chat
+		end
 		local c: any = client
 		-- flood protection: fp_messages msgs per fp_persecond seconds
 		c.floodTimes = c.floodTimes or {}
@@ -1173,6 +1176,9 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		end
 	end,
 	say_team = function(svr, client, _args, raw)
+		if svr.suppressSay then
+			return -- platform routes player speech through filtered chat
+		end
 		local text = (raw:match("^say_team%s+(.*)$") or ""):gsub('^"(.*)"$', "%1")
 		local team = client.userinfo.team or ""
 		local line = `({client.name}): {text}\n`

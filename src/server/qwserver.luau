@@ -54,6 +54,9 @@ return function(ctx: Ctx)
 	svr.print = function(s: string)
 		print("[qwsv] " .. s)
 	end
+	-- player speech must pass Roblox text filtering: clients speak through
+	-- TextChatService, and the server refuses raw wire say from anyone
+	svr.suppressSay = true
 
 	-- game-rule cvars from asset-folder attributes, applied before the
 	-- world spawns so qwprogs sees them

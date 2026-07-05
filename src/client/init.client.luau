@@ -466,6 +466,57 @@ c.print = function(s: string)
 	print("[q] " .. s)
 end
 
+-- Chat compliance: player speech must pass Roblox text filtering, so
+-- say/say_team submit to TextChatService's general channel instead of
+-- the wire, and every client renders the FILTERED text from
+-- MessageReceived through the same \1-prefixed notify path a server say
+-- used (bronze text + talk cue). Typing in the Roblox chat window lands
+-- in the notify the same way. Game-generated prints (obituaries,
+-- pickups) are not user speech and stay on svc_print. The server also
+-- refuses raw wire say (suppressSay), so a modified client cannot
+-- bypass filtering.
+local generalChat: TextChannel? = nil
+task.spawn(function()
+	local TextChatService = game:GetService("TextChatService")
+	local ok, channels = pcall(function()
+		return TextChatService:WaitForChild("TextChannels", 10)
+	end)
+	local found = if ok and channels then channels:FindFirstChild("RBXGeneral") else nil
+	if found and found:IsA("TextChannel") then
+		local tch = found :: TextChannel
+		generalChat = tch
+		tch.MessageReceived:Connect(function(m: TextChatMessage)
+			if m.Status ~= Enum.TextChatMessageStatus.Success then
+				return -- the sender also sees a local Sending echo; render once
+			end
+			local src = m.TextSource
+			local name = if src then src.Name else "?"
+			c.print(`\1{name}: {m.Text}\n`)
+		end)
+	else
+		warn("[robloquake] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
+	end
+end)
+
+local function sayViaTextChat(text: string)
+	if text:sub(1, 1) == '"' then
+		text = text:sub(2, -2)
+	end
+	if text == "" then
+		return
+	end
+	local ch = generalChat
+	if not ch then
+		consolelib.print(con, "chat unavailable")
+		return
+	end
+	task.spawn(function()
+		pcall(function()
+			ch:SendAsync(text)
+		end)
+	end)
+end
+
 -- chase.c: chase_active third-person camera (defaults 100/16/0)
 local worldlib = require(engine.server.world) -- pure hull math for TraceLine
 local chase_active = false
@@ -724,6 +775,10 @@ execCommand = function(line: string)
 		-- V_BonusFlash_f (Cmd_AddCommand "bf" in C; the server stuffs it
 		-- on every item pickup)
 		c.cshift_bonus_percent = 50
+		return
+	elseif cmd == "say" or cmd == "say_team" then
+		-- player speech goes through Roblox filtering, never the wire
+		sayViaTextChat(args)
 		return
 	elseif cmd == "messagemode" or cmd == "messagemode2" then
 		consolelib.print(con, "use say <text> or the Roblox chat")

@@ -378,6 +378,28 @@ local function toggleFlag(svr: svlib.Server, client: svlib.Client, flag: number,
 	msg.writeString(client.message, (if active then onMsg else offMsg) .. "\n")
 end
 
+-- Host commands that a real NetQuake listen server only accepts from the
+-- LOCAL console (host_cmd.c cmd_source checks): cheats, level control,
+-- server cvars, save/load. The platform layer installs svr.commandGate
+-- to say which remote client counts as the host; without a gate (offline
+-- tests, loopback) everything is allowed, matching a listen server.
+local HOST_ONLY = {
+	god = true,
+	notarget = true,
+	fly = true,
+	noclip = true,
+	give = true,
+	map = true,
+	changelevel = true,
+	skill = true,
+	deathmatch = true,
+	coop = true,
+	sv_gravity = true,
+	sv_maxspeed = true,
+	save = true,
+	load = true,
+}
+
 -- Host_ClientCommand dispatch (the clc_stringcmd cases SV_ReadClientMessage allows)
 function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 	s = s:gsub("%s+$", "") -- strip trailing newline/spaces from the wire
@@ -386,6 +408,12 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 		return
 	end
 	cmd = cmd:lower()
+
+	local gate = (svr :: any).commandGate
+	if gate and HOST_ONLY[cmd] and not gate(client) then
+		clientPrint(client, `"{cmd}" is a host command`)
+		return
+	end
 
 	if cmd == "prespawn" then
 		hostPreSpawn(svr, client)
@@ -401,10 +429,12 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 		hostName(svr, client, args :: string)
 	elseif cmd == "color" then
 		hostColor(svr, client, args :: string)
-	elseif cmd == "say" then
-		hostSay(svr, client, args :: string, false)
-	elseif cmd == "say_team" then
-		hostSay(svr, client, args :: string, true)
+	elseif cmd == "say" or cmd == "say_team" then
+		-- the platform layer sets suppressSay when player speech must go
+		-- through its own filtered chat channel instead of the wire
+		if not (svr :: any).suppressSay then
+			hostSay(svr, client, args :: string, cmd == "say_team")
+		end
 	elseif cmd == "kill" then
 		hostKill(svr, client)
 	elseif cmd == "god" then
