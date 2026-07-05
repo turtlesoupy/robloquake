@@ -169,6 +169,10 @@ crosshairLabel.Parent = overlayGui
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
+-- templates replaced by the post-settle rebuild pass: kept alive until
+-- teardown (lightAnim/textureAnims entries still write to their images;
+-- destroying them mid-level would error the 10Hz pumps)
+local retiredTemplates: { Model } = {}
 local worldModels: { bsplib.Model } = {}
 
 -- animated lightstyle vertices across all built brush geometry
@@ -331,6 +335,10 @@ c.onServerInfo = function()
 	for _, tpl in brushTemplates do
 		worldmesh.destroyBuild(tpl)
 	end
+	for _, tpl in retiredTemplates do
+		worldmesh.destroyBuild(tpl)
+	end
+	table.clear(retiredTemplates)
 	for _, re in renderEnts do
 		entrender.destroy(re)
 	end
@@ -459,6 +467,67 @@ c.onServerInfo = function()
 				return gen == worldBuildGen
 			end)
 			print(`[cl] mesh pools prewarmed: {prewarmed}`)
+			-- brush template rebuild: templates (doors/plats + b_*.bsp
+			-- health/ammo boxes) are born in the load burst, and a zombied
+			-- template renders black through EVERY clone all level. Rebuild
+			-- each in a genuinely quiet moment (shared creation clock),
+			-- swap it into the def, re-clone live ents. Old templates are
+			-- retired, not destroyed: the anim pumps still hold their images.
+			local rebuilt = 0
+			local templateNames = {}
+			for name in brushTemplates do
+				table.insert(templateNames, name)
+			end
+			for _, name in templateNames do
+				local oldTpl = brushTemplates[name]
+				if not oldTpl then
+					continue
+				end
+				repeat
+					task.wait(0.25)
+				until gen ~= worldBuildGen or textures.timeSinceCreation() > 1.5
+				if gen ~= worldBuildGen then
+					return
+				end
+				local sourceModel: bsplib.Model? = nil
+				if name:sub(1, 1) == "*" then
+					local sub = tonumber(name:sub(2)) :: number
+					sourceModel = worldModels[sub + 1]
+				else
+					local buf = vfslib.loadFile(fs, name, true)
+					if buf then
+						sourceModel = bsplib.load(name, buf)[1]
+					end
+				end
+				if sourceModel then
+					local fresh, anim = worldmesh.build(sourceModel, pal, nil :: any, name)
+					for _, e in anim do
+						table.insert(lightAnim, e)
+					end
+					for _, ta in worldmesh.takeTextureAnims() do
+						table.insert(textureAnims, ta)
+					end
+					brushTemplates[name] = fresh
+					table.insert(retiredTemplates, oldTpl)
+					for _, def in modelDefs do
+						if def.kind == "brush" and def.brushModel == oldTpl then
+							def.brushModel = fresh
+							for _, re in renderEnts do
+								if re.model and re.model.Name == name then
+									entrender.refreshBrush(re, def)
+								end
+							end
+							for _, st in staticEnts do
+								if st.re.model and st.re.model.Name == name then
+									entrender.refreshBrush(st.re, def)
+								end
+							end
+						end
+					end
+					rebuilt += 1
+				end
+			end
+			print(`[cl] brush templates rebuilt: {rebuilt}`)
 		end)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM

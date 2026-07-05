@@ -108,7 +108,8 @@ end
 -- live-builds are marked suspect and rerolled by the quiet-window
 -- regen (live swap while visible, silent cure while parked).
 local REGEN_QUIET = 1.5
-local REGEN_SPACING = 2.5 -- rebuilds are ISOLATED creations, never a burst
+local REGEN_SPACING = 2.5 -- live swaps: rebuilds are ISOLATED creations, never a burst
+local CURE_SPACING = 1.0 -- parked cures are invisible; trickle faster
 local PARK_CFRAME = CFrame.new(0, -100000, 0)
 
 type PoolInst = {
@@ -123,7 +124,6 @@ type PoolInst = {
 local meshPool: { [ModelDef]: { PoolInst } } = {}
 local parkedCure: { [PoolInst]: ModelDef } = {} -- parked suspects awaiting reroll
 local meshRegenQueue: { [RenderEnt]: ModelDef } = {} -- live suspects
-local lastAliasCreate = 0
 local lastRegenAt = 0
 local prewarming = false
 local overflowBuilds = 0
@@ -223,12 +223,15 @@ end
 
 function drainMeshRegen()
 	local now = os.clock()
-	if prewarming or now - lastAliasCreate < REGEN_QUIET or now - lastRegenAt < REGEN_SPACING then
+	if prewarming or textures.timeSinceCreation() < REGEN_QUIET then
 		return
 	end
 	-- live suspects first (they are visible); parked cures when idle
 	local re, def = next(meshRegenQueue)
 	if re then
+		if now - lastRegenAt < REGEN_SPACING then
+			return
+		end
 		lastRegenAt = now
 		meshRegenQueue[re] = nil
 		local oldPart = re.part
@@ -260,6 +263,9 @@ function drainMeshRegen()
 	end
 	local inst, def2 = next(parkedCure)
 	if inst then
+		if now - lastRegenAt < CURE_SPACING then
+			return
+		end
 		lastRegenAt = now
 		parkedCure[inst] = nil
 		local list = meshPool[def2]
@@ -310,12 +316,13 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	else
 		-- pool empty: build live. This is the hot path the pool exists to
 		-- avoid — mark suspect so the quiet-window regen rerolls it.
+		textures.noteCreation()
 		em, part, vids, backVids, centerOffset = buildAliasMesh(def)
 		if not part then
 			return buildAliasBoxEnt(def, parent) -- budget exhausted / build failed
 		end
+		textures.noteCreation()
 		suspect = true
-		lastAliasCreate = os.clock()
 		overflowBuilds += 1
 		workspace:SetAttribute("RQDBG_PoolOverflow", overflowBuilds)
 	end
@@ -374,14 +381,25 @@ function entrender.prewarmPools(counts: { [ModelDef]: number }, parent: Instance
 			p.Transparency = 1
 			p.CFrame = PARK_CFRAME
 			p.Parent = parent
-			table.insert(list, {
+			-- the settle window is only safe while nothing ELSE creates:
+			-- if the player is already fighting (overflow builds, translated
+			-- skins), instances built now may be zombies that would carry a
+			-- clean bill — mark them suspect so the cure loop rerolls them.
+			-- (This was live-verified as the "black armor" hole: dirty-window
+			-- prewarm instances acquired by early sightings.)
+			local inst: PoolInst = {
 				em = em :: EditableMesh,
 				part = p,
 				vids = vids :: { number },
 				backVids = backVids :: { number },
 				centerOffset = centerOffset,
-				suspect = false,
-			})
+				suspect = textures.timeSinceCreation() < REGEN_QUIET,
+			}
+			table.insert(list, inst)
+			if inst.suspect then
+				parkedCure[inst] = def
+				ensureRegenConn()
+			end
 			built += 1
 			workspace:SetAttribute("RQDBG_PoolPrewarmed", built)
 			task.wait(0.1)
@@ -709,6 +727,29 @@ function entrender.create(def: ModelDef, parent: Instance): RenderEnt?
 		}
 	end
 	return nil
+end
+
+-- Re-clone a live brush ent from its def's CURRENT template (used by the
+-- boot's brush-template rebuild pass: a template born in the load burst
+-- can be a zombie, and every clone of it inherits the black render).
+-- Position self-corrects on the next updateBrush (baseCFrames + origin).
+function entrender.refreshBrush(re: RenderEnt, def: ModelDef)
+	local old = re.model
+	local template = def.brushModel
+	if re.kind ~= "brush" or not old or not template then
+		return
+	end
+	local model = template:Clone()
+	local baseCFrames: { [BasePart]: CFrame } = {}
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") then
+			baseCFrames[part] = part.CFrame
+		end
+	end
+	model.Parent = old.Parent
+	re.model = model
+	re.baseCFrames = baseCFrames
+	old:Destroy()
 end
 
 -- R_LightPoint tint: models are shaded by the floor lightmap under them

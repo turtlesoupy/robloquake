@@ -269,6 +269,9 @@ return function()
 	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
+	-- templates replaced by the post-settle rebuild pass; destroyed at
+	-- level change only (anim pumps still hold their images)
+	local retiredTemplates: { Model } = {}
 	local worldBuilt = false
 	local seenLevelResets = 0
 	local staticsSpawned = 0
@@ -397,6 +400,60 @@ return function()
 				return seenLevelResets == resets
 			end)
 			print(`[robloquake] qw mesh pools prewarmed: {prewarmed}`)
+			-- brush template rebuild pass (see the NQ twin): a zombied
+			-- load-burst template renders black through every clone
+			local rebuilt = 0
+			local templateNames = {}
+			for tname in brushTemplates do
+				table.insert(templateNames, tname)
+			end
+			for _, tname in templateNames do
+				local oldTpl = brushTemplates[tname]
+				if not oldTpl then
+					continue
+				end
+				repeat
+					task.wait(0.25)
+				until seenLevelResets ~= resets or textures.timeSinceCreation() > 1.5
+				if seenLevelResets ~= resets then
+					return
+				end
+				local sourceBrush: any = nil
+				for mi, mname in cl.model_name do
+					if mname == tname and cl.models[mi] and cl.models[mi].kind == "brush" then
+						sourceBrush = cl.models[mi].brush
+						break
+					end
+				end
+				if sourceBrush then
+					local fresh, anim = worldmesh.build(sourceBrush, pal, nil :: any, tname)
+					for _, e in anim do
+						table.insert(lightAnim, e)
+					end
+					for _, ta in worldmesh.takeTextureAnims() do
+						table.insert(textureAnims, ta)
+					end
+					brushTemplates[tname] = fresh
+					table.insert(retiredTemplates, oldTpl)
+					for _, def in modelDefs do
+						if def.kind == "brush" and def.brushModel == oldTpl then
+							def.brushModel = fresh
+							for _, re in renderEnts do
+								if re.model and re.model.Name == tname then
+									entrender.refreshBrush(re, def)
+								end
+							end
+							for _, re in staticRes do
+								if re.model and re.model.Name == tname then
+									entrender.refreshBrush(re, def)
+								end
+							end
+						end
+					end
+					rebuilt += 1
+				end
+			end
+			print(`[robloquake] qw brush templates rebuilt: {rebuilt}`)
 		end)
 	end
 
@@ -1211,6 +1268,10 @@ return function()
 				worldmesh.destroyBuild(tpl)
 			end
 			table.clear(brushTemplates)
+			for _, tpl in retiredTemplates do
+				worldmesh.destroyBuild(tpl)
+			end
+			table.clear(retiredTemplates)
 			table.clear(lightAnim)
 			table.clear(textureAnims)
 			for key, re in renderEnts do

@@ -216,6 +216,7 @@ export type AnimEntry = {
 -- MeshPart per texture batch. Vertex positions are relative to the quake
 -- origin so the caller can position the whole Model by entity origin.
 function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instance, name: string): (Model, { AnimEntry })
+	textures.noteCreation() -- heats the shared zombie-defect clock
 	local animOut: { AnimEntry } = {}
 	if not worldmesh.canUseMeshApi() then
 		return worldmesh.buildWedges(model, pal, parent, name), animOut
@@ -538,6 +539,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 
 	container.Parent = parent
+	textures.noteCreation() -- builds yield; stamp completion time too
 	return container, animOut
 end
 

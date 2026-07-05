@@ -69,10 +69,25 @@ function textures.toRGBA(pixels: buffer, count: number, pal: Palette, alphaIndex
 	return out
 end
 
+-- Shared "GPU creation heat" clock for the zombie-object platform
+-- defect: editable objects created while other creations are in flight
+-- can silently lose their GPU upload and render black forever. Every
+-- creation site bumps this; healing passes (mesh regen/cure, pool
+-- prewarm suspect-marking, brush template rebuilds) gate on it so
+-- their recreations land in genuinely quiet moments.
+local lastCreation = 0
+function textures.noteCreation()
+	lastCreation = os.clock()
+end
+function textures.timeSinceCreation(): number
+	return os.clock() - lastCreation
+end
+
 -- Create an EditableImage from palettized pixels. Returns nil when the
 -- Mesh & Image APIs are not enabled for the experience (Game Settings →
 -- Security); callers must tolerate untextured output.
 function textures.createImage(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): EditableImage?
+	textures.noteCreation()
 	local ok, img = pcall(function()
 		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
 		local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
