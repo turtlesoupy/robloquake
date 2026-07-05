@@ -173,7 +173,17 @@ local function publishAvatarRig(player: Player)
 				end
 			end
 			if not desc then
-				desc = Instance.new("HumanoidDescription")
+				-- blank descriptions default EVERY body color to black
+				-- (playtest: "all black mesh") — paint the guest rig
+				local d = Instance.new("HumanoidDescription")
+				local gray = Color3.fromRGB(163, 162, 165)
+				d.HeadColor = gray
+				d.TorsoColor = Color3.fromRGB(121, 128, 141)
+				d.LeftArmColor = gray
+				d.RightArmColor = gray
+				d.LeftLegColor = Color3.fromRGB(87, 91, 101)
+				d.RightLegColor = Color3.fromRGB(87, 91, 101)
+				desc = d
 			end
 			local model = Players:CreateHumanoidModelFromDescription(desc :: HumanoidDescription, Enum.HumanoidRigType.R15)
 			model:SetAttribute("IdleAnim", tonumber((desc :: HumanoidDescription).IdleAnimation) or 0)

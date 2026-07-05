@@ -322,7 +322,14 @@ avatarLocalFolder.Name = "QuakeAvatarRigs"
 avatarLocalFolder.Parent = Workspace
 
 local avatarEnts: { [number]: avatarrender.AvatarEnt } = {}
-type AvatarWeapon = { re: entrender.RenderEnt?, model: string?, light: PointLight?, flashUntil: number? }
+type AvatarWeapon = {
+	re: entrender.RenderEnt?,
+	model: string?,
+	light: PointLight?,
+	emitter: ParticleEmitter?,
+	flashUntil: number?,
+	wasFlashing: boolean?,
+}
 local avatarWeapons: { [number]: AvatarWeapon } = {}
 
 local function avatarsOn(): boolean
@@ -400,6 +407,7 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 			entrender.destroy(aw.re :: entrender.RenderEnt)
 			aw.re = nil
 			aw.light = nil -- died with the part
+			aw.emitter = nil
 		end
 		aw.model = want
 		if want then
@@ -417,13 +425,19 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 		-- pickup's floor-level model origin and floats the gun overhead)
 		local part = re.part :: MeshPart
 		setEntVisible(re :: entrender.RenderEnt, true)
-		part.CFrame = hand * currentGrip()
 		-- muzzle flash: the world dlight comes from applyEntityEffects;
-		-- this PointLight lights the RIG (rigs use Roblox lighting, not
-		-- the Quake lightmap)
+		-- the PointLight lights the RIG (rigs use Roblox lighting, not
+		-- the Quake lightmap), the emitter burst + recoil make the shot
+		-- readable at a glance (playtest: "no indication they are firing")
 		if bit32.band(effects, 2) ~= 0 then -- EF_MUZZLEFLASH
-			aw.flashUntil = c.time + 0.1
+			aw.flashUntil = c.time + 0.15
 		end
+		local flashing = (aw.flashUntil or 0) > c.time
+		local grip = currentGrip()
+		if flashing then
+			grip = grip * CFrame.new(-0.15, 0, 0) -- recoil along the barrel
+		end
+		part.CFrame = hand * grip
 		local light = aw.light
 		if not light or light.Parent ~= part then
 			light = Instance.new("PointLight")
@@ -433,8 +447,29 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 			light.Color = Color3.fromRGB(255, 190, 90)
 			light.Parent = part
 			aw.light = light
+			local muzzle = Instance.new("Attachment")
+			muzzle.Name = "Muzzle"
+			muzzle.Position = Vector3.new(part.Size.X / 2 + 0.1, 0, 0)
+			muzzle.Parent = part
+			local emitter = Instance.new("ParticleEmitter")
+			emitter.Rate = 0 -- burst-only via Emit()
+			emitter.Lifetime = NumberRange.new(0.06, 0.14)
+			emitter.Speed = NumberRange.new(4, 9)
+			emitter.SpreadAngle = Vector2.new(20, 20)
+			emitter.Color = ColorSequence.new(Color3.fromRGB(255, 220, 120), Color3.fromRGB(255, 120, 30))
+			emitter.LightEmission = 1
+			emitter.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.55),
+				NumberSequenceKeypoint.new(1, 0.05),
+			})
+			emitter.EmissionDirection = Enum.NormalId.Right -- +X = barrel
+			emitter.Parent = muzzle
+			aw.emitter = emitter
 		end
-		local flashing = (aw.flashUntil or 0) > c.time
+		if flashing and not aw.wasFlashing and aw.emitter then
+			(aw.emitter :: ParticleEmitter):Emit(6)
+		end
+		aw.wasFlashing = flashing
 		if light.Enabled ~= flashing then
 			light.Enabled = flashing
 		end
