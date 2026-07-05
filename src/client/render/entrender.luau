@@ -88,53 +88,17 @@ local function buildAliasBoxEnt(def: ModelDef, parent: Instance): RenderEnt
 	}
 end
 
+local MAX_BUILD_ATTEMPTS = 6 -- backoff retries total ~3s before the box fallback
+
 local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	if not textures.canUseMeshApi() then
 		return buildAliasBoxEnt(def, parent)
 	end
 	local am = def.alias :: mdl.AliasModel
-	local em = AssetService:CreateEditableMesh()
-	if not em then
-		return buildAliasBoxEnt(def, parent) -- memory budget exhausted
-	end
-
 	local skinW, skinH = am.skinwidth, am.skinheight
 
-	-- vertices: each mdl vertex gets a front-facing and a back-facing copy
-	-- (back-facing verts on the seam have s + skinwidth/2)
-	local vids = table.create(am.numverts)
-	local backVids = table.create(am.numverts)
-	for i = 1, am.numverts do
-		vids[i] = em:AddVertex(Vector3.zero)
-		backVids[i] = em:AddVertex(Vector3.zero)
-	end
-
-	local frontUV = table.create(am.numverts)
-	local backUV = table.create(am.numverts)
-	for i = 1, am.numverts do
-		local stv = am.stverts[i]
-		frontUV[i] = em:AddUV(Vector2.new((stv.s + 0.5) / skinW, (stv.t + 0.5) / skinH))
-		local bs = if stv.onseam then stv.s + skinW / 2 else stv.s
-		backUV[i] = em:AddUV(Vector2.new((bs + 0.5) / skinW, (stv.t + 0.5) / skinH))
-	end
-
-	for tri = 1, am.numtris do
-		local facesfront = am.facesfront[tri]
-		local i1 = am.vertindex[(tri - 1) * 3 + 1] + 1
-		local i2 = am.vertindex[(tri - 1) * 3 + 2] + 1
-		local i3 = am.vertindex[(tri - 1) * 3 + 3] + 1
-		local v1 = if facesfront then vids[i1] else backVids[i1]
-		local v2 = if facesfront then vids[i2] else backVids[i2]
-		local v3 = if facesfront then vids[i3] else backVids[i3]
-		local u1 = if facesfront then frontUV[i1] else backUV[i1]
-		local u2 = if facesfront then frontUV[i2] else backUV[i2]
-		local u3 = if facesfront then frontUV[i3] else backUV[i3]
-		local fid = em:AddTriangle(v1, v3, v2) -- flip winding for roblox
-		em:SetFaceUVs(fid, { u1, u3, u2 })
-	end
-
-	-- set frame 0 positions before building the part (a degenerate mesh
-	-- fails CreateMeshPartAsync)
+	-- frame 0 positions, computed once across attempts (a degenerate mesh
+	-- fails CreateMeshPartAsync); centered so the part pivot is exact
 	local frame0 = am.frames[1].frames[1]
 	local bmins = Vector3.new(math.huge, math.huge, math.huge)
 	local bmaxs = -bmins
@@ -146,44 +110,103 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		bmaxs = bmaxs:Max(rp)
 		positions[i] = rp
 	end
-	-- center the vertices on the mesh origin so the part pivot is exact
 	local centerVec = (bmins + bmaxs) / 2
-	for i = 1, am.numverts do
-		local rp = positions[i] - centerVec
-		em:SetPosition(vids[i], rp)
-		em:SetPosition(backVids[i], rp)
-	end
 	local centerOffset = CFrame.new(centerVec)
 
-	-- fixed-size copy: a dynamic EditableMesh reserves the 60k-vertex max
-	-- against the memory budget; the copy reserves only its actual size and
-	-- still allows SetPosition (frame animation)
-	local okF, fixedOrErr = pcall(function()
-		return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
-	end)
-	em:Destroy()
-	if not okF or not fixedOrErr then
-		warn(`[robloquake] alias fixed copy failed: {fixedOrErr}`)
-		return buildAliasBoxEnt(def, parent)
-	end
-	em = fixedOrErr :: EditableMesh
+	-- One build attempt: scratch dynamic EM → fixed-size copy → MeshPart.
+	-- The scratch must NEVER outlive the attempt: a dynamic EditableMesh
+	-- reserves the 60k-vertex maximum against the editable memory budget,
+	-- and one retained dynamic saturates it for the whole session (see
+	-- worldmesh — images created at that margin zombie into permanent
+	-- black). The fixed copy reserves only its actual size and still
+	-- allows SetPosition (frame animation). Returns nils on budget failure.
+	local function attempt(): (EditableMesh?, MeshPart?, { number }?, { number }?)
+		local em = AssetService:CreateEditableMesh()
+		if not em then
+			return nil, nil, nil, nil -- memory budget exhausted
+		end
 
-	-- remap vertex ids: the copy preserves creation order (front/back interleaved)
-	local ids = em:GetVertices()
-	for i = 1, am.numverts do
-		vids[i] = ids[2 * i - 1]
-		backVids[i] = ids[2 * i]
-	end
+		-- vertices: each mdl vertex gets a front-facing and a back-facing
+		-- copy (back-facing verts on the seam have s + skinwidth/2)
+		local vids = table.create(am.numverts)
+		local backVids = table.create(am.numverts)
+		for i = 1, am.numverts do
+			vids[i] = em:AddVertex(Vector3.zero)
+			backVids[i] = em:AddVertex(Vector3.zero)
+		end
 
-	local ok, partOrErr = pcall(function()
-		return AssetService:CreateMeshPartAsync(Content.fromObject(em), { CollisionFidelity = Enum.CollisionFidelity.Box })
-	end)
-	if not ok then
+		local frontUV = table.create(am.numverts)
+		local backUV = table.create(am.numverts)
+		for i = 1, am.numverts do
+			local stv = am.stverts[i]
+			frontUV[i] = em:AddUV(Vector2.new((stv.s + 0.5) / skinW, (stv.t + 0.5) / skinH))
+			local bs = if stv.onseam then stv.s + skinW / 2 else stv.s
+			backUV[i] = em:AddUV(Vector2.new((bs + 0.5) / skinW, (stv.t + 0.5) / skinH))
+		end
+
+		for tri = 1, am.numtris do
+			local facesfront = am.facesfront[tri]
+			local i1 = am.vertindex[(tri - 1) * 3 + 1] + 1
+			local i2 = am.vertindex[(tri - 1) * 3 + 2] + 1
+			local i3 = am.vertindex[(tri - 1) * 3 + 3] + 1
+			local v1 = if facesfront then vids[i1] else backVids[i1]
+			local v2 = if facesfront then vids[i2] else backVids[i2]
+			local v3 = if facesfront then vids[i3] else backVids[i3]
+			local u1 = if facesfront then frontUV[i1] else backUV[i1]
+			local u2 = if facesfront then frontUV[i2] else backUV[i2]
+			local u3 = if facesfront then frontUV[i3] else backUV[i3]
+			local fid = em:AddTriangle(v1, v3, v2) -- flip winding for roblox
+			em:SetFaceUVs(fid, { u1, u3, u2 })
+		end
+
+		for i = 1, am.numverts do
+			local rp = positions[i] - centerVec
+			em:SetPosition(vids[i], rp)
+			em:SetPosition(backVids[i], rp)
+		end
+
+		local okF, fixedOrErr = pcall(function()
+			return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+		end)
 		em:Destroy()
-		warn(`[robloquake] alias mesh failed: {partOrErr}`)
+		if not okF or not fixedOrErr then
+			return nil, nil, nil, nil
+		end
+		local fixed = fixedOrErr :: EditableMesh
+
+		-- remap vertex ids: the copy preserves creation order (front/back interleaved)
+		local ids = fixed:GetVertices()
+		for i = 1, am.numverts do
+			vids[i] = ids[2 * i - 1]
+			backVids[i] = ids[2 * i]
+		end
+
+		local ok, partOrErr = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromObject(fixed), { CollisionFidelity = Enum.CollisionFidelity.Box })
+		end)
+		if not ok then
+			fixed:Destroy()
+			return nil, nil, nil, nil
+		end
+		return fixed, partOrErr :: MeshPart, vids, backVids
+	end
+
+	-- budget pressure is transient (sighting-burst builds run through the
+	-- same budget); retry with backoff before degrading to the box
+	local em: EditableMesh?, part: MeshPart?, vids: { number }?, backVids: { number }?
+	for n = 1, MAX_BUILD_ATTEMPTS do
+		em, part, vids, backVids = attempt()
+		if em then
+			break
+		end
+		if n < MAX_BUILD_ATTEMPTS then
+			task.wait(0.1 * 2 ^ (n - 1))
+		end
+	end
+	if not em or not part or not vids or not backVids then
+		warn(`[robloquake] alias build failed for {am.name} after {MAX_BUILD_ATTEMPTS} attempts (box fallback)`)
 		return buildAliasBoxEnt(def, parent)
 	end
-	local part = partOrErr :: MeshPart
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false

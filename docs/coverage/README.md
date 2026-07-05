@@ -58,6 +58,22 @@ rows.
 
 ## Changelog
 
+### 2026-07-05 (black-texture root cause: editable-budget saturation — fix 1/3)
+- Root cause (session journal 2026-07-05): concurrent sighting-burst builds
+  each hold a scratch dynamic EditableMesh (60k-vertex reservation); when a
+  FixedSize copy failed at such a moment, worldmesh's fallback KEPT the
+  dynamic ("rendering dynamic") — one retained dynamic saturates the
+  editable memory budget for the whole session, after which mesh/image
+  creations fail loudly ("memory budget limits") and EditableImages created
+  at the margin succeed CPU-side but their GPU upload is silently refused:
+  permanently black skins/textures (the black monsters/backpacks/crates).
+- Fix 1/3: scratch dynamics NEVER outlive a build attempt. worldmesh
+  buildChunks and entrender buildAliasEnt now destroy the scratch on any
+  failure (fixed-copy refusal, CreateEditableMesh nil, CreateMeshPartAsync
+  error) and retry the whole attempt with exponential backoff (~3s total)
+  before dropping the batch (world) or degrading to the box ent (alias).
+  Fix 2/3 (single build queue) and 3/3 (caller retry backoff) follow.
+
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified
   weapons.qc (GPL, overlaid on reference qw-qc via build_progs.sh's new
