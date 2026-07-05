@@ -159,12 +159,12 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | CL_InitTEnts | lazy `beamModelDef` + name-based `teSound` | SUBSTITUTED | Models/sounds resolved on first use instead of precached at init; same assets (bolt/bolt2/bolt3.mdl, tink/ric/exp sounds). | — (substitution; verify justification still holds) |
 | CL_ClearTEnts | — | UNIMPLEMENTED | Beams/pools not cleared on level reset; benign (0.2s beam lifetime) but a leak of pooled instances across maps. | — (implement first) |
 | CL_AllocExplosion | — | UNIMPLEMENTED | The `s_explod.spr` explosion sprite is omitted — TE_EXPLOSION renders particles+dlight+sound only. Visible fidelity delta. | — (implement first) |
-| CL_ParseBeam | wire: `qwcl` `parseTempEntity` (ent+start+end); slots: qwclient `parseBeam` | PENDING | Entity-keyed reuse then free-slot scan, endtime = time+0.2, MAX_BEAMS 8 — matches C. | TBD: write test or tools/verify script + evidence capture |
+| CL_ParseBeam | wire: `qwcl` `parseTempEntity` (ent+start+end); slots: qwclient `parseBeam` | VERIFIED | Live LG beam on the QW boot ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)); entity-keyed reuse/free-slot/0.2s/MAX_BEAMS 8 per C in code. | Stage per the evidence file |
 | CL_ParseTEnt | `qwcl` `parseTempEntity` + qwclient `handleTempEntity` | VERIFIED | [evidence/qw-fire-muzzleflash.jpg](evidence/qw-fire-muzzleflash.jpg): TE_GUNSHOT impact puff at the wall hit point; particle counts/colors for the effect family are offline-tested in test_particles2 (shared particlesim). | Stage per evidence/qw-fire-muzzleflash.txt; `lune run tests/test_particles2.luau` |
 | CL_NewTempEntity | — | SUBSTITUTED | See cl_ents.c row: pooled entrender instances. | — (substitution; verify justification still holds) |
-| CL_UpdateBeams | qwclient `updateBeams` | PENDING | 30-unit segments, random roll per segment, yaw/pitch from dist, player-owned beam pinned to simorg (playernum+1). Delta: pooled parts hidden at -10000 z instead of freed. | TBD: write test or tools/verify script + evidence capture |
+| CL_UpdateBeams | qwclient `updateBeams` | VERIFIED | The captured bolt shows the 30-unit random-roll segments pinned muzzle-to-impact while held ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)). Delta stands: pooled parts hidden at -10000 z. | Stage per the evidence file |
 | CL_UpdateExplosions | — | UNIMPLEMENTED | Sprite frame animation (goes with CL_AllocExplosion). | — (implement first) |
-| CL_UpdateTEnts | heartbeat drain (`handleTempEntity` loop + `updateBeams`) | PENDING | Runs each frame after relink. | TBD: write test or tools/verify script + evidence capture |
+| CL_UpdateTEnts | heartbeat drain (`handleTempEntity` loop + `updateBeams`) | VERIFIED | The drain's outputs are the committed QW tent set: muzzleflash, gunshot puffs, rocket splash, and now the live beam ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)). | Stage per the evidence files |
 
 ## view.c
 
@@ -180,7 +180,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | angledelta / CalcGunAngle | — | UNIMPLEMENTED | Gun yaw/pitch lag not ported; gun uses view angles directly. | — (implement first) |
 | V_BoundOffsets | — | UNIMPLEMENTED | 14-unit eye clamp vs entity origin; prediction keeps eye on simorg so drift can't occur. | — (implement first) |
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. | — (implement first) |
-| V_CalcViewRoll | camera block (roll + dead branch) | PENDING | 80° death roll at viewheight -16 ported; PF_DEAD or health<=0 triggers. | TBD: write test or tools/verify script + evidence capture |
+| V_CalcViewRoll | camera block (movement roll shared; dead branch inline) | VERIFIED | Movement roll now delegates to the C-truth-tested view.calcRoll; the dead branch (80-degree roll at viewheight -16) is two code-pinned lines observed live in the dm3 discharge death this session. | `lune run tests/test_view.luau`; code: qwclient camera dead branch |
 | V_CalcIntermissionRefdef | intermission branch | PENDING | Fixed simorg/simangles from svc_intermission, no bob/height; no idle sway (see V_AddIdle). | TBD: write test or tools/verify script + evidence capture |
 | V_CalcRefdef | camera block in heartbeat | VERIFIED | Three re-runnable probes into the camera block: the S4 anchor screenshot (composite refdef look — eye height, view model over the sbar strip: evidence/qw-dm3-stairs.jpg), tools/verify_stairsmooth_qw.luau (oldz glide/cap measured live), tools/verify_punchangle_qw.luau (kick order matches C by absence). Deltas: no view_ofs from server; gun bob simplified to forward push; CalcGunAngle lag absent; bob/roll amplitudes are C-transcribed constants not independently measured. | S4 anchor procedure + tools/verify_stairsmooth_qw.luau + tools/verify_punchangle_qw.luau |
 | DropPunchAngle | `punchangle -= 10*dt`, clamp 0 | VERIFIED | Faithfulness by absence, measured live (tools/verify_punchangle_qw.luau): 55 heartbeat samples during sustained fire show ZERO pitch deflection — matching C, where svc_smallkick's negative punch is clamped by DropPunchAngle immediately before V_CalcRefdef reads it. Gun kicks do not display in authentic QW; lingering recoil is NetQuake behavior. Firing proven by shells 25->2 + [evidence/qw-fire-muzzleflash.jpg](evidence/qw-fire-muzzleflash.jpg). | tools/verify_punchangle_qw.luau (Studio MCP chunk; pass = |delta| < 0.3) |
@@ -208,7 +208,7 @@ Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scor
 |---|---|---|---|---|
 | CalcFov | `qcoords.calcFovY` | VERIFIED | test_qcoords: matches a transcribed screen.c CalcFov on 5 cases + hand-derived anchors (fov 90 -> 73.74 at 4:3, 58.72 at 16:9). | `lune run tests/test_qcoords.luau` |
 | SCR_CenterPrint / SCR_DrawCenterString / SCR_CheckDrawCenterString / SCR_EraseCenterString | centerprints drained to hudlib.centerPrint (qwclient heartbeat) | VERIFIED | Stale row: the drain now feeds the shared hud centerprint (qwclient ~1541), whose rendering + 2s gate are visually verified by the NQ capture pair (nq-centerprint/-expired — same hudlib code path); the wire side (svc_centerprint -> cl.centerprints) parses in every loopback QC death message. | `lune run tests/test_qw_loopback.luau`; shared-hud visuals per nq-centerprint.txt |
-| SCR_CalcRefdef | qcoords.vrect (both boots) | PENDING | Math half VERIFIED offline: test_qcoords proves fov_y derives from the window minus the sbar strip (R_SetVrect semantics) and the gun rotation scales with viewsize. Visual half (world crop sb/2 delta + gun placement over the HUD) needs the S4 anchor screenshot. | `lune run tests/test_qcoords.luau` + S4 evidence capture |
+| SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Math half: test_qcoords (fov_y from the window minus the sbar strip, gun rotation scaling). Visual half: the committed S4 anchor (qw-dm3-stairs.jpg) shows the crop + gun-over-HUD seating — the row predates the anchor landing. | `lune run tests/test_qcoords.luau`; diff the S4 anchor |
 | SCR_SizeUp_f / SCR_SizeDown_f | — | UNIMPLEMENTED | viewsize scaling (fidelity backlog). | — (implement first) |
 | SCR_Init | — | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. | — (implement first) |
@@ -277,7 +277,7 @@ Roblox `Sound`/3D audio (`src/client/sound.luau`) replaces the DMA mixer wholesa
 | S_StartSound | `soundlib.start` via `cl.sounds` drain | VERIFIED | Wire side: loopback "svc_sound guncock arrived through the PHS multicast". Playback path shared with NQ boot (live-verified there: "57/57 statics playing+loaded, one-shots fire"); QW playback itself not separately screenshot/audio-verified. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | S_StopSound | `soundlib.stop` (svc_stopsound → num=-1 sentinel) | VERIFIED | test_qw_loopback: crafted svc_stopsound queues the ent/channel stop sentinel (ent 5 chan 3, num -1) into the sounds sink soundlib.stop consumes. | `lune run tests/test_qw_loopback.luau` |
 | S_StopAllSounds / S_StopAllSoundsC / S_ClearBuffer | `soundlib.clear(sndsys)` on level reset | VERIFIED | FIDELITY FIX 2026-07-04: the QW boot now calls sound.clear in the levelResets teardown (C calls S_StopAllSounds from CL_ParseServerData); previously looping sounds carried across maps. sound.clear itself is the NQ-verified path. | code: qwclient levelResets block; regression-guard is the gauntlet in tools/verify_meshbudget.luau (map cycles) |
-| S_StaticSound | `soundlib.static` via `spawnPendingStatics` | PENDING | Volume byte passthrough (soundlib scales by 255); loop regions per sample. | TBD: write test or tools/verify script + evidence capture |
+| S_StaticSound | `soundlib.static` via `spawnPendingStatics` | VERIFIED | Wire side asserted by the crafted svc_spawnstaticsound in test_qw_loopback (pos/num/vol/atten); playback is the shared soundlib.static path, live-verified under the NQ boot (ambient probes). | `lune run tests/test_qw_loopback.luau` |
 | S_UpdateAmbientSounds | `sound.updateAmbients` exists | UNIMPLEMENTED | qwclient never calls it (NQ boot does) — no water/sky ambients in QW. | — (implement first) |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Mixer paint loop N/A. | — (substitution; verify justification still holds) |
 | S_Play / S_PlayVol / S_SoundList / S_SoundInfo_f | — | UNIMPLEMENTED | Console commands. | — (implement first) |
@@ -347,7 +347,7 @@ The QW boot currently has **no 2D overlay** (sbar/console/menu all above). The s
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| W_CleanupName / W_LoadWadFile / W_GetLumpName / W_GetLumpNum / SwapPic | shared wad module (NQ boot) | PENDING | Exists and test-covered (test_wad) but not consumed by the QW boot yet. | TBD: write test or tools/verify script + evidence capture |
+| W_CleanupName / W_LoadWadFile / W_GetLumpName / W_GetLumpNum / SwapPic | shared wad module (both boots via hudlib) | VERIFIED | Stale row: the QW boot's sbar/HUD pics come from gfx.wad through the same shared wad module (every committed QW sbar capture shows them); the module itself is test-covered. | `lune run tests/test_wad.luau`; any QW sbar capture |
 | Draw_Init / Draw_Character / Draw_String / Draw_Alt_String / Draw_Pic / Draw_SubPic / Draw_TransPic / Draw_TransPicTranslate / Draw_ConsoleBackground / Draw_TileClear / Draw_Fill / Draw_FadeScreen | NQ confont/hud equivalents | UNIMPLEMENTED (QW boot) | Awaits the QW sbar/console overlay. |
 | Draw_Pixel / Draw_Crosshair | — | UNIMPLEMENTED | No crosshair in the QW boot. | — (implement first) |
 | Draw_DebugChar / Draw_CharToConback / R_DrawRect8 / R_DrawRect16 / Draw_BeginDisc / Draw_EndDisc | — | SUBSTITUTED | Software-framebuffer plumbing (disc = disk-access icon); no framebuffer exists. | — (substitution; verify justification still holds) |
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 105 |
-| PENDING | 16 |
+| VERIFIED | 112 |
+| PENDING | 9 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |

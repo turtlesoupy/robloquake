@@ -1,0 +1,24 @@
+qw-lightning-beam.jpg / qw-pent-invuln-face.jpg (2026-07-04)
+=============================================================
+
+Engine: QW boot (engine="qw"), map dm4, deathmatch 0 (QuakeAssets
+attrs), id1 registered 1.06, viewsize 100.
+Staging: SVDBG_SetOrigin onto the DRY dm4 lightning gun spawn
+(528,-304,-128 — dm3's LG is underwater, where firing discharges for
+an authentic instant kill; recorded staging gotcha), impulse 8,
+RQ_ForceAttack held. Note: QW's shipped qwprogs.dat disables
+CheatCommand unconditionally (impulse 9 does nothing in ANY mode) —
+weapon evidence requires real pickups.
+
+qw-lightning-beam.jpg — the QW beam pipeline live and dry:
+"YOU GOT THE THUNDERBOLT" pickup notify, LG view model,
+CL_ParseBeam wire -> qwclient parseBeam slots, CL_UpdateBeams 30-unit
+random-roll segments zig-zagging muzzle-to-impact, cells draining
+(10), the green armor packet entity beside it.
+
+qw-pent-invuln-face.jpg — an accidental walk over dm4's Pentagram:
+armor 666 with the pent icon and the INVULNERABILITY FACE special on
+the sbar (the shared hudlib face-specials branch, QW boot).
+
+id1 CONTENT NOTE: local repo only; re-capture on LibreQuake before any
+public distribution.
