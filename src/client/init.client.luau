@@ -19,6 +19,7 @@ local cllib = require(engine.client.cl)
 local proto = require(engine.protocol)
 local qcoords = require(engine.client.qcoords)
 
+local avatarrender = require(script.render.avatarrender)
 local entrender = require(script.render.entrender)
 local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
@@ -308,6 +309,107 @@ local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
 	end
 end
 
+--------------------------------------------------------------------------
+-- Roblox avatars mode (product layer, toggled by the roblox_avatars
+-- attribute; live-flippable). Player entities render as the player's own
+-- avatar rig; the engine's alias renderer stays for rig loading, death/
+-- corpse frames, and toggle-off, so the wire protocol and engine core
+-- are untouched. The held weapon (server-mirrored RQWeaponModel attr)
+-- attaches to the rig's right hand as the matching world model.
+
+local avatarLocalFolder = Instance.new("Folder")
+avatarLocalFolder.Name = "QuakeAvatarRigs"
+avatarLocalFolder.Parent = Workspace
+
+local avatarEnts: { [number]: avatarrender.AvatarEnt } = {}
+type AvatarWeapon = { re: entrender.RenderEnt?, model: string? }
+local avatarWeapons: { [number]: AvatarWeapon } = {}
+
+local function avatarsOn(): boolean
+	return clientAssets:GetAttribute("roblox_avatars") == true
+end
+
+local function playerForSlot(slot: number): Player?
+	for _, p in Players:GetPlayers() do
+		if p:GetAttribute("RQSlot") == slot then
+			return p
+		end
+	end
+	return nil
+end
+
+-- held-weapon world models by viewmodel name (id1 has no world model
+-- for the axe or starting shotgun beyond g_shot, which doubles up)
+local V_TO_WORLD: { [string]: string } = {
+	["progs/v_shot.mdl"] = "progs/g_shot.mdl",
+	["progs/v_shot2.mdl"] = "progs/g_shot.mdl",
+	["progs/v_nail.mdl"] = "progs/g_nail.mdl",
+	["progs/v_nail2.mdl"] = "progs/g_nail2.mdl",
+	["progs/v_rock.mdl"] = "progs/g_rock.mdl",
+	["progs/v_rock2.mdl"] = "progs/g_rock2.mdl",
+	["progs/v_light.mdl"] = "progs/g_light.mdl",
+}
+-- grip: quake models point +X forward; hand forward is -Z
+local WEAPON_GRIP = CFrame.new(0, -0.2, 0) * CFrame.Angles(0, math.rad(90), 0)
+
+local function modelIndexByName(name: string): number?
+	for mi = 1, #c.model_precache - 1 do
+		if c.model_precache[mi + 1] == name then
+			return mi
+		end
+	end
+	return nil
+end
+
+local function hideAvatarWeapon(num: number)
+	local aw = avatarWeapons[num]
+	if aw and aw.re then
+		setEntVisible(aw.re :: entrender.RenderEnt, false)
+	end
+end
+
+local function hideAvatarEnt(num: number)
+	local ae = avatarEnts[num]
+	if ae then
+		avatarrender.setVisible(ae, false)
+	end
+	hideAvatarWeapon(num)
+end
+
+local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.AvatarEnt)
+	local aw = avatarWeapons[num]
+	if not aw then
+		aw = {}
+		avatarWeapons[num] = aw
+	end
+	local vmName = player:GetAttribute("RQWeaponModel")
+	local want = if typeof(vmName) == "string" then V_TO_WORLD[vmName] else nil
+	if aw.model ~= want then
+		if aw.re then
+			entrender.destroy(aw.re :: entrender.RenderEnt)
+			aw.re = nil
+		end
+		aw.model = want
+		if want then
+			local mi = modelIndexByName(want)
+			local def = if mi then getModelDef(mi) else nil
+			if def and def.kind == "alias" then
+				aw.re = entrender.create(def, entFolder)
+			end
+		end
+	end
+	local re = aw.re
+	local hand = avatarrender.rightHandCFrame(ae)
+	if re and re.part and hand then
+		-- mesh CENTER at the hand (no centerOffset: that re-centers to the
+		-- pickup's floor-level model origin and floats the gun overhead)
+		setEntVisible(re :: entrender.RenderEnt, true);
+		(re.part :: MeshPart).CFrame = hand * WEAPON_GRIP
+	elseif re then
+		setEntVisible(re :: entrender.RenderEnt, false)
+	end
+end
+
 -- world load on serverinfo
 local loadingUp = 0 -- 1 = loading, 2 = built, awaiting first rendered frame
 local worldBuildGen = 0 -- guards the deferred world build against fast changelevels
@@ -337,6 +439,15 @@ c.onServerInfo = function()
 	end
 	if gunEnt then
 		entrender.destroy(gunEnt)
+	end
+	for _, aw in avatarWeapons do
+		if aw.re then
+			entrender.destroy(aw.re :: entrender.RenderEnt)
+		end
+	end
+	table.clear(avatarWeapons)
+	for num in avatarEnts do
+		hideAvatarEnt(num) -- rigs persist across levels; weapons do not
 	end
 	for _, pool in beamPool do
 		for _, re in pool do
@@ -1627,6 +1738,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if re then
 				setEntVisible(re, false)
 			end
+			hideAvatarEnt(num)
 			continue
 		end
 
@@ -1652,6 +1764,41 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 		local def = getModelDef(e.modelindex) :: entrender.ModelDef
 		local rr = re :: entrender.RenderEnt
+
+		-- Roblox avatars mode: a LIVE player entity renders as its avatar
+		-- rig (player.mdl death/corpse frames are 41..102 — attacks sit
+		-- above them, so alive covers both bands)
+		local avatarPlayer: Player? = nil
+		if
+			avatarsOn()
+			and num <= c.maxclients
+			and c.model_precache[e.modelindex + 1] == "progs/player.mdl"
+			and (e.frame < 41 or e.frame > 102)
+		then
+			avatarPlayer = playerForSlot(num)
+		end
+		if avatarPlayer then
+			local ae = avatarEnts[num]
+			if not ae or ae.userId ~= avatarPlayer.UserId then
+				if ae then
+					avatarrender.destroy(ae)
+				end
+				ae = avatarrender.create(avatarPlayer.UserId, avatarLocalFolder)
+				avatarEnts[num] = ae :: avatarrender.AvatarEnt
+			end
+			local ae2 = ae :: avatarrender.AvatarEnt
+			if avatarrender.ready(ae2) then
+				setEntVisible(rr, false)
+				avatarrender.setVisible(ae2, true)
+				avatarrender.update(ae2, e.origin, e.angles, c.time)
+				updateAvatarWeapon(num, avatarPlayer :: Player, ae2)
+				continue
+			end
+			-- rig still loading: fall through to the alias renderer
+		else
+			hideAvatarEnt(num)
+		end
+
 		if rr.kind == "alias" then
 			local colors: number? = nil
 			if e.colormap > 0 and e.colormap <= c.maxclients and c.scores[e.colormap] then

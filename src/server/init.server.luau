@@ -138,6 +138,61 @@ end;
 -- TextChatService, and the server refuses raw wire say from anyone
 (svr :: any).suppressSay = true
 
+-- Roblox avatars mode (product layer): the roblox_avatars attribute on
+-- QuakeAssets toggles clients rendering player entities as avatar rigs.
+-- The server publishes one neutralized R15 rig per connected player
+-- under ReplicatedStorage.QuakeAvatars (clients clone it locally), and
+-- mirrors each player's Quake weapon as an RQWeaponModel attribute so
+-- clients can attach the matching world model to the rig's hand.
+local avatarsAttr = "roblox_avatars"
+bundle.clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
+assets:GetAttributeChangedSignal(avatarsAttr):Connect(function()
+	bundle.clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
+end)
+
+local avatarFolder = Instance.new("Folder")
+avatarFolder.Name = "QuakeAvatars"
+avatarFolder.Parent = ReplicatedStorage
+
+local function publishAvatarRig(player: Player)
+	if avatarFolder:FindFirstChild(tostring(player.UserId)) then
+		return
+	end
+	task.spawn(function()
+		local ok, rig = pcall(function()
+			local desc = Players:GetHumanoidDescriptionFromUserId(player.UserId)
+			local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+			model:SetAttribute("IdleAnim", tonumber(desc.IdleAnimation) or 0)
+			model:SetAttribute("RunAnim", tonumber(desc.RunAnimation) or 0)
+			return model
+		end)
+		if not ok or not rig then
+			warn(`[robloquake] avatar rig fetch failed for {player.Name}`)
+			return
+		end
+		for _, d in rig:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+				d.CanTouch = false
+			elseif d:IsA("BaseScript") then
+				d:Destroy() -- rigs are client-driven visuals only
+			end
+		end
+		rig.Name = tostring(player.UserId)
+		rig:PivotTo(CFrame.new(0, -100000, 0))
+		rig.Parent = avatarFolder
+	end)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	local rig = avatarFolder:FindFirstChild(tostring(player.UserId))
+	if rig then
+		rig:Destroy()
+	end
+end)
+
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do
 	local folder = ServerStorage:FindFirstChild("QuakeSaves")
@@ -207,6 +262,9 @@ local function connectPlayer(player: Player)
 		return true
 	end
 	host.connectClient(svr, slot)
+	-- avatars mode plumbing: clients map entity number -> Player by slot
+	player:SetAttribute("RQSlot", slot)
+	publishAvatarRig(player)
 	print(`[robloquake] {player.Name} connected as client {slot}`)
 end
 
@@ -265,6 +323,17 @@ RunService.Heartbeat:Connect(function(dt: number)
 	diagAccum += dt
 	if diagAccum > 0.5 then
 		diagAccum = 0
+		-- avatars mode: mirror each player's held weapon (v_ viewmodel
+		-- name) so clients can attach the matching world model to rigs
+		for player, slot in slotByPlayer do
+			local cl = svr.clients[slot]
+			if cl and cl.active and cl.edict then
+				local wm = vmlib.edString(svr.vm, cl.edict, defs.ent.weaponmodel)
+				if player:GetAttribute("RQWeaponModel") ~= wm then
+					player:SetAttribute("RQWeaponModel", wm)
+				end
+			end
+		end
 		local ServerStorage = game:GetService("ServerStorage")
 		ServerStorage:SetAttribute("SV_Time", svr.time)
 		ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
