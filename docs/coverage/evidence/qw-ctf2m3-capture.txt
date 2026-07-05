@@ -1,0 +1,5 @@
+Capture context: same boot, immediately after qw-ctf2m3-flag-carried.jpg.
+Carrier teleported home onto the BLUE flag (-1449,-102,~105): capture
+scored. Evidence: "BLUE 15" centerprint (Threewave's team-score status
+line — blue team credited the 15-point capture) and the flag-carrier icon
+cleared from the sbar.

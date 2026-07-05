@@ -1,0 +1,5 @@
+Capture context: same boot as qw-ctf2m3-bluebase.txt. Player (Blue team)
+teleported onto the RED flag at its base (-1440,-1488,~105) via
+SVDBG_SetOrigin; TeamCaptureFlagTouch picked it up over the live wire.
+Evidence: red flag-carrier icon lit in the sbar inventory row (right of
+center) + red "R" notify remnant top-center. Red base rock visible.

@@ -1,0 +1,6 @@
+Capture context: engine=qw gamedir=threewave startmap=ctf2m3 teamplay=419
+deathmatch=1, game=id1 base. Commit b8897a3 + live sync of assets/threewave
+chunks (pak0/pak1/pak2). Studio play mode, single client (turtlesoupy),
+auto-assigned Blue team. View: blue base spawn (-1339,-98,45) on ctf2m3
+"Spill the Blood" — Threewave's "Capture The Flag" MOTD centerprint, mod
+world textured+lit, shotgun view model, sbar 100 health / 50 armor.
