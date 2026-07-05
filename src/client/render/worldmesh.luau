@@ -13,7 +13,6 @@ local qcoords = require(engine.client.qcoords)
 local textures = require(script.Parent.textures)
 local tris = require(script.Parent.tris)
 local lightatlaslib = require(script.Parent.lightatlas)
-local buildqueue = require(script.Parent.buildqueue)
 
 local worldmesh = {}
 
@@ -267,7 +266,6 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 
 	type FaceData = { pos: { Vector3 }, uv: { Vector2 } }
 	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh cap
-	local MAX_BUILD_ATTEMPTS = 6 -- backoff retries total ~3s before dropping a batch
 
 	-- generic chunked mesh builder: positions+uvs -> MeshParts in container
 	local function buildChunks(faces: { FaceData }, partName: string, img: EditableImage?, fallbackColor: Color3?, translucentMap: boolean, partsOut: { MeshPart }?)
@@ -282,6 +280,12 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			chunk = {}
 			chunkVerts = 0
 
+			local em = AssetService:CreateEditableMesh()
+			if not em then
+				warn("[robloquake] EditableMesh budget exhausted; skipping batch")
+				return
+			end
+
 			local mins = Vector3.new(math.huge, math.huge, math.huge)
 			local maxs = -mins
 			for _, fd in batch do
@@ -292,67 +296,45 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end
 			local center = (mins + maxs) / 2
 
-			-- One build attempt: scratch dynamic EM → fixed-size copy →
-			-- MeshPart. The scratch must NEVER outlive the attempt: one
-			-- retained dynamic (60k reservation) saturates the budget for
-			-- the whole session, and images created at that margin succeed
-			-- CPU-side but their GPU upload is silently refused — black
-			-- textures until restart. Returns nil on budget failure.
-			local function attempt(): MeshPart?
-				local em = AssetService:CreateEditableMesh()
-				if not em then
-					return nil
+			for _, fd in batch do
+				local vids = {}
+				local uvids = {}
+				for i, rp in fd.pos do
+					table.insert(vids, em:AddVertex(rp - center))
+					table.insert(uvids, em:AddUV(fd.uv[i]))
 				end
-				for _, fd in batch do
-					local vids = {}
-					local uvids = {}
-					for i, rp in fd.pos do
-						table.insert(vids, em:AddVertex(rp - center))
-						table.insert(uvids, em:AddUV(fd.uv[i]))
-					end
-					-- quake winds clockwise from the front; roblox fronts are CCW
-					for k = 3, #vids do
-						local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
-						em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
-					end
+				-- quake winds clockwise from the front; roblox fronts are CCW
+				for k = 3, #vids do
+					local fid = em:AddTriangle(vids[1], vids[k], vids[k - 1])
+					em:SetFaceUVs(fid, { uvids[1], uvids[k], uvids[k - 1] })
 				end
-				local ok, fixedOrErr = pcall(function()
-					return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
-				end)
-				em:Destroy()
-				if not ok or not fixedOrErr then
-					return nil
-				end
-				local fixed = fixedOrErr :: EditableMesh
-				local ok2, partOrErr = pcall(function()
-					return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))
-				end)
-				if not ok2 then
-					fixed:Destroy()
-					return nil
-				end
-				retainMesh(container, fixed)
-				return partOrErr :: MeshPart
 			end
 
-			-- budget pressure is transient (sighting-burst builds); retry
-			-- with backoff rather than dropping the batch outright. Each
-			-- attempt holds the exclusive build slot: one scratch dynamic
-			-- EM alive at a time across worldmesh + entrender.
-			local part: MeshPart? = nil
-			for n = 1, MAX_BUILD_ATTEMPTS do
-				part = buildqueue.run(attempt)
-				if part then
-					break
-				end
-				if n < MAX_BUILD_ATTEMPTS then
-					task.wait(0.1 * 2 ^ (n - 1))
-				end
+			-- fixed-size copy releases the 60k-vertex reservation; if the
+			-- budget can't fit the copy, keep rendering from the dynamic
+			-- mesh rather than dropping the batch (a hole in the world)
+			local ok, fixedOrErr = pcall(function()
+				return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+			end)
+			local fixed: EditableMesh
+			if ok and fixedOrErr then
+				em:Destroy()
+				fixed = fixedOrErr :: EditableMesh
+			else
+				warn(`[robloquake] fixed mesh copy failed for {partName} (rendering dynamic): {fixedOrErr}`)
+				fixed = em
 			end
-			if not part then
-				warn(`[robloquake] mesh build failed for {partName} after {MAX_BUILD_ATTEMPTS} attempts; batch dropped`)
+
+			local ok2, partOrErr = pcall(function()
+				return AssetService:CreateMeshPartAsync(Content.fromObject(fixed))
+			end)
+			if not ok2 then
+				fixed:Destroy()
+				warn(`[robloquake] mesh build failed for {partName}: {partOrErr}`)
 				return
 			end
+			local part = partOrErr :: MeshPart
+			retainMesh(container, fixed)
 
 			part.Name = partName
 			part.Anchored = true
