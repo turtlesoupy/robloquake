@@ -17,6 +17,10 @@ local textures = require(script.Parent.textures)
 
 local entrender = {}
 
+-- bumped whenever a translated skin image is created mid-game; clients
+-- watch it to schedule a texverify pass over the new image
+entrender.translationCount = 0
+
 export type ModelDef = {
 	kind: "alias" | "sprite" | "brush" | "none",
 	alias: mdl.AliasModel?,
@@ -46,6 +50,8 @@ export type RenderEnt = {
 	backVids: { number }?,
 	lastFrame: number,
 	lastSkinKey: number?,
+	boundImg: EditableImage?, -- identity of the image actually bound
+	boundSpriteImg: EditableImage?,
 	-- sprite
 	billboardPart: Part?,
 	billboardImage: ImageLabel?,
@@ -191,13 +197,15 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	part.CastShadow = false
 	part.Material = Enum.Material.SmoothPlastic
 	local skinImages = def.skinImages
-	if skinImages and skinImages[1] then
-		part.TextureContent = Content.fromObject(skinImages[1])
+	local initialImg = if skinImages then skinImages[1] else nil
+	if initialImg then
+		part.TextureContent = Content.fromObject(initialImg)
 	end
 	part.Parent = parent
 
 	return {
 		kind = "alias",
+		boundImg = initialImg,
 		modelindex = 0,
 		em = em,
 		part = part,
@@ -254,33 +262,40 @@ function entrender.updateAlias(
 		end
 	end
 
-	-- skins (player entities get color-translated variants)
+	-- skins (player entities get color-translated variants). Creation is
+	-- gated on the skin key (a failed translation isn't retried every
+	-- frame) but the BIND is identity-gated, so texverify swaps take
+	-- effect on live ents the next frame.
 	local wantSkinKey = (skinnum + 1) + (if colors then (colors + 1) * 1000 else 0)
 	if re.lastSkinKey ~= wantSkinKey then
 		re.lastSkinKey = wantSkinKey
-		local img: EditableImage? = nil
 		if colors and def.translatedSkins and def.skinPixels then
 			local cache = def.translatedSkins :: { [number]: EditableImage }
-			img = cache[colors]
-			if not img then
+			if not cache[colors] then
 				local translated = textures.translatePixels(
 					def.skinPixels :: buffer,
 					(def.skinW :: number) * (def.skinH :: number),
 					colors
 				)
-				img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
+				local img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
 				if img then
 					cache[colors] = img
+					entrender.translationCount += 1
 				end
 			end
 		end
-		if not img then
-			local skinImages = def.skinImages
-			img = if skinImages then skinImages[skinnum + 1] else nil
-		end
-		if img then
-			part.TextureContent = Content.fromObject(img)
-		end
+	end
+	local img: EditableImage? = nil
+	if colors and def.translatedSkins then
+		img = (def.translatedSkins :: { [number]: EditableImage })[colors]
+	end
+	if not img then
+		local skinImages = def.skinImages
+		img = if skinImages then skinImages[skinnum + 1] else nil
+	end
+	if img and re.boundImg ~= img then
+		re.boundImg = img
+		part.TextureContent = Content.fromObject(img)
 	end
 
 	-- entity angles: pitch, yaw, roll (quake degrees). Alias models pitch
@@ -311,8 +326,9 @@ local function buildSpriteEnt(def: ModelDef, parent: Instance): RenderEnt
 	img.Size = UDim2.fromScale(1, 1)
 	img.ResampleMode = Enum.ResamplerMode.Pixelated
 	local spriteImages = def.spriteImages
-	if spriteImages and spriteImages[1] then
-		img.ImageContent = Content.fromObject(spriteImages[1])
+	local initialSprite = if spriteImages then spriteImages[1] else nil
+	if initialSprite then
+		img.ImageContent = Content.fromObject(initialSprite)
 	end
 	img.Parent = gui
 
@@ -321,6 +337,7 @@ local function buildSpriteEnt(def: ModelDef, parent: Instance): RenderEnt
 		kind = "sprite",
 		modelindex = 0,
 		lastFrame = -1,
+		boundSpriteImg = initialSprite,
 		billboardPart = part,
 		billboardImage = img,
 	}
@@ -329,13 +346,13 @@ end
 function entrender.updateSprite(re: RenderEnt, def: ModelDef, origin: vector, frame: number)
 	local part = re.billboardPart :: Part
 	part.Position = qcoords.toRoblox(origin)
-	if frame ~= re.lastFrame then
+	local spriteImages = def.spriteImages
+	local img = re.billboardImage
+	local want = if spriteImages then spriteImages[frame + 1] else nil
+	if img and want and re.boundSpriteImg ~= want then
+		re.boundSpriteImg = want
 		re.lastFrame = frame
-		local spriteImages = def.spriteImages
-		local img = re.billboardImage
-		if spriteImages and img and spriteImages[frame + 1] then
-			img.ImageContent = Content.fromObject(spriteImages[frame + 1])
-		end
+		img.ImageContent = Content.fromObject(want)
 	end
 end
 
@@ -487,6 +504,58 @@ function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 			end
 		end
 		def.spriteImages = imgs
+	end
+end
+
+-- texverify slots for every image this def owns (skins, sprite frames,
+-- translated skins). Source pixels ride along so zombies can be
+-- recreated byte-identically.
+function entrender.collectVerifySlots(def: ModelDef, pal: textures.Palette, out: { any })
+	if def.kind == "alias" and def.skinImages then
+		local am = def.alias :: mdl.AliasModel
+		for si, skin in am.skins do
+			if (def.skinImages :: { EditableImage })[si] then
+				local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
+				table.insert(out, {
+					tbl = def.skinImages,
+					key = si,
+					pixels = pixels,
+					w = am.skinwidth,
+					h = am.skinheight,
+					alphaIndex = false,
+					pal = pal,
+				})
+			end
+		end
+		if def.translatedSkins and def.skinPixels then
+			for colors in def.translatedSkins :: { [number]: EditableImage } do
+				table.insert(out, {
+					tbl = def.translatedSkins,
+					key = colors,
+					pixels = textures.translatePixels(def.skinPixels :: buffer, (def.skinW :: number) * (def.skinH :: number), colors),
+					w = def.skinW :: number,
+					h = def.skinH :: number,
+					alphaIndex = false,
+					pal = pal,
+				})
+			end
+		end
+	elseif def.kind == "sprite" and def.spriteImages then
+		local sm = def.sprite :: spr.SpriteModel
+		for fi, fd in sm.frames do
+			if (def.spriteImages :: { EditableImage })[fi] then
+				local f = fd.frames[1]
+				table.insert(out, {
+					tbl = def.spriteImages,
+					key = fi,
+					pixels = f.pixels,
+					w = f.width,
+					h = f.height,
+					alphaIndex = true,
+					pal = pal,
+				})
+			end
+		end
 	end
 end
 

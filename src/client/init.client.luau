@@ -31,6 +31,7 @@ local soundlib = require(script.sound)
 local input = require(script.input)
 local viewlib = require(engine.client.view)
 local viewmodellib = require(script.render.viewmodel)
+local texverifylib = require(script.render.texverify)
 
 --------------------------------------------------------------------------
 -- filesystem from the server-published client bundle (gfx + precached
@@ -406,6 +407,17 @@ c.onServerInfo = function()
 			end
 		end
 		print(`[cl] precache defs built: {eagerBuilt}`)
+		-- closed-loop verification: render every def image, capture the
+		-- screen, read the tiles back, recreate any that went zombie
+		local slots: { any } = {}
+		for mi = 1, #c.model_precache - 1 do
+			local def = modelDefs[mi]
+			if def then
+				entrender.collectVerifySlots(def, pal, slots)
+			end
+		end
+		local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
+		print(`[cl] texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create
@@ -1401,6 +1413,7 @@ end
 local sendAccumulator = 0
 local lastStyleFrame = -1
 local diagAccumulator = 0
+local verifiedTranslationCount = 0
 local statics_spawned = false
 
 RunService.Heartbeat:Connect(function(dt: number)
@@ -1827,6 +1840,27 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if c.entities[i] and c.entities[i].visible then
 				visible += 1
 			end
+		end
+		-- verify translated skins created since the last pass (players
+		-- joining / changing colours mid-game)
+		if entrender.translationCount ~= verifiedTranslationCount then
+			local snapshot = entrender.translationCount
+			task.spawn(function()
+				task.wait(1)
+				if entrender.translationCount ~= snapshot then
+					return -- still churning; a later tick reschedules
+				end
+				verifiedTranslationCount = snapshot
+				local tslots: { any } = {}
+				for _, def in modelDefs do
+					if (def :: any).translatedSkins and next((def :: any).translatedSkins) then
+						entrender.collectVerifySlots(def, pal, tslots)
+					end
+				end
+				if #tslots > 0 then
+					texverifylib.verifySlots(tslots :: any)
+				end
+			end)
 		end
 		workspace:SetAttribute("RQ_Signon", c.signon)
 		workspace:SetAttribute("RQ_Time", c.time)

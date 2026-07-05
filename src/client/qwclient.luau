@@ -26,6 +26,7 @@ local mdllib = require(engine.models.mdl)
 
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
+local texverifylib = require(script.Parent.render.texverify)
 local lightatlaslib = require(script.Parent.render.lightatlas)
 local lightpoint = require(engine.client.lightpoint)
 local viewlib = require(engine.client.view)
@@ -347,8 +348,42 @@ return function()
 				end
 			end
 			print(`[robloquake] qw precache defs built: {eagerBuilt}`)
+			-- closed-loop verification (see the NQ boot's twin pass)
+			local slots: { any } = {}
+			for mi in cl.model_name do
+				local def = modelDefs[mi]
+				if def then
+					entrender.collectVerifySlots(def, pal, slots)
+				end
+			end
+			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
+			print(`[robloquake] qw texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
 		end)
 	end
+
+	-- verify translated skins created mid-game (see the NQ twin)
+	task.spawn(function()
+		local verified = 0
+		while true do
+			task.wait(2)
+			if entrender.translationCount ~= verified then
+				local snapshot = entrender.translationCount
+				task.wait(1)
+				if entrender.translationCount == snapshot then
+					verified = snapshot
+					local tslots: { any } = {}
+					for _, def in modelDefs do
+						if (def :: any).translatedSkins and next((def :: any).translatedSkins) then
+							entrender.collectVerifySlots(def, pal, tslots)
+						end
+					end
+					if #tslots > 0 then
+						texverifylib.verifySlots(tslots :: any)
+					end
+				end
+			end
+		end
+	end)
 
 	-- statics arrive in the prespawn signon, after the world builds:
 	-- spawn whatever is new each frame

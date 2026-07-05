@@ -212,4 +212,31 @@ else
 	t.check(true, "flame2 frame 0 not a group on this pak (skip)")
 end
 
+--------------------------------------------------------------------------
+-- textures.sourceHasArt: decidability gate for the render round-trip
+-- (only sources with bright art can be judged zombie-vs-legit-dark)
+do
+	local idPal = { r = {}, g = {}, b = {} }
+	for i = 0, 255 do
+		idPal.r[i + 1] = i
+		idPal.g[i + 1] = i
+		idPal.b[i + 1] = i
+	end
+	local dark = buffer.create(64 * 64) -- all index 0 = black
+	t.check(not textures.sourceHasArt(dark, 64, 64, idPal), "sourceHasArt: all-black source is undecidable")
+	local bright = buffer.create(64 * 64)
+	for i = 0, 64 * 64 - 1 do
+		buffer.writeu8(bright, i, 200)
+	end
+	t.check(textures.sourceHasArt(bright, 64, 64, idPal), "sourceHasArt: bright source has art")
+	-- art only in the centre band (like a skin sheet)
+	local mid = buffer.create(64 * 64)
+	for y = 24, 40 do
+		for x = 0, 63 do
+			buffer.writeu8(mid, y * 64 + x, 180)
+		end
+	end
+	t.check(textures.sourceHasArt(mid, 64, 64, idPal), "sourceHasArt: centre-band art detected")
+end
+
 t.finish("test_render_misc")

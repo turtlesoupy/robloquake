@@ -175,6 +175,25 @@ function textures.pageAlloc(page: ImagePage, pixels: buffer, width: number, heig
 	return Vector2.new(x, y)
 end
 
+-- PURE (lune-tested): does the source image's centre region contain any
+-- bright art? Mostly-dark sources are skipped (their tiles would read
+-- black legitimately).
+function textures.sourceHasArt(pixels: buffer, w: number, h: number, pal: textures.Palette): boolean
+	local samples = 0
+	for ty = 1, 3 do
+		local y = math.floor(h * ty / 4)
+		for tx = 0, 7 do
+			local x = math.floor(w * (tx + 0.5) / 8)
+			local idx = buffer.readu8(pixels, y * w + x)
+			local bright = pal.r[idx + 1] + pal.g[idx + 1] + pal.b[idx + 1]
+			if bright > 90 then
+				samples += 1
+			end
+		end
+	end
+	return samples >= 2
+end
+
 -- Player color translation (CL_NewTranslation): shirt row 16-31 and pants
 -- row 96-111 are remapped from the top/bottom color ranges. Backwards
 -- ranges (>= 128) are reversed.
