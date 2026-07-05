@@ -167,7 +167,18 @@ crosshairLabel.Parent = overlayGui
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
+-- template builds in flight / permanently failed: worldmesh.build yields
+-- in the async mesh APIs, so getModelDef must never build inline — the
+-- next Heartbeat would re-enter and start a duplicate build (the
+-- sighting-burst pile-up that saturated the editable memory budget)
+local templateBuilding: { [string]: boolean } = {}
+local templateFailed: { [string]: boolean } = {}
 local worldModels: { bsplib.Model } = {}
+-- generation stamp for every deferred build; bumped by onServerInfo so
+-- late-completing builds from the old level are discarded, not installed.
+-- Declared ABOVE every closure that captures it (locals referenced before
+-- their declaration line silently resolve as globals).
+local worldBuildGen = 0
 
 -- animated lightstyle vertices across all built brush geometry
 local lightAnim: { worldmesh.AnimEntry } = {}
@@ -220,11 +231,51 @@ local beamPool: { [string]: { entrender.RenderEnt } } = {}
 
 
 local renderEnts: { [number]: entrender.RenderEnt } = {} -- by entity number
+-- entity builds in flight (entrender.create yields) + failure backoff:
+-- a failed build must NOT retry every frame — the retry hammer worsens
+-- exactly the budget pressure that failed it
+local entBuilding: { [number]: boolean } = {}
+local entRetryAt: { [number]: number } = {}
+local entRetryCount: { [number]: number } = {}
+local beamBuilding: { [string]: boolean } = {}
 local staticEnts: { { re: entrender.RenderEnt, se: any, def: entrender.ModelDef } } = {}
+local statics_spawned = false
 local gunEnt: entrender.RenderEnt? = nil
 local gunModelIndex = 0
 
-local function getModelDef(modelindex: number): entrender.ModelDef?
+-- Kick a brush-template build off-thread, once. worldmesh.build yields in
+-- the async mesh APIs, so building inline (the old behavior) let every
+-- following Heartbeat re-enter and start a duplicate build — N concurrent
+-- scratch dynamic EMs is what transiently saturated the editable budget.
+local function startTemplateBuild(name: string, model: bsplib.Model)
+	if templateBuilding[name] then
+		return
+	end
+	templateBuilding[name] = true
+	local gen = worldBuildGen
+	task.spawn(function()
+		local template, anim = worldmesh.build(model, pal, nil :: any, name)
+		local takenAnims = worldmesh.takeTextureAnims()
+		if gen ~= worldBuildGen then
+			-- changelevel superseded this build (teardown already cleared
+			-- templateBuilding); release the meshes it retained
+			worldmesh.destroyBuild(template)
+			return
+		end
+		templateBuilding[name] = nil
+		for _, e in anim do
+			table.insert(lightAnim, e)
+		end
+		for _, ta in takenAnims do
+			table.insert(textureAnims, ta)
+		end
+		brushTemplates[name] = template
+	end)
+end
+
+-- second return = "pending": a template build is in flight; the def is not
+-- cached yet and the caller should simply try again next frame
+local function getModelDef(modelindex: number): (entrender.ModelDef?, boolean?)
 	local def = modelDefs[modelindex]
 	if def then
 		return def
@@ -237,16 +288,14 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 	if name:sub(1, 1) == "*" then
 		local sub = tonumber(name:sub(2)) :: number
 		local template = brushTemplates[name]
-		if not template and worldModels[sub + 1] then
-			local anim
-			template, anim = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
-			for _, e in anim do
-				table.insert(lightAnim, e)
+		if not template then
+			if templateFailed[name] or not worldModels[sub + 1] then
+				def = { kind = "none", flags = 0 }
+				modelDefs[modelindex] = def
+				return def
 			end
-			for _, ta in worldmesh.takeTextureAnims() do
-				table.insert(textureAnims, ta)
-			end
-			brushTemplates[name] = template
+			startTemplateBuild(name, worldModels[sub + 1])
+			return nil, true
 		end
 		def = { kind = "brush", flags = 0, brushModel = template }
 	elseif name:sub(-4) == ".mdl" then
@@ -273,26 +322,35 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			def = { kind = "none", flags = 0 } -- the world itself
 		else
 			-- standalone brush models: ammo/health boxes (b_*.bsp)
-			demandFile(name)
-			local buf = vfslib.loadFile(fs, name, true)
 			local template = brushTemplates[name]
-			if not template and buf then
-				local models = bsplib.load(name, buf)
-				local anim
-				template, anim = worldmesh.build(models[1], pal, nil :: any, name)
-				for _, e in anim do
-					table.insert(lightAnim, e)
+			if not template then
+				if templateFailed[name] then
+					def = { kind = "none", flags = 0 }
+					modelDefs[modelindex] = def
+					return def
 				end
-				for _, ta in worldmesh.takeTextureAnims() do
-					table.insert(textureAnims, ta)
+				if not templateBuilding[name] then
+					templateBuilding[name] = true
+					local gen = worldBuildGen
+					task.spawn(function()
+						demandFile(name)
+						local buf = vfslib.loadFile(fs, name, true) -- waits out replication
+						if gen ~= worldBuildGen then
+							return
+						end
+						if not buf then
+							templateBuilding[name] = nil
+							templateFailed[name] = true
+							return
+						end
+						local models = bsplib.load(name, buf)
+						templateBuilding[name] = nil
+						startTemplateBuild(name, models[1])
+					end)
 				end
-				brushTemplates[name] = template
+				return nil, true
 			end
-			if template then
-				def = { kind = "brush", flags = 0, brushModel = template }
-			else
-				def = { kind = "none", flags = 0 }
-			end
+			def = { kind = "brush", flags = 0, brushModel = template }
 		end
 	else
 		def = { kind = "none", flags = 0 }
@@ -310,7 +368,6 @@ end
 
 -- world load on serverinfo
 local loadingUp = 0 -- 1 = loading, 2 = built, awaiting first rendered frame
-local worldBuildGen = 0 -- guards the deferred world build against fast changelevels
 c.onServerInfo = function()
 	print(`[cl] serverinfo: {c.levelname}`)
 	-- SCR_BeginLoadingPlaque: sounds stop, notify/centerprints clear, the
@@ -350,13 +407,25 @@ c.onServerInfo = function()
 	end
 	table.clear(modelDefs)
 	table.clear(brushTemplates)
+	table.clear(templateBuilding)
+	table.clear(templateFailed)
 	table.clear(renderEnts)
+	table.clear(entBuilding)
+	table.clear(entRetryAt)
+	table.clear(entRetryCount)
 	table.clear(staticEnts)
+	statics_spawned = false -- statics are per-level (svc_spawnstatic)
 	gunEnt = nil
 	gunModelIndex = 0
 	table.clear(beams)
+	for _, def in beamDefs do
+		if def then
+			entrender.destroyDef(def) -- beam defs held skin images (leaked before)
+		end
+	end
 	table.clear(beamDefs)
 	table.clear(beamPool)
+	table.clear(beamBuilding)
 
 	local worldName = c.model_precache[2]
 	demandFile(worldName)
@@ -1026,7 +1095,19 @@ local function updateBeams()
 					end
 					local re = pool[n]
 					if not re then
+						if beamBuilding[b.modelName] then
+							break -- a segment build is in flight; don't pile on
+						end
+						beamBuilding[b.modelName] = true
+						local gen = worldBuildGen
 						re = entrender.create(def, entFolder)
+						beamBuilding[b.modelName] = nil
+						if gen ~= worldBuildGen then
+							if re then
+								entrender.destroy(re)
+							end
+							break
+						end
 						if not re then
 							break
 						end
@@ -1385,7 +1466,6 @@ end
 local sendAccumulator = 0
 local lastStyleFrame = -1
 local diagAccumulator = 0
-local statics_spawned = false
 
 RunService.Heartbeat:Connect(function(dt: number)
 	cbufFrame()
@@ -1531,26 +1611,45 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 	end
 
-	-- statics (once, after signon)
+	-- statics (once per level, after signon). Runs off-thread: creates
+	-- yield in the async mesh APIs, and brush-model defs may still be
+	-- pending their template build.
 	if not statics_spawned and #c.statics > 0 then
 		statics_spawned = true
-		for _, se in c.statics do
-			local def = getModelDef(se.modelindex)
-			if def and def.kind ~= "none" then
-				local re = entrender.create(def, entFolder)
-				if re then
-					if re.kind == "alias" then
-						entrender.updateAlias(re, def, se.origin, se.angles, se.frame, se.skinnum, se.syncbase, c.time)
-						entrender.setLight(re, lightpoint.at(worldModels[1], se.origin, styleValueFor))
-					elseif re.kind == "sprite" then
-						entrender.updateSprite(re, def, se.origin, se.frame)
-					elseif re.kind == "brush" then
-						entrender.updateBrush(re, se.origin, se.angles)
+		local gen = worldBuildGen
+		task.spawn(function()
+			for _, se in c.statics do
+				local def, pending = getModelDef(se.modelindex)
+				local deadline = os.clock() + 5
+				while pending and os.clock() < deadline and gen == worldBuildGen do
+					task.wait(0.1) -- template build in flight
+					def, pending = getModelDef(se.modelindex)
+				end
+				if gen ~= worldBuildGen then
+					return -- changelevel superseded this pass
+				end
+				if def and def.kind ~= "none" then
+					local re = entrender.create(def, entFolder)
+					if gen ~= worldBuildGen then
+						if re then
+							entrender.destroy(re)
+						end
+						return
 					end
-					table.insert(staticEnts, { re = re, se = se, def = def })
+					if re then
+						if re.kind == "alias" then
+							entrender.updateAlias(re, def, se.origin, se.angles, se.frame, se.skinnum, se.syncbase, c.time)
+							entrender.setLight(re, lightpoint.at(worldModels[1], se.origin, styleValueFor))
+						elseif re.kind == "sprite" then
+							entrender.updateSprite(re, def, se.origin, se.frame)
+						elseif re.kind == "brush" then
+							entrender.updateBrush(re, se.origin, se.angles)
+						end
+						table.insert(staticEnts, { re = re, se = se, def = def })
+					end
 				end
 			end
-		end
+		end)
 	end
 
 	-- statics with framegroup models (torch flames) animate by time, so
@@ -1582,16 +1681,59 @@ RunService.Heartbeat:Connect(function(dt: number)
 			re = nil
 		end
 		if not re then
+			if entBuilding[num] then
+				continue -- build in flight (the async mesh APIs yield)
+			end
+			local retryAt = entRetryAt[num]
+			if retryAt and c.time < retryAt then
+				continue -- failed build backing off, not hammering
+			end
 			local def = getModelDef(e.modelindex)
 			if not def or def.kind == "none" then
 				continue
 			end
-			re = entrender.create(def, entFolder)
-			if not re then
-				continue
-			end
-			re.modelindex = e.modelindex
-			renderEnts[num] = re
+			-- build off-thread: creating inline would stall every other
+			-- entity this frame AND let the next Heartbeat re-enter and
+			-- start a duplicate build for the same entity
+			entBuilding[num] = true
+			local wantIndex = e.modelindex
+			local gen = worldBuildGen
+			task.spawn(function()
+				local built = entrender.create(def, entFolder)
+				entBuilding[num] = nil
+				if gen ~= worldBuildGen then
+					if built then
+						entrender.destroy(built)
+					end
+					return
+				end
+				if not built then
+					-- budget exhausted even after entrender's own backoff
+					local n = (entRetryCount[num] or 0) + 1
+					entRetryCount[num] = n
+					entRetryAt[num] = c.time + math.min(2 ^ n, 30)
+					return
+				end
+				entRetryCount[num] = nil
+				entRetryAt[num] = nil
+				local cur = c.entities[num]
+				if renderEnts[num] or not cur or cur.modelindex ~= wantIndex then
+					entrender.destroy(built) -- superseded while building
+					return
+				end
+				built.modelindex = wantIndex
+				renderEnts[num] = built
+				-- pose immediately so the part doesn't sit unposed at the
+				-- map origin until the next frame's update pass
+				if def.kind == "alias" then
+					entrender.updateAlias(built, def, cur.origin, cur.angles, cur.frame, cur.skinnum, cur.syncbase, c.time)
+				elseif def.kind == "sprite" then
+					entrender.updateSprite(built, def, cur.origin, cur.frame)
+				elseif def.kind == "brush" then
+					entrender.updateBrush(built, cur.origin, cur.angles)
+				end
+			end)
+			continue -- poses/visibility pick up next frame once installed
 		end
 		setEntVisible(re :: entrender.RenderEnt, true)
 
@@ -1720,8 +1862,17 @@ RunService.Heartbeat:Connect(function(dt: number)
 			gunModelIndex = refdef.gunmodel
 			local def = getModelDef(refdef.gunmodel)
 			if def and def.kind == "alias" then
-				-- the gun renders through its own projection (viewmodel.luau)
-			gunEnt = entrender.create(def, vmgun.world)
+				-- the gun renders through its own projection (viewmodel.luau);
+				-- create yields, so guard against a changelevel mid-build
+				local gen = worldBuildGen
+				local built = entrender.create(def, vmgun.world)
+				if gen ~= worldBuildGen then
+					if built then
+						entrender.destroy(built)
+					end
+				else
+					gunEnt = built
+				end
 			end
 		end
 		local ge = gunEnt

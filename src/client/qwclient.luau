@@ -267,14 +267,25 @@ return function()
 	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
+	-- template builds in flight: worldmesh.build yields in the async mesh
+	-- APIs, so getModelDef must never build inline — the next Heartbeat
+	-- would re-enter and start a duplicate build (the sighting-burst
+	-- pile-up that saturated the editable memory budget)
+	local templateBuilding: { [string]: boolean } = {}
+	-- bumped on level reset so late-completing deferred builds from the
+	-- old level are discarded rather than installed
+	local renderGen = 0
 	local worldBuilt = false
 	local seenLevelResets = 0
 	local staticsSpawned = 0
 	local staticSoundsSpawned = 0
 	local staticRes: { entrender.RenderEnt } = {} -- destroyed on level change
+	local beamBuilding: { [string]: boolean } = {}
 
-	-- model defs come straight from qwcl's loaded models (modellist)
-	local function getModelDef(modelindex: number): entrender.ModelDef?
+	-- model defs come straight from qwcl's loaded models (modellist).
+	-- second return = "pending": a brush-template build is in flight; the
+	-- def is not cached yet and the caller should retry next frame
+	local function getModelDef(modelindex: number): (entrender.ModelDef?, boolean?)
 		local def = modelDefs[modelindex]
 		if def then
 			return def
@@ -293,18 +304,34 @@ return function()
 			entrender.prepareImages(def, pal)
 		elseif m.kind == "brush" and modelindex ~= 1 then
 			-- submodels ("*n") AND standalone brush models (ammo/health
-			-- boxes, b_*.bsp) — everything but the world itself
+			-- boxes, b_*.bsp) — everything but the world itself. Built
+			-- off-thread: worldmesh.build yields, and building inline let
+			-- every following Heartbeat start a duplicate build
 			local template = brushTemplates[name]
 			if not template then
-				local anim
-				template, anim = worldmesh.build(m.brush, pal, nil :: any, name)
-				for _, e in anim do
-					table.insert(lightAnim, e)
+				if not templateBuilding[name] then
+					templateBuilding[name] = true
+					local gen = renderGen
+					task.spawn(function()
+						local tpl, anim = worldmesh.build(m.brush, pal, nil :: any, name)
+						local takenAnims = worldmesh.takeTextureAnims()
+						if gen ~= renderGen then
+							-- level reset superseded this build (the reset
+							-- already cleared templateBuilding)
+							worldmesh.destroyBuild(tpl)
+							return
+						end
+						templateBuilding[name] = nil
+						for _, e in anim do
+							table.insert(lightAnim, e)
+						end
+						for _, ta in takenAnims do
+							table.insert(textureAnims, ta)
+						end
+						brushTemplates[name] = tpl
+					end)
 				end
-				for _, ta in worldmesh.takeTextureAnims() do
-					table.insert(textureAnims, ta)
-				end
-				brushTemplates[name] = template
+				return nil, true
 			end
 			def = { kind = "brush" :: "brush", flags = 0, brushModel = template }
 		else
@@ -337,11 +364,21 @@ return function()
 	-- spawn whatever is new each frame
 	local function spawnPendingStatics()
 		while staticsSpawned < #cl.static_entities do
+			local es = cl.static_entities[staticsSpawned + 1]
+			local def, pending = getModelDef(es.modelindex)
+			if pending then
+				break -- template build in flight; resume next frame
+			end
 			staticsSpawned += 1
-			local es = cl.static_entities[staticsSpawned]
-			local def = getModelDef(es.modelindex)
 			if def and def.kind ~= "none" then
-				local re = entrender.create(def, entFolder)
+				local gen = renderGen
+				local re = entrender.create(def, entFolder) -- yields
+				if gen ~= renderGen then
+					if re then
+						entrender.destroy(re)
+					end
+					return -- level reset superseded this pass
+				end
 				if re then
 					table.insert(staticRes, re)
 					if def.kind == "alias" then
@@ -466,7 +503,19 @@ return function()
 						end
 						local re = pool[n]
 						if not re then
+							if beamBuilding[b.modelName] then
+								break -- a segment build is in flight; don't pile on
+							end
+							beamBuilding[b.modelName] = true
+							local gen = renderGen
 							re = entrender.create(def, entFolder)
+							beamBuilding[b.modelName] = nil
+							if gen ~= renderGen then
+								if re then
+									entrender.destroy(re)
+								end
+								break
+							end
 							if not re then
 								break
 							end
@@ -594,6 +643,12 @@ return function()
 	local renderDefs: { [string]: entrender.ModelDef } = {}
 	local liveKeys: { [string]: boolean } = {}
 	local trailOrigins: { [string]: vector } = {}
+	-- ent builds in flight (entrender.create yields) + failure backoff:
+	-- a failed build must NOT retry every frame — the retry hammer worsens
+	-- exactly the budget pressure that failed it
+	local entBuilding: { [string]: boolean } = {}
+	local entRetryAt: { [string]: number } = {}
+	local entRetryCount: { [string]: number } = {}
 	local gunEnt: entrender.RenderEnt? = nil
 	local gunModelIndex = 0
 
@@ -606,15 +661,56 @@ return function()
 		local re = renderEnts[key]
 		if re and renderDefs[key] ~= def then
 			entrender.destroy(re)
+			renderEnts[key] = nil
+			renderDefs[key] = nil
 			re = nil
 		end
 		if not re then
-			re = entrender.create(def, entFolder)
-			if not re then
-				return
+			if entBuilding[key] then
+				return -- build in flight (the async mesh APIs yield)
 			end
-			renderEnts[key] = re
-			renderDefs[key] = def
+			local retryAt = entRetryAt[key]
+			if retryAt and time < retryAt then
+				return -- failed build backing off, not hammering
+			end
+			-- build off-thread: creating inline would yield mid-relink and
+			-- let the next Heartbeat run a concurrent relink pass
+			entBuilding[key] = true
+			local gen = renderGen
+			task.spawn(function()
+				local built = entrender.create(def, entFolder)
+				entBuilding[key] = nil
+				if gen ~= renderGen then
+					if built then
+						entrender.destroy(built)
+					end
+					return
+				end
+				if not built then
+					local n = (entRetryCount[key] or 0) + 1
+					entRetryCount[key] = n
+					entRetryAt[key] = time + math.min(2 ^ n, 30)
+					return
+				end
+				entRetryCount[key] = nil
+				entRetryAt[key] = nil
+				if renderEnts[key] then
+					entrender.destroy(built) -- superseded while building
+					return
+				end
+				renderEnts[key] = built
+				renderDefs[key] = def
+				-- pose with the sighting-frame args so the part doesn't
+				-- sit unposed at the map origin until the next relink
+				if def.kind == "alias" then
+					entrender.updateAlias(built, def, origin, angles, frame, skinnum, 0, time, colors)
+				elseif def.kind == "sprite" then
+					entrender.updateSprite(built, def, origin, frame)
+				elseif def.kind == "brush" then
+					entrender.updateBrush(built, origin, angles)
+				end
+			end)
+			return -- poses pick up next relink once installed
 		end
 		if def.kind == "alias" then
 			if bit32.band(def.flags, mdllib.EF_ROTATE) ~= 0 then
@@ -1106,6 +1202,8 @@ return function()
 		-- level change: rebuild the render world from scratch
 		if (cl.levelResets or 0) ~= seenLevelResets then
 			seenLevelResets = cl.levelResets or 0
+			-- discard any deferred builds still in flight for the old level
+			renderGen += 1
 			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
 			-- it looping sounds carry across level changes
 			soundlib.clear(sndsys)
@@ -1124,6 +1222,7 @@ return function()
 				worldmesh.destroyBuild(tpl)
 			end
 			table.clear(brushTemplates)
+			table.clear(templateBuilding)
 			table.clear(lightAnim)
 			table.clear(textureAnims)
 			for key, re in renderEnts do
@@ -1131,10 +1230,29 @@ return function()
 				renderEnts[key] = nil
 				renderDefs[key] = nil
 			end
+			table.clear(entBuilding)
+			table.clear(entRetryAt)
+			table.clear(entRetryCount)
 			for _, re in staticRes do
 				entrender.destroy(re)
 			end
 			table.clear(staticRes)
+			-- beam pool ents own fixed alias meshes too (this leaked per
+			-- level change before; beamDefs images via destroyDef below)
+			for _, pool in beamPool do
+				for _, re in pool do
+					entrender.destroy(re)
+				end
+			end
+			table.clear(beamPool)
+			table.clear(beamBuilding)
+			for _, def in beamDefs do
+				if def then
+					entrender.destroyDef(def)
+				end
+			end
+			table.clear(beamDefs)
+			table.clear(beams)
 			if gunEnt then
 				entrender.destroy(gunEnt)
 				gunEnt = nil
@@ -1353,8 +1471,17 @@ return function()
 				gunModelIndex = gunModel
 				local def = getModelDef(gunModel)
 				if def and def.kind == "alias" then
-					-- the gun renders through its own projection (viewmodel.luau)
-					gunEnt = entrender.create(def, vmgun.world)
+					-- the gun renders through its own projection (viewmodel.luau);
+					-- create yields, so guard against a level reset mid-build
+					local gen = renderGen
+					local built = entrender.create(def, vmgun.world)
+					if gen ~= renderGen then
+						if built then
+							entrender.destroy(built)
+						end
+					else
+						gunEnt = built
+					end
 				end
 			end
 			local ge = gunEnt

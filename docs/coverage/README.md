@@ -79,6 +79,18 @@ rows.
   Heartbeat so asynchronously-reclaimed budget is actually free before the
   next attempt. Offline-tested (tests/test_buildqueue.luau: serialization,
   FIFO, error-release).
+- Fix 3/3 (both clients): builds yield in the async mesh APIs, so every
+  next Heartbeat re-entered the create/build paths — duplicating
+  concurrent builds during sighting bursts AND retrying failed builds
+  every frame (the retry hammer worsening the pressure that failed them).
+  Now: getModelDef never yields (brush-template builds kick off
+  task.spawn'd behind an in-flight flag, "pending" second return); entity
+  creates run off-thread behind per-key in-flight guards with exponential
+  failure backoff (2s→30s); statics/beams/gun gen-guarded against
+  changelevel teardown. Latent bugs fixed in the same pass: NQ statics
+  never respawned after changelevel (statics_spawned was never reset);
+  QW beam-pool ents and both boots' beam-def skin images leaked across
+  level changes.
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified
