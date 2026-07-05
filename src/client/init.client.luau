@@ -322,7 +322,7 @@ avatarLocalFolder.Name = "QuakeAvatarRigs"
 avatarLocalFolder.Parent = Workspace
 
 local avatarEnts: { [number]: avatarrender.AvatarEnt } = {}
-type AvatarWeapon = { re: entrender.RenderEnt?, model: string? }
+type AvatarWeapon = { re: entrender.RenderEnt?, model: string?, light: PointLight?, flashUntil: number? }
 local avatarWeapons: { [number]: AvatarWeapon } = {}
 
 local function avatarsOn(): boolean
@@ -349,8 +349,19 @@ local V_TO_WORLD: { [string]: string } = {
 	["progs/v_rock2.mdl"] = "progs/g_rock2.mdl",
 	["progs/v_light.mdl"] = "progs/g_light.mdl",
 }
--- grip: quake models point +X forward; hand forward is -Z
-local WEAPON_GRIP = CFrame.new(0, -0.2, 0) * CFrame.Angles(0, math.rad(90), 0)
+-- grip: quake models point +X forward; hand forward is -Z. The gun's
+-- rear (grip) sits at the palm, so the mesh center shifts forward.
+-- RQDBG_GripPos (Vector3) / RQDBG_GripYPR (Vector3, degrees yaw/pitch/
+-- roll) workspace attributes override for live tuning.
+local WEAPON_GRIP_POS = Vector3.new(0, -0.1, -0.9)
+local WEAPON_GRIP_YPR = Vector3.new(90, 0, 0)
+local function currentGrip(): CFrame
+	local p = workspace:GetAttribute("RQDBG_GripPos")
+	local y = workspace:GetAttribute("RQDBG_GripYPR")
+	local pos = if typeof(p) == "Vector3" then p else WEAPON_GRIP_POS
+	local ypr = if typeof(y) == "Vector3" then y else WEAPON_GRIP_YPR
+	return CFrame.new(pos) * CFrame.Angles(math.rad(ypr.Y), math.rad(ypr.X), math.rad(ypr.Z))
+end
 
 local function modelIndexByName(name: string): number?
 	for mi = 1, #c.model_precache - 1 do
@@ -376,7 +387,7 @@ local function hideAvatarEnt(num: number)
 	hideAvatarWeapon(num)
 end
 
-local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.AvatarEnt)
+local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.AvatarEnt, effects: number)
 	local aw = avatarWeapons[num]
 	if not aw then
 		aw = {}
@@ -388,6 +399,7 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 		if aw.re then
 			entrender.destroy(aw.re :: entrender.RenderEnt)
 			aw.re = nil
+			aw.light = nil -- died with the part
 		end
 		aw.model = want
 		if want then
@@ -403,8 +415,29 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 	if re and re.part and hand then
 		-- mesh CENTER at the hand (no centerOffset: that re-centers to the
 		-- pickup's floor-level model origin and floats the gun overhead)
-		setEntVisible(re :: entrender.RenderEnt, true);
-		(re.part :: MeshPart).CFrame = hand * WEAPON_GRIP
+		local part = re.part :: MeshPart
+		setEntVisible(re :: entrender.RenderEnt, true)
+		part.CFrame = hand * currentGrip()
+		-- muzzle flash: the world dlight comes from applyEntityEffects;
+		-- this PointLight lights the RIG (rigs use Roblox lighting, not
+		-- the Quake lightmap)
+		if bit32.band(effects, 2) ~= 0 then -- EF_MUZZLEFLASH
+			aw.flashUntil = c.time + 0.1
+		end
+		local light = aw.light
+		if not light or light.Parent ~= part then
+			light = Instance.new("PointLight")
+			light.Enabled = false
+			light.Brightness = 6
+			light.Range = 14
+			light.Color = Color3.fromRGB(255, 190, 90)
+			light.Parent = part
+			aw.light = light
+		end
+		local flashing = (aw.flashUntil or 0) > c.time
+		if light.Enabled ~= flashing then
+			light.Enabled = flashing
+		end
 	elseif re then
 		setEntVisible(re :: entrender.RenderEnt, false)
 	end
@@ -1150,6 +1183,34 @@ local function parseBeam(modelName: string, te: cllib.TempEntityEvent)
 	end
 end
 
+-- CL_RelinkEntities entity effects, shared by the alias path and the
+-- avatars path (an avatar player firing must still flash the world)
+local function applyEntityEffects(num: number, e: any)
+	if bit32.band(e.effects, 1) ~= 0 then -- EF_BRIGHTFIELD
+		particleslib.entityParticles(psys, e.origin, c.time)
+	end
+	if bit32.band(e.effects, 2) ~= 0 then -- EF_MUZZLEFLASH
+		local dl = allocDlight(num, c.time)
+		local fv = mathlib.angleVectors(e.angles)
+		dl.origin = e.origin + vector.create(0, 0, 16) + fv * 18
+		dl.radius = 200 + math.random(0, 31)
+		dl.minlight = 32
+		dl.die = c.time + 0.1
+	end
+	if bit32.band(e.effects, 4) ~= 0 then -- EF_BRIGHTLIGHT
+		local dl = allocDlight(num, c.time)
+		dl.origin = e.origin + vector.create(0, 0, 16)
+		dl.radius = 400 + math.random(0, 31)
+		dl.die = c.time + 0.001
+	end
+	if bit32.band(e.effects, 8) ~= 0 then -- EF_DIMLIGHT
+		local dl = allocDlight(num, c.time)
+		dl.origin = e.origin
+		dl.radius = 200 + math.random(0, 31)
+		dl.die = c.time + 0.001
+	end
+end
+
 local function updateBeams()
 	local used: { [string]: number } = {}
 	for i = 1, MAX_BEAMS do
@@ -1791,7 +1852,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 				setEntVisible(rr, false)
 				avatarrender.setVisible(ae2, true)
 				avatarrender.update(ae2, e.origin, e.angles, c.time)
-				updateAvatarWeapon(num, avatarPlayer :: Player, ae2)
+				updateAvatarWeapon(num, avatarPlayer :: Player, ae2, e.effects)
+				applyEntityEffects(num, e) -- muzzleflash/dlights still fire
 				continue
 			end
 			-- rig still loading: fall through to the alias renderer
@@ -1819,29 +1881,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			entrender.setLight(rr, elight)
 
 			-- CL_RelinkEntities: entity effects
-			if bit32.band(e.effects, 1) ~= 0 then -- EF_BRIGHTFIELD
-				particleslib.entityParticles(psys, e.origin, c.time)
-			end
-			if bit32.band(e.effects, 2) ~= 0 then -- EF_MUZZLEFLASH
-				local dl = allocDlight(num, c.time)
-				local fv = mathlib.angleVectors(e.angles)
-				dl.origin = e.origin + vector.create(0, 0, 16) + fv * 18
-				dl.radius = 200 + math.random(0, 31)
-				dl.minlight = 32
-				dl.die = c.time + 0.1
-			end
-			if bit32.band(e.effects, 4) ~= 0 then -- EF_BRIGHTLIGHT
-				local dl = allocDlight(num, c.time)
-				dl.origin = e.origin + vector.create(0, 0, 16)
-				dl.radius = 400 + math.random(0, 31)
-				dl.die = c.time + 0.001
-			end
-			if bit32.band(e.effects, 8) ~= 0 then -- EF_DIMLIGHT
-				local dl = allocDlight(num, c.time)
-				dl.origin = e.origin
-				dl.radius = 200 + math.random(0, 31)
-				dl.die = c.time + 0.001
-			end
+			applyEntityEffects(num, e)
 
 			-- CL_RelinkEntities: model-flag particle trails (rockets, smoke,
 			-- gibs, tracers) from last frame's origin to this one

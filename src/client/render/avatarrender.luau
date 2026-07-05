@@ -21,6 +21,9 @@ local avatarrender = {}
 -- the player's own equipped animation pack)
 local DEFAULT_IDLE = 507766666
 local DEFAULT_RUN = 507767714
+-- standard R15 tool-hold: raises the right forearm so the attached
+-- weapon reads as carried (same track the stock Animate script plays)
+local TOOL_HOLD = 507768375
 
 -- Quake player origin is mid-body: mins z = -24, so feet are 24 units
 -- (2.4 studs) below the entity origin
@@ -33,6 +36,7 @@ export type AvatarEnt = {
 	rootPart: BasePart?,
 	idleTrack: AnimationTrack?,
 	runTrack: AnimationTrack?,
+	toolTrack: AnimationTrack?,
 	loading: boolean,
 	visible: boolean,
 	lastOrigin: vector?,
@@ -48,6 +52,7 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		rootPart = nil,
 		idleTrack = nil,
 		runTrack = nil,
+		toolTrack = nil,
 		loading = true,
 		visible = false,
 		lastOrigin = nil,
@@ -87,6 +92,7 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		end
 		ae.idleTrack = loadTrack("IdleAnim", DEFAULT_IDLE)
 		ae.runTrack = loadTrack("RunAnim", DEFAULT_RUN)
+		ae.toolTrack = loadTrack("ToolHoldAnim", TOOL_HOLD)
 		ae.model = rig
 		ae.humanoid = humanoid
 		ae.rootPart = root
@@ -142,6 +148,10 @@ function avatarrender.update(ae: AvatarEnt, origin: vector, angles: vector, time
 			idleTrack:Stop(0.15)
 		end
 	end
+	local toolTrack = ae.toolTrack
+	if toolTrack and not toolTrack.IsPlaying then
+		toolTrack:Play(0.15) -- right forearm raised: weapon reads as held
+	end
 end
 
 -- world CFrame of the right hand (weapon attach point); nil until loaded
@@ -170,6 +180,9 @@ function avatarrender.setVisible(ae: AvatarEnt, on: boolean)
 		end
 		if ae.idleTrack and ae.idleTrack.IsPlaying then
 			ae.idleTrack:Stop(0)
+		end
+		if ae.toolTrack and ae.toolTrack.IsPlaying then
+			ae.toolTrack:Stop(0)
 		end
 		ae.speed = 0
 		ae.lastOrigin = nil
