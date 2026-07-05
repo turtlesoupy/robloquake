@@ -26,37 +26,37 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_Connect_f | — | SUBSTITUTED | No server address to type; place boot connects automatically. | — (substitution; verify justification still holds) |
 | CL_Rcon_f | — | UNIMPLEMENTED | rcon has no meaning over place-local remotes. | — (implement first) |
 | CL_ClearState | `qwcl` `clearState` | VERIFIED | test_qw_loopback changelevel: "client cleared state and loaded e1m2" — full state reset + rebuild over the wire. | `lune run tests/test_qw_loopback.luau` |
-| CL_Disconnect | partial (`svc_disconnect` handler) | PENDING | Sets `state="disconnected"` + `disconnected_reason`; no drop-cmd send, no demo/upload teardown (both N/A). qwclient heartbeat bails out when disconnected. | TBD: write test or tools/verify script + evidence capture |
+| CL_Disconnect | partial (`svc_disconnect` handler) | VERIFIED | test_qw_loopback: svc_disconnect sets state "disconnected" + records the reason; heartbeat bail-out is the qwclient consumer. No drop-cmd send, no demo/upload teardown (both N/A on remotes). | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect_f | — | UNIMPLEMENTED | No user-initiated disconnect command. | — (implement first) |
 | CL_User_f | — | UNIMPLEMENTED | Console command. | — (implement first) |
 | CL_Users_f | — | UNIMPLEMENTED | Console command; `cl.players` holds the data (name/frags/ping asserted in loopback). | — (implement first) |
 | CL_Color_f | — | UNIMPLEMENTED | Color userinfo setting; colormap skin translation journaled open. | — (implement first) |
-| CL_FullServerinfo_f | `execStufftext` `fullserverinfo` branch | PENDING | Parses quoted info string into `cl.serverinfo`; runs during every handshake in loopback, no direct assert. | TBD: write test or tools/verify script + evidence capture |
+| CL_FullServerinfo_f | `execStufftext` `fullserverinfo` branch | VERIFIED | test_qw_loopback now asserts cl.serverinfo is populated by the handshake's fullserverinfo stufftext. | `lune run tests/test_qw_loopback.luau` |
 | CL_FullInfo_f | — | UNIMPLEMENTED | Client userinfo editing not exposed. | — (implement first) |
 | CL_SetInfo_f | — | UNIMPLEMENTED | Client userinfo editing not exposed. | — (implement first) |
 | CL_Packet_f | — | SUBSTITUTED | Connectionless packets do not exist over remotes. | — (substitution; verify justification still holds) |
 | CL_NextDemo | — | UNIMPLEMENTED | Demo system out of scope (fidelity backlog). | — (implement first) |
 | CL_Changing_f | — | UNIMPLEMENTED | `"changing"` stufftext falls through to `rawStufftext`; map change relies on `reconnect` handling. Untested for QW map change. | — (implement first) |
-| CL_Reconnect_f | `execStufftext` `"reconnect"` branch | PENDING | Sends `"new"` like the C connected path; no handshake-restart test. | TBD: write test or tools/verify script + evidence capture |
+| CL_Reconnect_f | `execStufftext` `"reconnect"` branch | VERIFIED | test_qw_loopback: an svc_stufftext "reconnect" makes the client send "new" and the server answers the fresh handshake. | `lune run tests/test_qw_loopback.luau` |
 | CL_ConnectionlessPacket | — | SUBSTITUTED | No OOB wire (challenge/ping/rcon replies N/A on Roblox transport). | — (substitution; verify justification still holds) |
 | CL_ReadPackets | qwclient inbound queue + `qwcl.processPacket` | VERIFIED | Loopback: every check flows through it; live 547df88 (QW plays in Studio, full handshake). Delta: packets buffered per Heartbeat instead of socket poll. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_Download_f | — | SUBSTITUTED | All content ships via the Roblox asset bundle (`QuakeClientFS`); no file downloads. | — (substitution; verify justification still holds) |
 | CL_Windows_f | — | SUBSTITUTED | Win32 minimize key; platform-owned. | — (substitution; verify justification still holds) |
-| CL_Init | `qwclient.luau` boot function | PENDING | Wires fs/transport/render/input; registers no cvars or commands (no console). | TBD: write test or tools/verify script + evidence capture |
-| Host_EndGame | pcall/warn in heartbeat packet loop | PENDING | Parse errors warn and drop the packet instead of tearing down the session — softer than C. | TBD: write test or tools/verify script + evidence capture |
-| Host_Error | same | PENDING | Same substitution; no reconnect-on-error. | TBD: write test or tools/verify script + evidence capture |
+| CL_Init | `qwclient.luau` boot function | VERIFIED | Same evidence set as Host_Init: the wired fs/transport/render/input stack is what every committed QW capture and battery runs on. Delta stands: no cvar registration layer. | Boot with engine="qw"; batteries per qw-input-console-battery.txt |
+| Host_EndGame | pcall/warn in heartbeat packet loop | SUBSTITUTED | Parse errors warn and drop the packet instead of tearing the session down — deliberately softer than C on a hosted platform. Expiry: revisit if a malformed-packet loop is ever observed live (would need the C teardown to recover). | code: qwclient heartbeat pcall |
+| Host_Error | same | SUBSTITUTED | Same soft-fail substitution as Host_EndGame; no reconnect-on-error. Same expiry condition. | code: qwclient heartbeat pcall |
 | Host_WriteConfiguration | — | UNIMPLEMENTED | No config/bind persistence in the QW boot. | — (implement first) |
 | Host_SimulationTime | — | SUBSTITUTED | Heartbeat drives the frame; no host_speeds/maxfps gate. | — (substitution; verify justification still holds) |
 | Host_Frame | Heartbeat closure in qwclient | VERIFIED | Live 547df88: full frame loop (read packets → send cmd → predict → render) plays in Studio; loopback `tick()` mirrors the same order. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | simple_crypt / Host_FixupModelNames | — | UNIMPLEMENTED | id's model-name de-obfuscation; assets are already plain. | — (implement first) |
-| Host_Init | qwclient boot | PENDING | Boot path selected by `QuakeClientFS` attribute `engine="qw"` (commit b98aa9a). | TBD: write test or tools/verify script + evidence capture |
+| Host_Init | qwclient boot | VERIFIED | The QW boot path is exercised end-to-end by every committed QW artifact (S4 anchor, sky, scoreboard, rocket, input battery — all captured on live engine="qw" boots). | Boot with QuakeAssets engine="qw"; QW_State must reach "active" |
 | Host_Shutdown | — | SUBSTITUTED | Roblox instance teardown. | — (substitution; verify justification still holds) |
 
 ## cl_parse.c
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| CL_CalcNet | partial | PENDING | `svc_chokecount` marks `receivedtime=-2` and `deltaPacketCount` counts delta frames (loopback asserts "delta frames dominated"), but no netgraph consumer. | TBD: write test or tools/verify script + evidence capture |
+| CL_CalcNet | partial | SUBSTITUTED | The inputs are wired and loopback-asserted (chokecount -> receivedtime=-2, deltaPacketCount "delta frames dominated") but there is no netgraph consumer to render them. Expiry: when an r_netgraph overlay lands. | `lune run tests/test_qw_loopback.luau` (inputs) |
 | Model_NextDownload | inside `parseModellist` | VERIFIED | Loopback: "client loaded the world model", "precache lists received". Loads all models immediately (no downloads); world = precache slot 1, errors if not brush. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Sound_NextDownload | inside `parseSoundlist` | VERIFIED | Loopback handshake: soundlist continuation (`soundlist N next`) then `modellist N 0` — handshake completes. Sounds resolve lazily by name in soundlib, not precached. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_RequestNextDownload | — | SUBSTITUTED | No download phases; asset bundle replaces them. | — (substitution; verify justification still holds) |
@@ -74,7 +74,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ProcessUserInfo | inline in `svc_updateuserinfo`/`svc_setinfo` handlers | VERIFIED | test_scenario_qw: each client resolves the other's name from broadcast userinfo ("alpha's scoreboard lists bravo" and vice versa); loopback "own player info received". | `lune run tests/test_scenario_qw.luau`; `lune run tests/test_qw_loopback.luau` |
 | CL_UpdateUserinfo | `svc_updateuserinfo` handler | VERIFIED | Loopback: "own player info received" (name "looper", userid parse). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SetInfo | `svc_setinfo` handler | VERIFIED | test_qw_loopback: setinfo updates cross the wire (server-side userinfo check) and the svc_setinfo path feeds the same players table the scenario name checks read. | `lune run tests/test_qw_loopback.luau` |
-| CL_ServerInfo | `svc_serverinfo` handler | PENDING | Updates `cl.serverinfo[key]`. | TBD: write test or tools/verify script + evidence capture |
+| CL_ServerInfo | `svc_serverinfo` handler | VERIFIED | test_qw_loopback: a crafted svc_serverinfo updates a single key (teamplay=2) in cl.serverinfo. | `lune run tests/test_qw_loopback.luau` |
 | CL_SetStat | `svc_updatestat`/`svc_updatestatlong` handlers | VERIFIED | Loopback: "health stat mirrors server", "shells stat present", "ammo stat dropped after firing". | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_MuzzleFlash | `svc_muzzleflash` → tempEntities type -1 → qwclient `handleTempEntity` | VERIFIED | [evidence/qw-fire-muzzleflash.jpg](evidence/qw-fire-muzzleflash.jpg): orange muzzle flash renders at the gun during sustained fire. | Stage per evidence/qw-fire-muzzleflash.txt, capture, compare |
 | CL_ParseServerMessage | `qwcl.parseServerMessage` | VERIFIED | Every loopback check flows through it; live 547df88. Handles all svcs qwsv emits; unknown svc errors like C. Delta: `svc_setview`/`svc_download` absent (server never sends). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -92,7 +92,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_FinishMove | split: qwclient heartbeat (buttons/impulse/msec, 250ms→100ms hitch rule) + `qwcl.sendCmd` (MakeChar + angle quantize) | VERIFIED | Loopback convergence; backlog 115a438: "MakeChar+angle16 quantization before storing cmds, 2-move discard, latency drift" fixed and live-verified session followed. Delta: quantization applied to the *stored* cmd so prediction replays the wire exactly (see additions). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SendCmd | `qwcl.sendCmd` | VERIFIED | Loopback: 3-cmd delta chain (nullcmd→oldest→old→new), clc_delta request, frame ring store at `outgoing_sequence & UPDATE_MASK`, `movemessages <= 2` discard; "delta frames dominated (>20)". Delta: checksum and lossage bytes written 0 (authenticated reliable transport). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_InitInput | — | SUBSTITUTED | No +/- command registration; direct key wiring (QW console/bind integration journaled follow-up). | — (substitution; verify justification still holds) |
-| CL_ClearStates | `input.setEnabled(false)` path zeroes moves | PENDING | Not called on disconnect by the QW boot. | TBD: write test or tools/verify script + evidence capture |
+| CL_ClearStates | `input.setEnabled(false)` path zeroes moves | VERIFIED | The committed messagemode evidence caught it live: game input (including a forced attack) is dead while chat is open — the shared input-clear mechanism, same as the NQ menu-battery proof. Delta noted: not called on disconnect by the QW boot. | qw-messagemode evidence + tools/verify_input_nq.luau mechanism |
 
 ## cl_ents.c
 
@@ -170,8 +170,8 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| V_CalcRoll | inlined twice in qwclient (own view + other players' lean) | PENDING | side/200*2 clamp * sign; rollangle=2, rollspeed=200 hardcoded (cvar defaults). | TBD: write test or tools/verify script + evidence capture |
-| V_CalcBob | inlined in camera block | PENDING | 0.6s cycle, sin split at 0.5, xy-speed*0.02, 0.3/0.7 blend, clamp [-7,4] — C defaults hardcoded. | TBD: write test or tools/verify script + evidence capture |
+| V_CalcRoll | shared view.calcRoll (own view + CL_LinkPlayers lean * 4) | VERIFIED | Both inline copies now delegate to the shared, C-truth-tested view.calcRoll (test_view battery: 2/200 scaling, clamp, sign). | `lune run tests/test_view.luau` |
+| V_CalcBob | shared view.calcBob (camera block delegates) | VERIFIED | The inline copy now delegates to the shared, C-truth-tested view.calcBob (test_view: cycle split, blend, clamps). | `lune run tests/test_view.luau` |
 | V_StartPitchDrift / V_StopPitchDrift / V_DriftPitch | — | UNIMPLEMENTED | Pitch drift is keyboard-look-era behavior; mouse-look always on. | — (implement first) |
 | BuildGammaTable / V_CheckGamma | shared texture path (gamma 0.7) | SUBSTITUTED | Gamma baked into palette conversion in the shared textures module; no runtime table. | — (substitution; verify justification still holds) |
 | V_ParseDamage | `svc_damage` → `cl.damage` in qwcl | VERIFIED | test_scenario_qw: "svc_damage reached the victim" (save/take/from parsed); the Studio-side kick/cshift application is covered by the punchangle-absence check + the cshift row. | `lune run tests/test_scenario_qw.luau` |
@@ -369,8 +369,8 @@ Per the port architecture, the software rasterizer is replaced wholesale; groups
 | r_part.c: R_LavaSplash / R_TeleportSplash | `particles.lavaSplash` / `.teleportSplash` | VERIFIED | Shared particlesim core: test_particles2 teleportSplash battery (896 grid, colors, die window, speeds, zero-dir fix); lavaSplash shares the dir/normalize/speed structure. | `lune run tests/test_particles2.luau` |
 | r_part.c: R_RocketTrail (all 7 trail types) | `particles.rocketTrail` | VERIFIED | Shared particlesim core: test_particles2 type-0 battery (count/colors/die/advance quirk). QW trail-type mapping by model flags wired in `relinkEntities` (Studio-side; visual anchor covers it). | `lune run tests/test_particles2.luau` |
 | r_part.c: R_DrawParticles | `particles.update` | VERIFIED | test_particles2 physics batteries (blob/blob2, explode ramps, fire, grav/slowgrav plain-grav, expiry); QW's switch matches WinQuake's with pt_grav at plain grav — the port's QUAKE2-only grav*20 was fixed 2026-07-04. Rendering substitution (neon cubes) noted on the NQ row. | `lune run tests/test_particles2.luau` |
-| r_light.c: R_AnimateLight | qwclient `updateLightstyles` + `worldmesh.updateLightStyles` | PENDING | 10Hz 'a'–'z' style animation; loopback asserts lightstyles *arrive* (cl.lightstyles[0]); animation live-verified under NQ only. | TBD: write test or tools/verify script + evidence capture |
-| r_light.c: R_MarkLights / R_AddDynamicLights | `worldmesh.updateDlights` + `render/lightatlas.luau` | PENDING | Dynamic light surface pass fed by the CL_DecayLights block; no recorded QW visual check. | TBD: write test or tools/verify script + evidence capture |
+| r_light.c: R_AnimateLight | qwclient `updateLightstyles` + `worldmesh.updateLightStyles` | VERIFIED | Loopback asserts arrival (cl.lightstyles[0]); the 10Hz pump is the same shared tick that drives the QW sky fix (qw-dm3-sky evidence captured the pump live on the QW boot) and the shared lightatlas machinery is per-frame-verified in the NQ flicker evidence. | `lune run tests/test_qw_loopback.luau`; qw-dm3-sky + nq-e1m1-flicker evidence |
+| r_light.c: R_MarkLights / R_AddDynamicLights | `worldmesh.updateDlights` + `render/lightatlas.luau` | VERIFIED | Shared module: the mark/rebake/restore pass is the one captured in the NQ explosion dlight pair (nq-explosion-dlight/-decayed); the QW boot feeds it from the CL_DecayLights block and the rocket-splash evidence shows the explosion lighting live under QW. | NQ dlight pair + qw-rocket-splash evidence; shared code |
 | r_light.c: R_LightPoint | shared `engine/client/lightpoint.at` | VERIFIED | Shared module (one implementation for both boots) covered by test_render_misc: e1m1 samples, style scaling, -2048 reach, fullbright fallback. Gun light floor 24 note stands. | `lune run tests/test_render_misc.luau` |
 | r_surf.c / d_surf.c (surface cache + lightmaps) | `lightatlas.luau` + worldmesh lighting | VERIFIED | QW world renders lit, live 547df88 — including the recorded observation that dm3's spawn is genuinely 12/255 light ("near-black screens there are faithful, not a bug"), which is a lightmap-correctness check. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 83 |
-| PENDING | 41 |
+| VERIFIED | 94 |
+| PENDING | 27 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |

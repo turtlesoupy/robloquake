@@ -28,6 +28,7 @@ local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
 local lightpoint = require(engine.client.lightpoint)
+local viewlib = require(engine.client.view)
 local particleslib = require(script.Parent.render.particles)
 local textures = require(script.Parent.render.textures)
 local worldmesh = require(script.Parent.render.worldmesh)
@@ -823,11 +824,8 @@ return function()
 				continue
 			end
 			local angles = vector.create(-ps.viewangles.x / 3, ps.viewangles.y, 0)
-			local _f, right, _u = mathlib.angleVectors(angles)
-			local side = vector.dot(ps.velocity, right)
-			local sign = if side < 0 then -1 else 1
-			side = math.abs(side)
-			local roll = (if side < 200 then side * 2.0 / 200 else 2.0) * sign * 4
+			-- CL_LinkPlayers lean: V_CalcRoll (shared) * 4
+			local roll = viewlib.calcRoll(angles, ps.velocity) * 4
 			angles = vector.create(angles.x, angles.y, roll)
 			local porigin = predicted[num] or ps.origin
 			-- CL_NewTranslation: shirt/pants byte for the player skin
@@ -1442,22 +1440,9 @@ return function()
 			eye = cl.simorg + vector.create(0, 0, -16)
 			angles = vector.create(cl.simangles.x, cl.simangles.y, 80)
 		else
-			-- V_CalcBob
-			local cycle = (cl.time % 0.6) / 0.6
-			if cycle < 0.5 then
-				cycle = math.pi * cycle / 0.5
-			else
-				cycle = math.pi + math.pi * (cycle - 0.5) / 0.5
-			end
-			local bob = math.sqrt(cl.simvel.x * cl.simvel.x + cl.simvel.y * cl.simvel.y) * 0.02
-			bob = math.clamp(bob * 0.3 + bob * 0.7 * math.sin(cycle), -7, 4)
-
-			-- V_CalcRoll on own velocity
-			local _bf, bright, _bu = mathlib.angleVectors(cl.simangles)
-			local side = vector.dot(cl.simvel, bright)
-			local rsign = if side < 0 then -1 else 1
-			side = math.abs(side)
-			local roll = (if side < 200 then side * 2.0 / 200 else 2.0) * rsign
+			-- V_CalcBob / V_CalcRoll: shared C-truth-tested implementations
+			local bob = viewlib.calcBob({ time = cl.time, velocity = cl.simvel } :: any)
+			local roll = viewlib.calcRoll(cl.simangles, cl.simvel)
 
 			if bit32.band(ownState.flags, qwp.PF_GIB) ~= 0 then
 				viewheight += 8 -- gibbed: view from the head

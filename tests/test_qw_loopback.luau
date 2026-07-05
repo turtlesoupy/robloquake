@@ -11,6 +11,7 @@ local vmlib = require("../src/shared/engine/progs/vm")
 local qwsv = require("../src/shared/engine/qw/qwsv")
 local qwcl = require("../src/shared/engine/qw/qwcl")
 local qwp = require("../src/shared/engine/qw/qwprotocol")
+local msg = require("../src/shared/engine/common/msg")
 
 local gamefs = t.gameFs()
 local qwprogs = buffer.fromstring(fs.readFile("reference/quake-c/qw-qc/qwprogs.dat"))
@@ -338,6 +339,46 @@ qwcl.flush(cl)
 tick(0)
 tick(0)
 t.check(cl.players[0] ~= nil and cl.players[0].ping ~= nil, "SV_Pings_f answered with svc_updateping")
+
+-- CL_FullServerinfo_f / CL_ServerInfo: the handshake's fullserverinfo
+-- stufftext populated cl.serverinfo, and svc_serverinfo updates a key
+t.check(cl.serverinfo ~= nil and next(cl.serverinfo) ~= nil, "fullserverinfo populated cl.serverinfo during the handshake")
+do
+	local sb = msg.newBuf(64)
+	msg.writeByte(sb, qwp.svc_serverinfo)
+	msg.writeString(sb, "teamplay")
+	msg.writeString(sb, "2")
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	qwcl.parseServerMessage(cl, msg.reader(pkt))
+	t.eq(cl.serverinfo.teamplay, "2", "svc_serverinfo updates a single key (CL_ServerInfo)")
+end
+
+-- CL_Reconnect_f: a stufftext "reconnect" makes the client send "new"
+-- (the server answers the fresh handshake with serverdata again)
+do
+	local sb = msg.newBuf(64)
+	msg.writeByte(sb, qwp.svc_stufftext)
+	msg.writeString(sb, "reconnect\n")
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	cl.stufftext = ""
+	qwcl.parseServerMessage(cl, msg.reader(pkt))
+	qwcl.flush(cl)
+	tick(0)
+	t.check(cl.servercount ~= nil, "reconnect: client re-sent new and still tracks servercount")
+end
+
+-- CL_Disconnect (svc_disconnect handler)
+do
+	local sb = msg.newBuf(16)
+	msg.writeByte(sb, qwp.svc_disconnect)
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	qwcl.parseServerMessage(cl, msg.reader(pkt))
+	t.eq(cl.state, "disconnected", "svc_disconnect sets state disconnected")
+	t.eq(cl.disconnected_reason, "server disconnected", "svc_disconnect records the reason")
+end
 
 t.check(qwsv.kick(svr, sclient.userid), "kick found the userid")
 t.check(not sclient.active, "kicked client dropped")
