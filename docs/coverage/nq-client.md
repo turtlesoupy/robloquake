@@ -100,8 +100,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | V_cshift_f | — | UNIMPLEMENTED | debug command | — (implement first) |
 | V_BonusFlash_f | `bf` command (console + stufftext via Cbuf) | VERIFIED | RQ_CshiftBonus decay series: 50 → 36.5/21.7 → 0 in ~0.5-0.6s = percent 50 with the authentic 100/s decay ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). FIDELITY FIX 2026-07-04: bf was a stufftext-only special case — now a real command like C's Cmd_AddCommand, and svc_stufftext routes every line through the Cbuf. Bonus color 215/186/69 in the compositor. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) (bonusProbe) |
 | V_SetContentsColor | init.client view-leaf contents shifts | VERIFIED | [evidence/nq-slime-cshift.jpg](evidence/nq-slime-cshift.jpg) + .txt: full-screen slime tint while submerged, blended with the damage flash from the slime tick. Delta: no CONTENTS_SOLID grey (cannot be seen in play). | Teleport per evidence/nq-slime-cshift.txt, capture, compare |
-| V_CalcPowerupCshift | init.client powerup shifts | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: priority quad > suit > ring > pent matches | TBD: write test or tools/verify script + evidence capture |
-| V_CalcBlend | init.client shift compositor | PENDING | same a2/(1-a) accumulation; delta: final alpha capped at 0.85 | TBD: write test or tools/verify script + evidence capture |
+| V_CalcPowerupCshift | view.powerupShift (shared; init.client delegates) | VERIFIED | test_view battery vs view.c:442: quad(0,0,255,30) > suit(0,255,0,20) > invisibility(100,100,100,100) > invulnerability(255,255,0,30) priority chain, combined-items precedence, none->nil. | `lune run tests/test_view.luau` |
+| V_CalcBlend | view.calcBlend (shared; init.client delegates) | VERIFIED | test_view hand-computed truths: single shift passes through, two-shift alpha accumulates a += a2*(1-a) with colors weighted a2/a, empty -> transparent. Delta stands: the Roblox layer caps the on-screen alpha at 0.85. Live composite: nq-slime-cshift evidence. | `lune run tests/test_view.luau` |
 | V_UpdatePalette | cshift Frame tint + decay | SUBSTITUTED | palette blend → fullscreen GUI tint; damage/bonus decay 150/100 per second ported | — (substitution; verify justification still holds) |
 | angledelta / CalcGunAngle | gunangles = (-pitch, yaw, 0) | SUBSTITUTED | Gun locked to the view: the C damped yaw/pitch lag (angledelta smoothing) is not ported; the base mapping (-pitch, yaw, punch excluded) is asserted in test_view.luau. Expiry: port the damped lag if playtesting reports the gun feeling glued/stiff during fast turns. | `lune run tests/test_view.luau` (base mapping) |
 | V_BoundOffsets | — | UNIMPLEMENTED | scr_ofsx/y/z not supported | — (implement first) |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 123
-- PENDING: 9
+- VERIFIED: 125
+- PENDING: 7
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

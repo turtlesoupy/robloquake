@@ -167,4 +167,37 @@ t.check(pc.cshift_damage_color == vector.create(220, 50, 50), "some armor (not d
 t.check(approx(pc.cshift_damage_percent, 150), "damage cshift clamps at 150")
 t.check(approx(pc.dmg_roll, 10 * 1 * 0.6), "roll kick: count floored at 10, side from the right")
 
+
+--------------------------------------------------------------------------
+-- V_CalcPowerupCshift priority chain (view.c:442): quad > suit > invis
+-- > invuln, with the C colors/percents
+local IT_INVIS, IT_SUIT, IT_QUAD, IT_INVULN = 524288, 1048576, 2097152, 4194304
+local function eqShift(a: { number }?, b: { number }?): boolean
+	if a == nil or b == nil then
+		return a == b
+	end
+	return a[1] == b[1] and a[2] == b[2] and a[3] == b[3] and a[4] == b[4]
+end
+t.check(eqShift(view.powerupShift(IT_QUAD), { 0, 0, 255, 30 }), "powerup: quad blue 30")
+t.check(eqShift(view.powerupShift(IT_SUIT), { 0, 255, 0, 20 }), "powerup: suit green 20")
+t.check(eqShift(view.powerupShift(IT_INVIS), { 100, 100, 100, 100 }), "powerup: invisibility grey 100")
+t.check(eqShift(view.powerupShift(IT_INVULN), { 255, 255, 0, 30 }), "powerup: invulnerability yellow 30")
+t.check(eqShift(view.powerupShift(IT_QUAD + IT_SUIT + IT_INVULN), { 0, 0, 255, 30 }), "powerup: quad wins the priority chain")
+t.check(eqShift(view.powerupShift(IT_SUIT + IT_INVIS), { 0, 255, 0, 20 }), "powerup: suit beats invisibility")
+t.check(view.powerupShift(0) == nil, "powerup: none -> nil")
+
+--------------------------------------------------------------------------
+-- V_CalcBlend accumulation (view.c V_CalcBlend): a += a2*(1-a); colors
+-- weighted a2/a. Hand-computed truths.
+local r, g, b, a = view.calcBlend({ { 255, 0, 0, 128 } })
+t.check(approx(a, 128 / 255) and approx(r, 255) and approx(g, 0), "blend: single shift passes through")
+r, g, b, a = view.calcBlend({ { 255, 0, 0, 128 }, { 0, 0, 255, 64 } })
+local a1, a2v = 128 / 255, 64 / 255
+local wantA = a1 + a2v * (1 - a1)
+local w2 = a2v / wantA
+t.check(approx(a, wantA), "blend: two-shift alpha accumulates a2*(1-a)")
+t.check(approx(r, 255 * (1 - w2)) and approx(b, 255 * w2), "blend: colors weighted a2/a")
+r, g, b, a = view.calcBlend({})
+t.check(a == 0, "blend: empty -> transparent")
+
 t.finish("test_view")

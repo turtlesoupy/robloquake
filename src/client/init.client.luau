@@ -1711,15 +1711,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 	-- S_UpdateAmbientSounds: leaf-based water/sky ambience
 	soundlib.updateAmbients(snd, viewLeaf.ambient, dt)
-	-- powerups (V_CalcPowerupCshift; quad wins over suit/ring/pent like the C)
-	if bit32.band(c.items, 2097152) ~= 0 then -- IT_QUAD
-		table.insert(shifts, { 0, 0, 255, 30 })
-	elseif bit32.band(c.items, 1048576) ~= 0 then -- IT_SUIT
-		table.insert(shifts, { 0, 255, 0, 20 })
-	elseif bit32.band(c.items, 524288) ~= 0 then -- IT_INVISIBILITY
-		table.insert(shifts, { 100, 100, 100, 100 })
-	elseif bit32.band(c.items, 4194304) ~= 0 then -- IT_INVULNERABILITY
-		table.insert(shifts, { 255, 255, 0, 30 })
+	-- powerups (V_CalcPowerupCshift; quad wins over suit/invis/invuln like C)
+	local pshift = viewlib.powerupShift(c.items)
+	if pshift then
+		table.insert(shifts, pshift)
 	end
 	if c.cshift_damage_percent > 0 then
 		local dc = c.cshift_damage_color
@@ -1730,17 +1725,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 
 	if #shifts > 0 then
-		local r, g, b, a = 0, 0, 0, 0
-		for _, sh in shifts do
-			local a2 = math.clamp(sh[4], 0, 255) / 255
-			a = a + a2 * (1 - a)
-			if a > 0 then
-				local w2 = a2 / a
-				r = r * (1 - w2) + sh[1] * w2
-				g = g * (1 - w2) + sh[2] * w2
-				b = b * (1 - w2) + sh[3] * w2
-			end
-		end
+		local r, g, b, a = viewlib.calcBlend(shifts)
 		cshiftFrame.BackgroundColor3 = Color3.fromRGB(r, g, b)
 		cshiftFrame.BackgroundTransparency = 1 - math.min(a, 0.85)
 	else

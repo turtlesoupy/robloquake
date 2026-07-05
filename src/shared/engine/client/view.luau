@@ -118,6 +118,38 @@ function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 	}
 end
 
+-- V_CalcPowerupCshift: quad > suit > invis > invuln priority chain
+function view.powerupShift(items: number): { number }?
+	if bit32.band(items, 2097152) ~= 0 then -- IT_QUAD
+		return { 0, 0, 255, 30 }
+	elseif bit32.band(items, 1048576) ~= 0 then -- IT_SUIT
+		return { 0, 255, 0, 20 }
+	elseif bit32.band(items, 524288) ~= 0 then -- IT_INVISIBILITY
+		return { 100, 100, 100, 100 }
+	elseif bit32.band(items, 4194304) ~= 0 then -- IT_INVULNERABILITY
+		return { 255, 255, 0, 30 }
+	end
+	return nil
+end
+
+-- V_CalcBlend: accumulate {r,g,b,percent} shifts with a += a2*(1-a) and
+-- colors weighted a2/a (the final on-screen alpha cap of 0.85 is applied
+-- by the Roblox layer, a recorded delta)
+function view.calcBlend(shifts: { { number } }): (number, number, number, number)
+	local r, g, b, a = 0, 0, 0, 0
+	for _, sh in shifts do
+		local a2 = math.clamp(sh[4], 0, 255) / 255
+		a = a + a2 * (1 - a)
+		if a > 0 then
+			local w2 = a2 / a
+			r = r * (1 - w2) + sh[1] * w2
+			g = g * (1 - w2) + sh[2] * w2
+			b = b * (1 - w2) + sh[3] * w2
+		end
+	end
+	return r, g, b, a
+end
+
 -- exported for tests (C-truth checks against view.c formulas)
 view.calcRoll = calcRoll
 view.calcBob = calcBob
