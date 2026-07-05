@@ -194,7 +194,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) | — (implement first) |
 | Key_Init | default.cfg exec at boot + autoexec layer | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: boot scrollback opens with "execing default.cfg" and "couldn't exec autoexec.cfg" (pak default.cfg + autoexec layer at boot). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Event | init.client keyEvent via UserInputService | VERIFIED | Real UserInputService events (not the RQ_Force harness) drove movement, turning, and the menu in the battery; keyup fired the -command (motion stopped) ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
-| Key_ClearStates | input.setEnabled(false) clears buttons | PENDING | cleared when console/menu opens | TBD: write test or tools/verify script + evidence capture |
+| Key_ClearStates | input.setEnabled(false) clears buttons | VERIFIED | During the committed menu battery, three real Down keys moved the menu CURSOR while the player never moved or turned — arrows are bound to +back/+lookdown in game, so buttons were cleared when the menu opened ([evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg) + battery text). Same shared-input mechanism as the QW messagemode finding (input disabled while chat is open). | Menu battery per tools/verify_input_nq.luau |
 
 ## menu.c
 
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 127
-- PENDING: 5
+- VERIFIED: 128
+- PENDING: 4
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
