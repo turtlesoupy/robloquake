@@ -394,6 +394,65 @@ local function hideAvatarEnt(num: number)
 	hideAvatarWeapon(num)
 end
 
+-- Muzzle-origin blend for projectiles (render-only; the SIMULATION is
+-- untouched — W_FireRocket really does spawn at the player's center+16,
+-- which looks right in first person but reads as chest-launched from a
+-- third-person avatar). A projectile born near an avatar-rendered
+-- player renders from that avatar's gun muzzle and converges onto its
+-- true position over MUZZLE_BLEND seconds.
+local MUZZLE_BLEND = 0.15
+local PROJECTILE_MODELS: { [string]: boolean } = {
+	["progs/missile.mdl"] = true,
+	["progs/grenade.mdl"] = true,
+	["progs/spike.mdl"] = true,
+	["progs/s_spike.mdl"] = true,
+}
+
+local function tagMuzzleOrigin(re: entrender.RenderEnt, e: any)
+	if not avatarsOn() then
+		return
+	end
+	local name = c.model_precache[e.modelindex + 1]
+	if not name or not PROJECTILE_MODELS[name] then
+		return
+	end
+	local bestPart: MeshPart? = nil
+	local bestDist = 60 -- quake units: projectiles spawn ~8-16 from the owner
+	for slot = 1, c.maxclients do
+		local pe = c.entities[slot]
+		local ae = avatarEnts[slot]
+		local aw = avatarWeapons[slot]
+		if pe and ae and ae.visible and aw and aw.re and aw.re.part then
+			local d = vector.magnitude(e.origin - pe.origin)
+			if d < bestDist then
+				bestDist = d
+				bestPart = aw.re.part :: MeshPart
+			end
+		end
+	end
+	if bestPart then
+		local tip = bestPart.CFrame * Vector3.new(bestPart.Size.X / 2 + 0.1, 0, 0)
+		local r = re :: any
+		r.muzzleFrom = vector.create(tip.X * 10, -tip.Z * 10, tip.Y * 10)
+		r.muzzleT0 = c.time
+		workspace:SetAttribute("RQDBG_MuzzleBlends", (workspace:GetAttribute("RQDBG_MuzzleBlends") :: number? or 0) + 1)
+	end
+end
+
+local function muzzleBlendedOrigin(re: entrender.RenderEnt, e: any): vector
+	local r = re :: any
+	local from = r.muzzleFrom
+	if not from then
+		return e.origin
+	end
+	local k = 1 - (c.time - (r.muzzleT0 or 0)) / MUZZLE_BLEND
+	if k <= 0 then
+		r.muzzleFrom = nil
+		return e.origin
+	end
+	return e.origin + (from - e.origin) * k
+end
+
 local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.AvatarEnt, effects: number)
 	local aw = avatarWeapons[num]
 	if not aw then
@@ -1855,6 +1914,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			end
 			re.modelindex = e.modelindex
 			renderEnts[num] = re
+			tagMuzzleOrigin(re, e)
 		end
 		setEntVisible(re :: entrender.RenderEnt, true)
 
@@ -1901,7 +1961,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if e.colormap > 0 and e.colormap <= c.maxclients and c.scores[e.colormap] then
 				colors = c.scores[e.colormap].colors
 			end
-			entrender.updateAlias(rr, def, e.origin, e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
+			entrender.updateAlias(rr, def, muzzleBlendedOrigin(rr, e), e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
 			-- R_AliasSetupLighting: dynamic lights add straight onto the
 			-- lightmap sample
 			local elight = lightpoint.at(worldModels[1], e.origin, styleValueFor)
