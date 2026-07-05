@@ -396,36 +396,48 @@ return function()
 					addCount(mi, n)
 				end
 			end
-			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
-				return seenLevelResets == resets
-			end)
-			print(`[robloquake] qw mesh pools prewarmed: {prewarmed}`)
-			-- brush template rebuild pass (see the NQ twin): a zombied
-			-- load-burst template renders black through every clone
+			-- brush template rebuild FIRST, prioritized + counter-gated +
+			-- pcalled (see the NQ twin): a zombied load-burst template
+			-- renders black through every clone
 			local rebuilt = 0
 			local templateNames = {}
 			for tname in brushTemplates do
 				table.insert(templateNames, tname)
 			end
+			local function templatePriority(n: string): number
+				if n:sub(1, 1) ~= "*" then
+					return 0
+				end
+				return 1 + (tonumber(n:sub(2)) or 0)
+			end
+			table.sort(templateNames, function(a, b)
+				return templatePriority(a) < templatePriority(b)
+			end)
+			local selfMark, myLast = -1, 0
 			for _, tname in templateNames do
 				local oldTpl = brushTemplates[tname]
 				if not oldTpl then
 					continue
 				end
 				repeat
-					task.wait(0.25)
-				until seenLevelResets ~= resets or textures.timeSinceCreation() > 1.5
+					task.wait(0.1)
+				until seenLevelResets ~= resets
+					or textures.timeSinceCreation() > 1.5
+					or (textures.creationCount() == selfMark and os.clock() - myLast > 0.6)
 				if seenLevelResets ~= resets then
 					return
 				end
-				local sourceBrush: any = nil
-				for mi, mname in cl.model_name do
-					if mname == tname and cl.models[mi] and cl.models[mi].kind == "brush" then
-						sourceBrush = cl.models[mi].brush
-						break
+				local ok, err = pcall(function()
+					local sourceBrush: any = nil
+					for mi, mname in cl.model_name do
+						if mname == tname and cl.models[mi] and cl.models[mi].kind == "brush" then
+							sourceBrush = cl.models[mi].brush
+							break
+						end
 					end
-				end
-				if sourceBrush then
+					if not sourceBrush then
+						return
+					end
 					local fresh, anim = worldmesh.build(sourceBrush, pal, nil :: any, tname)
 					for _, e in anim do
 						table.insert(lightAnim, e)
@@ -451,9 +463,19 @@ return function()
 						end
 					end
 					rebuilt += 1
+					workspace:SetAttribute("RQDBG_TemplatesRebuilt", rebuilt)
+				end)
+				if not ok then
+					warn(`[robloquake] qw template rebuild failed for {tname}: {err}`)
 				end
+				selfMark = textures.creationCount()
+				myLast = os.clock()
 			end
 			print(`[robloquake] qw brush templates rebuilt: {rebuilt}`)
+			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
+				return seenLevelResets == resets
+			end)
+			print(`[robloquake] qw mesh pools prewarmed: {prewarmed}`)
 		end)
 	end
 

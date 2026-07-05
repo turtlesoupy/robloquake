@@ -76,11 +76,18 @@ end
 -- prewarm suspect-marking, brush template rebuilds) gate on it so
 -- their recreations land in genuinely quiet moments.
 local lastCreation = 0
+local creations = 0
 function textures.noteCreation()
 	lastCreation = os.clock()
+	creations += 1
 end
 function textures.timeSinceCreation(): number
 	return os.clock() - lastCreation
+end
+-- monotone creation counter: healing passes snapshot it after their own
+-- builds to tell "the clock is hot because of ME" from foreign activity
+function textures.creationCount(): number
+	return creations
 end
 
 -- Create an EditableImage from palettized pixels. Returns nil when the

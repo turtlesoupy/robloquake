@@ -463,43 +463,60 @@ c.onServerInfo = function()
 					addCount(mi, n)
 				end
 			end
-			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
-				return gen == worldBuildGen
-			end)
-			print(`[cl] mesh pools prewarmed: {prewarmed}`)
-			-- brush template rebuild: templates (doors/plats + b_*.bsp
-			-- health/ammo boxes) are born in the load burst, and a zombied
-			-- template renders black through EVERY clone all level. Rebuild
-			-- each in a genuinely quiet moment (shared creation clock),
-			-- swap it into the def, re-clone live ents. Old templates are
-			-- retired, not destroyed: the anim pumps still hold their images.
+			-- brush template rebuild FIRST (before pool prewarm): templates
+			-- (doors/plats/buttons "*N" + b_*.bsp health/ammo boxes) are
+			-- born in the load burst, and a zombied template renders black
+			-- through EVERY clone all level. Rebuild each in a measured-
+			-- quiet moment, swap into the def, re-clone live ents. Ordered
+			-- by what the player meets first: item boxes, then submodels in
+			-- map order (buttons/doors early). The creation COUNTER tells
+			-- our own builds from foreign ones so the pass moves at ~0.6s/
+			-- template instead of over-waiting on its own heat. Old
+			-- templates retire until teardown (anim pumps hold their
+			-- images). Each template is pcalled so one failure (budget
+			-- wall) cannot silently kill the rest of the pass.
 			local rebuilt = 0
 			local templateNames = {}
 			for name in brushTemplates do
 				table.insert(templateNames, name)
 			end
+			local function templatePriority(n: string): number
+				if n:sub(1, 1) ~= "*" then
+					return 0 -- b_*.bsp items first: the most-seen brush ents
+				end
+				return 1 + (tonumber(n:sub(2)) or 0)
+			end
+			table.sort(templateNames, function(a, b)
+				return templatePriority(a) < templatePriority(b)
+			end)
+			local selfMark, myLast = -1, 0
 			for _, name in templateNames do
 				local oldTpl = brushTemplates[name]
 				if not oldTpl then
 					continue
 				end
 				repeat
-					task.wait(0.25)
-				until gen ~= worldBuildGen or textures.timeSinceCreation() > 1.5
+					task.wait(0.1)
+				until gen ~= worldBuildGen
+					or textures.timeSinceCreation() > 1.5
+					or (textures.creationCount() == selfMark and os.clock() - myLast > 0.6)
 				if gen ~= worldBuildGen then
 					return
 				end
-				local sourceModel: bsplib.Model? = nil
-				if name:sub(1, 1) == "*" then
-					local sub = tonumber(name:sub(2)) :: number
-					sourceModel = worldModels[sub + 1]
-				else
-					local buf = vfslib.loadFile(fs, name, true)
-					if buf then
-						sourceModel = bsplib.load(name, buf)[1]
+				local ok, err = pcall(function()
+					local sourceModel: bsplib.Model? = nil
+					if name:sub(1, 1) == "*" then
+						local sub = tonumber(name:sub(2)) :: number
+						sourceModel = worldModels[sub + 1]
+					else
+						local buf = vfslib.loadFile(fs, name, true)
+						if buf then
+							sourceModel = bsplib.load(name, buf)[1]
+						end
 					end
-				end
-				if sourceModel then
+					if not sourceModel then
+						return
+					end
 					local fresh, anim = worldmesh.build(sourceModel, pal, nil :: any, name)
 					for _, e in anim do
 						table.insert(lightAnim, e)
@@ -525,9 +542,19 @@ c.onServerInfo = function()
 						end
 					end
 					rebuilt += 1
+					workspace:SetAttribute("RQDBG_TemplatesRebuilt", rebuilt)
+				end)
+				if not ok then
+					warn(`[robloquake] template rebuild failed for {name}: {err}`)
 				end
+				selfMark = textures.creationCount()
+				myLast = os.clock()
 			end
 			print(`[cl] brush templates rebuilt: {rebuilt}`)
+			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
+				return gen == worldBuildGen
+			end)
+			print(`[cl] mesh pools prewarmed: {prewarmed}`)
 		end)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
