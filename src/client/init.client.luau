@@ -391,6 +391,72 @@ c.onServerInfo = function()
 		end
 		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
 		loadingUp = 2
+		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
+		-- cannot reproduce boot-burst zombies, so make the GAME VM create
+		-- and bind a grid of solid-green test images right after its own
+		-- build burst. Gated; visual count = zombie rate in this context.
+		if workspace:GetAttribute("RQDBG_SelfTest") then
+			local AssetService = game:GetService("AssetService")
+			local mkQuad
+			do
+				local em = AssetService:CreateEditableMesh()
+				if em then
+					local v1, v2 = em:AddVertex(Vector3.new(-0.55, -0.55, 0)), em:AddVertex(Vector3.new(0.55, -0.55, 0))
+					local v3, v4 = em:AddVertex(Vector3.new(0.55, 0.55, 0)), em:AddVertex(Vector3.new(-0.55, 0.55, 0))
+					local u1, u2 = em:AddUV(Vector2.new(0, 1)), em:AddUV(Vector2.new(1, 1))
+					local u3, u4 = em:AddUV(Vector2.new(1, 0)), em:AddUV(Vector2.new(0, 0))
+					local f1 = em:AddTriangle(v1, v2, v3)
+					em:SetFaceUVs(f1, { u1, u2, u3 })
+					local f2 = em:AddTriangle(v1, v3, v4)
+					em:SetFaceUVs(f2, { u1, u3, u4 })
+					local okT, tpl = pcall(function()
+						return AssetService:CreateMeshPartAsync(Content.fromObject(em))
+					end)
+					if okT then
+						mkQuad = tpl :: MeshPart
+						mkQuad.Anchored = true
+						mkQuad.CanCollide = false
+						mkQuad.Material = Enum.Material.SmoothPlastic
+					end
+				end
+			end
+			-- gallery of the REAL def skin images, 5s after build and again
+			-- on every RQDBG_GalleryGo attribute change: any def whose skin
+			-- zombied during a burst shows a black tile (same image object)
+			-- — a per-boot visual zombie detector.
+			local function buildGallery()
+				if not mkQuad then
+					workspace:SetAttribute("RQDBG_SelfTestMade", -1)
+					return
+				end
+				for _, old in workspace:GetChildren() do
+					if old.Name:sub(1, 17) == "RQDBG_GalleryQuad" then
+						old:Destroy()
+					end
+				end
+				local base = workspace.CurrentCamera.CFrame
+				local made = 0
+				local names = {}
+				for idx = 1, 256 do
+					local def = modelDefs[idx]
+					local imgs = def and (def :: any).skinImages
+					if imgs and imgs[1] then
+						local q = mkQuad:Clone()
+						q.Name = "RQDBG_GalleryQuad" .. made
+						q.TextureContent = Content.fromObject(imgs[1])
+						q.CFrame = base * CFrame.new((made % 8 - 3.5) * 1.3, (math.floor(made / 8) - 1) * 1.3, -9)
+						q.Parent = workspace
+						made += 1
+						table.insert(names, tostring(c.model_precache[idx + 1]))
+					end
+				end
+				workspace:SetAttribute("RQDBG_SelfTestMade", made)
+				workspace:SetAttribute("RQDBG_GalleryNames", table.concat(names, ","))
+				print(`[cl] RQDBG_SelfTest gallery: {made} def skins ({table.concat(names, ",")})`)
+			end
+			task.delay(5, buildGallery)
+			workspace:GetAttributeChangedSignal("RQDBG_GalleryGo"):Connect(buildGallery)
+		end
 	end)
 end
 
