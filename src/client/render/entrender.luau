@@ -32,7 +32,6 @@ export type ModelDef = {
 	skinH: number?,
 	palRef: any?, -- palette, kept for fallback tinting
 	fullbrightSkin: boolean?, -- mostly palette-224+ skin: render unlit
-	uvScale: Vector2?, -- skin images are padded to pow2; UVs scale by w/padW, h/padH
 }
 
 -- One rendered entity instance
@@ -112,12 +111,11 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 
 	local frontUV = table.create(am.numverts)
 	local backUV = table.create(am.numverts)
-	local uvScale = def.uvScale or Vector2.new(1, 1)
 	for i = 1, am.numverts do
 		local stv = am.stverts[i]
-		frontUV[i] = em:AddUV(Vector2.new((stv.s + 0.5) / skinW * uvScale.X, (stv.t + 0.5) / skinH * uvScale.Y))
+		frontUV[i] = em:AddUV(Vector2.new((stv.s + 0.5) / skinW, (stv.t + 0.5) / skinH))
 		local bs = if stv.onseam then stv.s + skinW / 2 else stv.s
-		backUV[i] = em:AddUV(Vector2.new((bs + 0.5) / skinW * uvScale.X, (stv.t + 0.5) / skinH * uvScale.Y))
+		backUV[i] = em:AddUV(Vector2.new((bs + 0.5) / skinW, (stv.t + 0.5) / skinH))
 	end
 
 	for tri = 1, am.numtris do
@@ -262,20 +260,18 @@ function entrender.updateAlias(
 		re.lastSkinKey = wantSkinKey
 		local img: EditableImage? = nil
 		if colors and def.translatedSkins and def.skinPixels then
-			local cache = def.translatedSkins :: { [number]: any }
-			local cached = cache[colors]
-			if cached == nil then
+			local cache = def.translatedSkins :: { [number]: EditableImage }
+			img = cache[colors]
+			if not img then
 				local translated = textures.translatePixels(
 					def.skinPixels :: buffer,
 					(def.skinW :: number) * (def.skinH :: number),
 					colors
 				)
-				img = (textures.createImagePow2(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false))
-				-- cache failures too: retrying every frame hammers the image
-				-- budget with a creation attempt per entity per frame
-				cache[colors] = img or false
-			elseif cached ~= false then
-				img = cached
+				img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
+				if img then
+					cache[colors] = img
+				end
 			end
 		end
 		if not img then
@@ -422,9 +418,7 @@ function entrender.destroyDef(def: ModelDef)
 	end
 	if def.translatedSkins then
 		for _, img in def.translatedSkins do
-			if img ~= false then
-				(img :: EditableImage):Destroy()
-			end
+			img:Destroy()
 		end
 		def.translatedSkins = nil
 	end
@@ -456,18 +450,14 @@ function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 	if def.kind == "alias" then
 		local am = def.alias :: mdl.AliasModel
 		local imgs: { EditableImage } = {}
-		local padW, padH = am.skinwidth, am.skinheight
 		for si, skin in am.skins do
 			local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
-			-- non-pow2 TextureContent renders black on MeshParts; pad + scale UVs
-			local img, pw, ph = textures.createImagePow2(pixels, am.skinwidth, am.skinheight, pal, false)
-			padW, padH = pw, ph
+			local img = textures.createImage(pixels, am.skinwidth, am.skinheight, pal, false)
 			if img then
 				imgs[si] = img
 			end
 		end
 		def.skinImages = imgs
-		def.uvScale = Vector2.new(am.skinwidth / padW, am.skinheight / padH)
 		local skin1 = am.skins[1]
 		def.skinPixels = if skin1.group then (skin1.frames :: { buffer })[1] else skin1.pixels :: buffer
 		-- the software colormap keeps palette 224-255 fullbright; per-pixel
