@@ -102,15 +102,19 @@ end
 -- rebuilt ONCE, a beat after entity creation goes quiet, swapped
 -- in-place so the owning boot never notices.
 local REGEN_QUIET = 1.5
+local REGEN_SPACING = 2.5 -- rebuilds are ISOLATED creations, never a burst
 local meshRegenQueue: { [RenderEnt]: ModelDef } = {}
 local lastAliasCreate = 0
+local lastRegenAt = 0
 local regenConn: RBXScriptConnection? = nil
 local buildAliasMesh -- forward decl
 
 local function drainMeshRegen()
-	if os.clock() - lastAliasCreate < REGEN_QUIET then
+	local now = os.clock()
+	if now - lastAliasCreate < REGEN_QUIET or now - lastRegenAt < REGEN_SPACING then
 		return
 	end
+	lastRegenAt = now
 	local re, def = next(meshRegenQueue)
 	if not re then
 		if regenConn then
@@ -132,9 +136,17 @@ local function drainMeshRegen()
 	p.CFrame = oldPart.CFrame
 	p.Color = oldPart.Color
 	p.Transparency = oldPart.Transparency
-	if re.boundImg then
-		p.TextureContent = Content.fromObject(re.boundImg)
+	-- do NOT copy the old binding: the image-regeneration pass may have
+	-- destroyed the object re.boundImg still points at. Bind the def's
+	-- CURRENT skin (the def tables always hold the live image) — QW
+	-- statics never see another updateAlias; everything else rebinds its
+	-- own skin/translation next frame via the identity check.
+	local skins = def.skinImages
+	local freshImg = if skins then skins[1] else nil
+	if freshImg then
+		p.TextureContent = Content.fromObject(freshImg)
 	end
+	re.boundImg = freshImg
 	p.Parent = oldPart.Parent
 	local oldEm = re.em
 	re.em = em
