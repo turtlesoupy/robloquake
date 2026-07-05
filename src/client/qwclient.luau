@@ -244,36 +244,9 @@ return function()
 		end
 	end
 
-	-- CL_AllocDlight pool
-	local dlights: { lightatlaslib.Dlight } = {}
-	local MAX_DLIGHTS = 32
-	local function allocDlight(key: number, time: number): lightatlaslib.Dlight
-		if key ~= 0 then
-			for _, dl in dlights do
-				if dl.key == key then
-					dl.radius = 0
-					dl.decay = 0
-					dl.minlight = 0
-					return dl
-				end
-			end
-		end
-		for _, dl in dlights do
-			if dl.die < time then
-				dl.key = key
-				dl.radius = 0
-				dl.decay = 0
-				dl.minlight = 0
-				return dl
-			end
-		end
-		local dl: lightatlaslib.Dlight = { key = key, origin = vector.zero, radius = 0, die = 0, decay = 0, minlight = 0 }
-		if #dlights < MAX_DLIGHTS then
-			table.insert(dlights, dl)
-		else
-			dlights[1] = dl
-		end
-		return dl
+	-- CL_AllocDlight pool lives in qwcl (shared, offline-tested)
+	local function allocDlight(key: number, _time: number): lightatlaslib.Dlight
+		return qwcl.allocDlight(cl, key)
 	end
 
 	-- CL_ParseBeam state (bolt models, 0.2s lifetime, 30-unit segments)
@@ -1502,7 +1475,7 @@ return function()
 				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), gunFrame, 0, 0, cl.time)
 				-- R_DrawViewModel: always give some light on the gun
 				local glight = if cl.worldmodel then lightpoint.at(cl.worldmodel, eye, styleValueFor) else 255
-				for _, dl in dlights do
+				for _, dl in cl.dlights do
 					if dl.die >= cl.time and dl.radius > 0 then
 						local add = dl.radius - vector.magnitude(eye - dl.origin)
 						if add > 0 then
@@ -1558,17 +1531,9 @@ return function()
 		updateBeams()
 		particleslib.update(psys, cl.time, dt)
 
-		-- CL_DecayLights + the dynamic light surface pass
+		-- CL_DecayLights + the dynamic light surface pass (shared math)
 		do
-			local active: { lightatlaslib.Dlight } = {}
-			for _, dl in dlights do
-				if dl.die >= cl.time and dl.radius > 0 then
-					dl.radius -= dt * dl.decay
-					if dl.radius > 0 then
-						table.insert(active, dl)
-					end
-				end
-			end
+			local active = qwcl.decayDlights(cl, dt)
 			if cl.worldmodel then
 				worldmesh.updateDlights(cl.worldmodel.brush, active)
 			end

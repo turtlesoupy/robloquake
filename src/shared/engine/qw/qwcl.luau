@@ -104,6 +104,7 @@ function qwcl.new(fsys: vfslib.Vfs): any
 
 	cl.baselines = {} :: { [number]: qwents.EntityState }
 	cl.lightstyles = {} :: { [number]: string }
+	cl.dlights = {} :: { any } -- CL_AllocDlight pool (cap 32)
 	cl.stats = table.create(32, 0)
 	cl.stats[0] = 0
 	cl.players = {} :: { [number]: PlayerInfo }
@@ -161,6 +162,55 @@ qwcl.sendStringCmd = sendStringCmd
 
 -- transmit whatever reliable data is pending (handshake phase; during
 -- play clc_move packets carry it)
+-- CL_AllocDlight (cl_ents.c:42): exact key match resets that slot, then
+-- any expired slot is reused, else slot 1 is overwritten. Pool grows
+-- lazily to MAX_DLIGHTS (equivalent to C's zeroed fixed array: unused C
+-- slots have die 0 < time and are reused by the expired scan).
+local MAX_DLIGHTS = 32
+function qwcl.allocDlight(cl: any, key: number): any
+	if key ~= 0 then
+		for _, dl in cl.dlights do
+			if dl.key == key then
+				dl.radius = 0
+				dl.decay = 0
+				dl.minlight = 0
+				return dl
+			end
+		end
+	end
+	for _, dl in cl.dlights do
+		if dl.die < cl.time then
+			dl.key = key
+			dl.radius = 0
+			dl.decay = 0
+			dl.minlight = 0
+			return dl
+		end
+	end
+	local dl = { key = key, origin = vector.zero, radius = 0, die = 0, decay = 0, minlight = 0 }
+	if #cl.dlights < MAX_DLIGHTS then
+		table.insert(cl.dlights, dl)
+	else
+		cl.dlights[1] = dl
+	end
+	return dl
+end
+
+-- CL_DecayLights: radius -= dt*decay; returns the still-live lights for
+-- the dynamic surface pass
+function qwcl.decayDlights(cl: any, dt: number): { any }
+	local active = {}
+	for _, dl in cl.dlights do
+		if dl.die >= cl.time and dl.radius > 0 then
+			dl.radius -= dt * dl.decay
+			if dl.radius > 0 then
+				table.insert(active, dl)
+			end
+		end
+	end
+	return active
+end
+
 function qwcl.flush(cl: any)
 	if cl.netchan.message.cursize > 0 then
 		local packet = qwnetchan.transmit(cl.netchan, nil)

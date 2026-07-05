@@ -380,6 +380,46 @@ do
 	t.eq(cl.disconnected_reason, "server disconnected", "svc_disconnect records the reason")
 end
 
+-- CL_AllocDlight / CL_DecayLights (cl_ents.c:42, shared pool in qwcl)
+do
+	cl.time = 100
+	table.clear(cl.dlights)
+	local a = qwcl.allocDlight(cl, 5)
+	a.die = 105
+	a.radius = 200
+	a.origin = vector.create(1, 2, 3)
+	local b = qwcl.allocDlight(cl, 5)
+	t.check(a == b and b.radius == 0, "allocDlight: exact key match reuses + resets the slot")
+	local c2 = qwcl.allocDlight(cl, 7)
+	t.check(c2 ~= a, "allocDlight: different key gets a fresh slot")
+	c2.die = 99 -- already expired
+	local d = qwcl.allocDlight(cl, 9)
+	t.check(d == c2 and d.key == 9, "allocDlight: expired slot reused before growing")
+	-- fill to the 32 cap; the overflow overwrites slot 1
+	a.die = 200
+	d.die = 200
+	for k = 10, 39 do
+		local dl = qwcl.allocDlight(cl, k)
+		dl.die = 200
+	end
+	t.eq(#cl.dlights, 32, "allocDlight: pool capped at MAX_DLIGHTS")
+	local ov = qwcl.allocDlight(cl, 99)
+	t.check(cl.dlights[1] == ov, "allocDlight: overflow overwrites slot 1 like C's &cl_dlights[0]")
+	-- decay: radius -= dt*decay, dead lights culled from the active list
+	table.clear(cl.dlights)
+	local live = qwcl.allocDlight(cl, 1)
+	live.die = 105
+	live.radius = 100
+	live.decay = 300
+	local dying = qwcl.allocDlight(cl, 2)
+	dying.die = 105
+	dying.radius = 20
+	dying.decay = 300
+	local active = qwcl.decayDlights(cl, 0.1)
+	t.eq(#active, 1, "decayDlights: fully-decayed light culled from the active list")
+	t.check(math.abs(live.radius - 70) < 1e-6, "decayDlights: radius -= dt*decay (100 - 30)")
+end
+
 t.check(qwsv.kick(svr, sclient.userid), "kick found the userid")
 t.check(not sclient.active, "kicked client dropped")
 

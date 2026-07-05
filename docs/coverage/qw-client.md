@@ -98,9 +98,9 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| CL_AllocDlight | qwclient `allocDlight` | PENDING | Key-match → expired → pool-append (cap 32, overwrite slot 1) per C; no direct test. | TBD: write test or tools/verify script + evidence capture |
-| CL_NewDlight | inlined at call sites in `handleTempEntity`/`relinkEntities` | PENDING | Explosion/muzzleflash/EF radii and lifetimes match C values. | TBD: write test or tools/verify script + evidence capture |
-| CL_DecayLights | heartbeat dlight block | PENDING | `radius -= dt*decay`, die-time culling; feeds `worldmesh.updateDlights`. | TBD: write test or tools/verify script + evidence capture |
+| CL_AllocDlight | qwcl.allocDlight (shared; qwclient delegates) | VERIFIED | test_qw_loopback pool battery vs cl_ents.c:42: exact-key reset, expired reuse before growth, 32 cap, overflow overwrites slot 1 like C's &cl_dlights[0]. | `lune run tests/test_qw_loopback.luau` |
+| CL_NewDlight | inlined at call sites in `handleTempEntity`/`relinkEntities` | VERIFIED | Call-site values spot-checked against cl_tent.c/cl_ents.c (muzzleflash die +0.1; explosion radius/die +0.5/decay 300; EF glows die +0.1) on top of the offline-tested shared pool. | Code inspection + `lune run tests/test_qw_loopback.luau` (pool) |
+| CL_DecayLights | qwcl.decayDlights (shared; heartbeat delegates) | VERIFIED | test_qw_loopback: radius -= dt*decay (100-30 at dt .1/decay 300), fully-decayed lights culled from the active list that feeds worldmesh.updateDlights. | `lune run tests/test_qw_loopback.luau` |
 | CL_ParseDelta | `qwents.parseDelta` | VERIFIED | test_qwents named checks: "moved origin applied", "new entity fields", U_MOREBITS byte, all U_ field reads. | `lune run tests/test_qwents.luau` |
 | FlushEntityPacket | too-old branch of `qwcl` `parsePacketEntitiesMsg` | PENDING | Sets invalid+validsequence=0 and parse-discards; not reachable in the lockstep loopback (never 63 packets behind). | TBD: write test or tools/verify script + evidence capture |
 | CL_ParsePacketEntities | `qwents.parsePacketEntities` + `qwcl` `parsePacketEntitiesMsg` | VERIFIED | qwents: full update, delta update, unchanged-carry, U_REMOVE, baseline-new (7 checks); loopback: "first packetentities frame received", "validsequence tracking", "packet entities present". Delta: from-sequence mismatch only warns (C's exactness kept, message differs). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 94 |
-| PENDING | 27 |
+| VERIFIED | 97 |
+| PENDING | 24 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |
