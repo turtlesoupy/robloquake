@@ -115,6 +115,11 @@ rows.
   gallery boot (all 5 def tiles show art, console zero budget-limit
   lines). entrender.annealDefImages + RQDBG_AnnealGo attr hook re-queue
   every def's images on demand (selftest-gated).
+- ACCEPTANCE PASSED: 5 consecutive clean gallery boots on the final code
+  (teleport-sweep protocol, evidence/nq-e1m1-skin-gallery-clean.jpg +
+  .txt) — every skin tile textured, zero "memory budget limits" console
+  lines on every boot. Pre-fix baseline: ~2 of 3 boots zombied the
+  armor/soldier/dog trio. RQDBG_SelfTest attribute returned to off.
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified
