@@ -151,7 +151,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_Init | init.client GUI setup | VERIFIED | The ScreenGui stack it builds (3D view, sbar, console, menu, plaques) appears across the committed capture set; boot-plumbing row with no independent behaviour beyond what those captures show. | Any Play capture |
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent | — (implement first) |
 | SCR_DrawPause | hud pausePlaque | VERIFIED | [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) + .txt: pause.lmp centered over the paused world. | Console "pause" per evidence/nq-pause-plaque.txt, capture, compare |
-| SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | PENDING | DEMOTED (evidence not re-runnable/checked-in; re-earn with a test or docs/coverage/evidence/ screenshot): FIDELITY.md: notify/centerprint clear, plaque holds until first rendered frame | TBD: write test or tools/verify script + evidence capture |
+| SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | VERIFIED | Per-frame GUI watcher across a reload: plaque visible at t=0.15s (serverinfo) and cleared at t=1.33s — the first rendered frame after the deferred world build ([evidence/nq-loading-plaque-probe.txt](evidence/nq-loading-plaque-probe.txt)). | Watcher snippet per the evidence file |
 | SCR_SetUpToDrawConsole | console.update slide | VERIFIED | Half-screen slide in [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg); mid-slide retraction visible at the top of [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) (scr_conspeed). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | SCR_DrawConsole | console.update rows | VERIFIED | evidence/nq-console-open.jpg: the console rendered mid-slide over the 3D view with scrollback rows (and nq-pause-plaque.jpg catches it mid-animation). | RQDBG_Console "toggle", capture, compare |
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | UNIMPLEMENTED | no writable filesystem | — (implement first) |
@@ -167,7 +167,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | Con_ToggleConsole_f | console.toggle (backquote/tilde) | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: console toggled open/closed through the harness across the battery. Delta: no Key_ClearStates. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Clear_f | `clear` command | VERIFIED | Console dump 368 chars -> 0 after exec `clear` ([evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)). | RQDBG_Console: exec "clear" then action "lines" |
-| Con_ClearNotify | hud.setLoading clears notifyLines | PENDING | | TBD: write test or tools/verify script + evidence capture |
+| Con_ClearNotify | hud.setLoading clears notifyLines | VERIFIED | Glyph census across a reload: 2 -> 35 (say line) -> 2 at t=2.4s with ~1s of the 3s notify lifetime remaining — cleared by the loading path, not expiry ([evidence/nq-loading-plaque-probe.txt](evidence/nq-loading-plaque-probe.txt)). | Census per the evidence file |
 | Con_MessageMode_f / Con_MessageMode2_f | stub print | UNIMPLEMENTED | pointed at `say`/Roblox chat | — (implement first) |
 | Con_CheckResize | — | SUBSTITUTED | fixed 64-column virtual canvas | — (substitution; verify justification still holds) |
 | Con_Init | console.create | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: conback + id watermark drawn (Draw_ConsoleBackground). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
@@ -456,8 +456,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 125
-- PENDING: 7
+- VERIFIED: 127
+- PENDING: 5
 - UNIMPLEMENTED: 62
 - SUBSTITUTED: 70
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

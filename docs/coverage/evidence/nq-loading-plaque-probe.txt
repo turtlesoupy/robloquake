@@ -1,0 +1,24 @@
+NQ loading plaque + Con_ClearNotify probes (2026-07-04)
+========================================================
+
+Engine: NQ boot, start<->e1m1 reloads, id1 registered 1.06.
+
+SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque:
+per-frame watcher on the gfx/loading.lmp ImageLabel across a `map`
+reload (RenderStepped in the game VM, transitions recorded):
+  t=0     visible=false   (live play)
+  t=0.15  visible=true    (serverinfo -> SCR_BeginLoadingPlaque)
+  t=1.33  visible=false   (first rendered frame of the new level ->
+                           SCR_EndLoadingPlaque)
+The 1.18s hold spans the deferred world build; screenshots kept
+missing it because the local-loopback signon window is only a couple
+of frames wide — probe the GUI, don't race captures (gotcha recorded).
+
+Con_ClearNotify: conchar glyph census (same method as
+nq-console-notify-clear.txt): baseline 2 -> 35 after a `say` line ->
+back to 2 at t=2.4s across a reload, even though the notify line had
+~1s of its 3s lifetime remaining — the loading path cleared it early
+(hud.setLoading clears notifyLines), matching C's Con_ClearNotify call
+in SCR_BeginLoadingPlaque.
+
+id1 CONTENT NOTE: local repo only.
