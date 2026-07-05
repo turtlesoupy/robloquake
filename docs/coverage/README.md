@@ -91,6 +91,14 @@ rows.
   never respawned after changelevel (statics_spawned was never reset);
   QW beam-pool ents and both boots' beam-def skin images leaked across
   level changes.
+- Anneal re-added (revert of the revert f70908e): gallery boot 1 after
+  fixes 1-3 had a CLEAN console (zero budget-limit lines — the loud
+  failure chain is gone) but armor/soldier/dog def skins still zombied
+  during the teleport sweep, so the silent-GPU-upload-failure trigger is
+  not purely budget saturation. With headroom restored, recreations now
+  succeed, which is the regime the anneal was designed for: every def
+  image recreated from its own pixels a beat after creation, swapped via
+  identity-gated binds.
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified
