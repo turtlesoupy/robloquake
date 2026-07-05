@@ -248,14 +248,23 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		if texImages[miptex] ~= nil then
 			return texImages[miptex]
 		end
-		local img = textures.createImage(tex.pixels, tex.width, tex.height, pal, false)
+		-- non-pow2 textures render BLACK on MeshParts; resample up like
+		-- GLQuake so tiling UVs stay valid (see textures.resamplePixelsPow2)
+		local rpix, rw, rh = textures.resamplePixelsPow2(tex.pixels, tex.width, tex.height)
+		local img = textures.createImage(rpix, rw, rh, pal, false)
 		texImages[miptex] = img
 		if img then
 			retainImage(container, img)
 		end
 		if img then
 			local first = tex.name:sub(1, 1)
-			if first == "*" then
+			if rw ~= tex.width or rh ~= tex.height then
+				-- turb/sky pumps WritePixels at the original dims; id1 has
+				-- no non-pow2 turb/sky, so just stay static if one appears
+				if first == "*" or tex.name:sub(1, 3) == "sky" then
+					warn(`[robloquake] non-pow2 animated texture {tex.name}; stays static`)
+				end
+			elseif first == "*" then
 				table.insert(worldmesh.textureAnims, { kind = "turb", img = img, pixels = tex.pixels, w = tex.width, h = tex.height })
 			elseif tex.name:sub(1, 3) == "sky" then
 				table.insert(worldmesh.textureAnims, { kind = "sky", img = img, pixels = tex.pixels, w = tex.width, h = tex.height })
@@ -443,7 +452,8 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				-- fullbright pixels reassert above the darkness overlay
 				if tex then
 					if fbImages[miptex] == nil then
-						local fb = textures.createFullbrightImage(tex.pixels, tex.width, tex.height, pal)
+						local fpix, fw, fh = textures.resamplePixelsPow2(tex.pixels, tex.width, tex.height)
+						local fb = textures.createFullbrightImage(fpix, fw, fh, pal)
 						if fb then
 							retainImage(container, fb)
 						end
@@ -480,7 +490,8 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				while t and not visited[t] do
 					visited[t] = true
 					if not frames[t.name] then
-						local fimg = textures.createImage(t.pixels, t.width, t.height, pal, false)
+						local apix, aw, ah = textures.resamplePixelsPow2(t.pixels, t.width, t.height)
+						local fimg = textures.createImage(apix, aw, ah, pal, false)
 						if not fimg then
 							warn(`[robloquake] anim frame image failed for {t.name}; chain stays static`)
 							return false -- image budget exhausted; stay on the base frame
