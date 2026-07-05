@@ -74,6 +74,43 @@ local function getTemplate(): MeshPart?
 	return template
 end
 
+-- readback availability: probed once WITHOUT building any rig (the
+-- magenta backdrop must never flash when the platform can't read
+-- captures back anyway)
+local readbackKnown: boolean? = nil
+local function readbackAvailable(): boolean
+	if readbackKnown ~= nil then
+		return readbackKnown :: boolean
+	end
+	local contentId: string? = nil
+	local ok = pcall(function()
+		CaptureService:CaptureScreenshot(function(id: string)
+			contentId = id
+		end)
+	end)
+	if ok then
+		local t0 = os.clock()
+		repeat
+			task.wait(0.05)
+		until contentId or os.clock() - t0 > 3
+	end
+	local usable = false
+	if contentId then
+		local ok2, img = pcall(function()
+			return AssetService:CreateEditableImageAsync(Content.fromUri(contentId :: string))
+		end)
+		if ok2 and img then
+			usable = true
+			img:Destroy()
+		end
+	end
+	readbackKnown = usable
+	if not usable then
+		warn("[robloquake] texverify: capture readback unavailable — using blind post-settle regeneration")
+	end
+	return usable
+end
+
 local function captureToImage(): EditableImage?
 	local contentId: string? = nil
 	local ok = pcall(function()
@@ -222,6 +259,20 @@ function texverify.verifySlots(slots: { Slot }): (number, number, number)
 		end
 	end
 	local healed = 0
+	if not readbackAvailable() then
+		for _, s2 in decidable do
+			local old2 = s2.tbl[s2.key]
+			local fresh = textures.createImage(s2.pixels, s2.w, s2.h, s2.pal, s2.alphaIndex)
+			if fresh and old2 then
+				s2.tbl[s2.key] = fresh
+				healed += 1
+				task.delay(1, function()
+					old2:Destroy()
+				end)
+			end
+		end
+		return #slots, healed, 0
+	end
 	for round = 1, ROUNDS do
 		if #decidable == 0 then
 			break
