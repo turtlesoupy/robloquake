@@ -468,6 +468,25 @@ do
 	t.check(#dprints > 0 and dprints[1]:find("mismatch") ~= nil, "Con_DPrintf hook fires on the delta from-mismatch warning")
 end
 
+-- CL_ParseProjectiles (cl_ents.c:584): 6-byte packed nails. Hand-packed
+-- truth: origin (100,-200,24) -> bytes {50,200,121,12,72,128} with
+-- pitch index 4 (=90 deg) and yaw byte 128 (=180 deg).
+do
+	local sb = msg.newBuf(64)
+	msg.writeByte(sb, qwp.svc_nails)
+	msg.writeByte(sb, 1)
+	for _, b in { 50, 200, 121, 12, 72, 128 } do
+		msg.writeByte(sb, b)
+	end
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	qwcl.parseServerMessage(cl, msg.reader(pkt))
+	t.eq(#cl.nails, 1, "svc_nails: one projectile parsed")
+	local n = cl.nails[1]
+	t.check(n.origin == vector.create(100, -200, 24), "nail origin unpacked from the 6-byte C bit layout")
+	t.check(math.abs(n.angles.x - 90) < 1e-6 and math.abs(n.angles.y - 180) < 1e-6, "nail pitch 360*hi4/16, yaw 360*b6/256")
+end
+
 -- CL_AllocDlight / CL_DecayLights (cl_ents.c:42, shared pool in qwcl)
 do
 	cl.time = 100

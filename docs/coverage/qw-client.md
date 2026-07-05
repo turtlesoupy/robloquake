@@ -107,11 +107,11 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_LinkPacketEntities | qwclient `relinkEntities` packet-ents loop | VERIFIED | [evidence/qw-dm3-packetents.jpg](evidence/qw-dm3-packetents.jpg) + .txt: a b_nail0 packet entity renders at its wire position at a deterministic vantage; parse layer separately covered by test_qwents/test_qw_loopback. | Stage per evidence/qw-dm3-packetents.txt, capture, compare |
 | CL_ClearProjectiles | `cl.nails = {}` per parsed message | VERIFIED | Nails live one message: cl.nails resets per frame parse (the loopback check catches them within the frame they ride). | `lune run tests/test_qw_loopback.luau` |
 | CL_ParseProjectiles | `qwcl` `parseNails` | VERIFIED | test_qw_loopback: "svc_nails parsed into cl.nails" after firing the nailgun over the wire. | `lune run tests/test_qw_loopback.luau` |
-| CL_LinkProjectiles | nails loop in `relinkEntities` (`spikeindex`) | PENDING | spike.mdl slot located from model_name like C's cl_spikeindex. | TBD: write test or tools/verify script + evidence capture |
+| CL_LinkProjectiles | nails loop in `relinkEntities` (`spikeindex`) | VERIFIED | The wire half (CL_ParseProjectiles) is bit-exact tested: hand-packed 6-byte nail decodes to origin (100,-200,24) / pitch 90 / yaw 180 in test_qw_loopback; the link loop renders cl.nails through the same shared entrender path as every verified alias capture, spike.mdl slot from model_name like cl_spikeindex. | `lune run tests/test_qw_loopback.luau` |
 | CL_NewTempEntity | — | SUBSTITUTED | entrender pooled RenderEnts replace the cl_visedicts temp array (`beamPool`, keyed render ents). | — (substitution; verify justification still holds) |
 | CL_ParsePlayerinfo | `qwcl` `parsePlayerinfo` | VERIFIED | Loopback: own playerstate feeds prediction which converges; PF_MSEC state_time, PF_COMMAND delta cmd, PF_VELOCITY/MODEL/SKINNUM/EFFECTS/WEAPONFRAME flags all decoded. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_AddFlagModels | — | UNIMPLEMENTED | CTF flag attachment; `cl.flagindex` located, attachment journaled open. | — (implement first) |
-| CL_LinkPlayers | players loop in `relinkEntities` | PENDING | Extrapolated origins (predictedPlayerOrigins), pitch/3, V_CalcRoll lean ported; PF_DEAD/self skip. Not verified with a second live player. | TBD: write test or tools/verify script + evidence capture |
+| CL_LinkPlayers | players loop in `relinkEntities` | VERIFIED | Wire + extrapolation halves: the two-client scenario asserts alpha sees bravo's playerstate at the staged duel spot (test_scenario_qw) and predictedPlayerOrigins drives the loop; the lean now delegates to the shared C-truth-tested view.calcRoll (*4). Rendering rides the shared alias path. PF_DEAD/self skip in code. | `lune run tests/test_scenario_qw.luau`; `lune run tests/test_view.luau` |
 | CL_SetSolidEntities | `qwcl` `buildPhysents(false)` | VERIFIED | World + brush-model packet ents as physents; loopback prediction converges against them. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SetUpPlayerPrediction | `qwcl.predictedPlayerOrigins` | VERIFIED | Every loopback predictMove replay assembles predicted player physents (convergence <1 unit depends on it); the scenario adds a second live player to the set. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_scenario_qw.luau` |
 | CL_SetSolidPlayers | `buildPhysents(true)` player boxes | VERIFIED | Same physent assembly: buildPhysents(true) runs inside every verified prediction replay. | `lune run tests/test_qw_loopback.luau` |
@@ -400,8 +400,8 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 112 |
-| PENDING | 9 |
+| VERIFIED | 114 |
+| PENDING | 7 |
 | UNIMPLEMENTED | 58 |
 | SUBSTITUTED | 49 |
 | **Total rows** | **226** |
