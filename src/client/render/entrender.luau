@@ -61,6 +61,7 @@ export type RenderEnt = {
 	-- CreateMeshPartAsync centers geometry on the part; this restores the
 	-- model-origin-relative placement (alias models)
 	centerOffset: CFrame?,
+	defRef: ModelDef?, -- owning def (alias ents; routes mesh back to its pool)
 }
 
 --------------------------------------------------------------------------
@@ -94,95 +95,233 @@ local function buildAliasBoxEnt(def: ModelDef, parent: Instance): RenderEnt
 	}
 end
 
--- Quiet-window mesh regeneration. The zombie-object platform defect
--- hits per-ENTITY meshes too: siblings of one def render mixed
--- textured/black because each alias ent owns its own EditableMesh +
--- MeshPart, born at sighting time (hot). Undetectable in place;
--- rebuilds in quiet windows survive. Every alias ent gets its mesh
--- rebuilt ONCE, a beat after entity creation goes quiet, swapped
--- in-place so the owning boot never notices.
+-- Per-entity mesh POOL + quiet-window regeneration. The zombie-object
+-- platform defect hits per-ENTITY meshes too: an EditableMesh/MeshPart
+-- born during a hot creation stretch can silently lose its GPU upload
+-- and render black forever (undetectable in place; recreation heals).
+-- Mid-play sightings are ALWAYS hot — a backpack drops the same frame
+-- as the kill's gib burst, and nails/gibs reset any quiet clock — so
+-- runtime healing can never keep up during combat. The pool removes
+-- the exposure instead: instances are pre-built in the post-load
+-- settle window (proven-safe) and RECYCLED as entities come and go;
+-- steady-state play then creates no GPU objects at all. Overflow
+-- live-builds are marked suspect and rerolled by the quiet-window
+-- regen (live swap while visible, silent cure while parked).
 local REGEN_QUIET = 1.5
 local REGEN_SPACING = 2.5 -- rebuilds are ISOLATED creations, never a burst
-local meshRegenQueue: { [RenderEnt]: ModelDef } = {}
+local PARK_CFRAME = CFrame.new(0, -100000, 0)
+
+type PoolInst = {
+	em: EditableMesh,
+	part: MeshPart,
+	vids: { number },
+	backVids: { number },
+	centerOffset: CFrame?,
+	suspect: boolean, -- born hot; reroll its mesh when quiet allows
+}
+
+local meshPool: { [ModelDef]: { PoolInst } } = {}
+local parkedCure: { [PoolInst]: ModelDef } = {} -- parked suspects awaiting reroll
+local meshRegenQueue: { [RenderEnt]: ModelDef } = {} -- live suspects
 local lastAliasCreate = 0
 local lastRegenAt = 0
+local prewarming = false
+local overflowBuilds = 0
+local poolParent: Instance? = nil -- home for parked parts (set per level)
 local regenConn: RBXScriptConnection? = nil
 local buildAliasMesh -- forward decl
+local drainMeshRegen -- forward decl
 
-local function drainMeshRegen()
+-- Boots call this at level build. Parked parts need an explicit parent:
+-- visibility culling parents LIVE ent parts to nil, so a nil Parent on
+-- release does not mean destroyed — without a home, parked meshes
+-- could not be told apart from torn-down ones.
+function entrender.setPoolParent(folder: Instance)
+	poolParent = folder
+end
+
+local function ensureRegenConn()
+	if not regenConn then
+		regenConn = game:GetService("RunService").Heartbeat:Connect(function()
+			drainMeshRegen()
+		end)
+	end
+end
+
+-- bind the def's CURRENT first skin (never a cached binding: the image
+-- regeneration pass may have destroyed the object an old binding points
+-- at, and a destroyed image renders black)
+local function bindFreshSkin(def: ModelDef, p: MeshPart): EditableImage?
+	local skins = def.skinImages
+	local img = if skins then skins[1] else nil
+	if img then
+		p.TextureContent = Content.fromObject(img)
+	end
+	return img
+end
+
+local function poolAcquire(def: ModelDef): PoolInst?
+	local list = meshPool[def]
+	if not list then
+		return nil
+	end
+	while #list > 0 do
+		local inst = table.remove(list) :: PoolInst
+		parkedCure[inst] = nil
+		if inst.part.Parent then
+			return inst
+		end
+		-- a level teardown destroyed the part; reclaim the mesh budget
+		inst.em:Destroy()
+	end
+	return nil
+end
+
+-- park an alias ent's mesh for reuse; false = nothing poolable
+local function poolRelease(re: RenderEnt): boolean
+	local def = re.defRef
+	local p = re.part
+	local em = re.em
+	local home = poolParent
+	if not (def and p and em) then
+		return false
+	end
+	if not (home and home.Parent) then
+		-- no live pool home (teardown window): destroy rather than park
+		em:Destroy()
+		p:Destroy()
+		re.part = nil
+		re.em = nil
+		return true
+	end
+	p.CFrame = PARK_CFRAME
+	p.Transparency = 1
+	p.Parent = home -- visibility culling may have parented the part to nil
+	local inst: PoolInst = {
+		em = em,
+		part = p,
+		vids = re.vids :: { number },
+		backVids = re.backVids :: { number },
+		centerOffset = re.centerOffset,
+		suspect = meshRegenQueue[re] ~= nil,
+	}
+	meshRegenQueue[re] = nil
+	local list = meshPool[def]
+	if not list then
+		list = {}
+		meshPool[def] = list
+	end
+	table.insert(list, inst)
+	if inst.suspect then
+		parkedCure[inst] = def
+		ensureRegenConn()
+	end
+	re.part = nil
+	re.em = nil
+	return true
+end
+
+function drainMeshRegen()
 	local now = os.clock()
-	if now - lastAliasCreate < REGEN_QUIET or now - lastRegenAt < REGEN_SPACING then
+	if prewarming or now - lastAliasCreate < REGEN_QUIET or now - lastRegenAt < REGEN_SPACING then
 		return
 	end
-	lastRegenAt = now
+	-- live suspects first (they are visible); parked cures when idle
 	local re, def = next(meshRegenQueue)
-	if not re then
-		if regenConn then
-			regenConn:Disconnect()
-			regenConn = nil
+	if re then
+		lastRegenAt = now
+		meshRegenQueue[re] = nil
+		local oldPart = re.part
+		if not oldPart then
+			return
+		end
+		local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
+		if not part then
+			return -- keep the old mesh; better than nothing
+		end
+		local p = part :: MeshPart
+		p.CFrame = oldPart.CFrame
+		p.Color = oldPart.Color
+		p.Transparency = oldPart.Transparency
+		re.boundImg = bindFreshSkin(def, p)
+		p.Parent = oldPart.Parent
+		local oldEm = re.em
+		re.em = em
+		re.part = p
+		re.vids = vids
+		re.backVids = backVids
+		re.centerOffset = centerOffset
+		re.lastFrame = -999 -- force a re-pose next updateAlias
+		oldPart:Destroy()
+		if oldEm then
+			oldEm:Destroy()
 		end
 		return
 	end
-	meshRegenQueue[re] = nil
-	local oldPart = re.part
-	if not oldPart then
+	local inst, def2 = next(parkedCure)
+	if inst then
+		lastRegenAt = now
+		parkedCure[inst] = nil
+		local list = meshPool[def2]
+		local at = if list then table.find(list, inst) else nil
+		if not at or not inst.part.Parent then
+			return -- re-acquired or torn down since queuing; nothing to cure
+		end
+		local em, part, vids, backVids, centerOffset = buildAliasMesh(def2)
+		if not part then
+			return -- keep the suspect instance; still better than nothing
+		end
+		local p = part :: MeshPart
+		bindFreshSkin(def2, p)
+		p.Transparency = 1
+		p.CFrame = PARK_CFRAME
+		p.Parent = inst.part.Parent
+		inst.part:Destroy()
+		inst.em:Destroy()
+		inst.em = em :: EditableMesh
+		inst.part = p
+		inst.vids = vids :: { number }
+		inst.backVids = backVids :: { number }
+		inst.centerOffset = centerOffset
+		inst.suspect = false
 		return
 	end
-	local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
-	if not part then
-		return -- keep the old mesh; better than nothing
-	end
-	local p = part :: MeshPart
-	p.CFrame = oldPart.CFrame
-	p.Color = oldPart.Color
-	p.Transparency = oldPart.Transparency
-	-- do NOT copy the old binding: the image-regeneration pass may have
-	-- destroyed the object re.boundImg still points at. Bind the def's
-	-- CURRENT skin (the def tables always hold the live image) — QW
-	-- statics never see another updateAlias; everything else rebinds its
-	-- own skin/translation next frame via the identity check.
-	local skins = def.skinImages
-	local freshImg = if skins then skins[1] else nil
-	if freshImg then
-		p.TextureContent = Content.fromObject(freshImg)
-	end
-	re.boundImg = freshImg
-	p.Parent = oldPart.Parent
-	local oldEm = re.em
-	re.em = em
-	re.part = p
-	re.vids = vids
-	re.backVids = backVids
-	re.centerOffset = centerOffset
-	re.lastFrame = -999 -- force a re-pose next updateAlias
-	oldPart:Destroy()
-	if oldEm then
-		oldEm:Destroy()
+	if regenConn then
+		regenConn:Disconnect()
+		regenConn = nil
 	end
 end
 
 local function queueMeshRegen(re: RenderEnt, def: ModelDef)
 	meshRegenQueue[re] = def
-	lastAliasCreate = os.clock()
-	if not regenConn then
-		regenConn = game:GetService("RunService").Heartbeat:Connect(drainMeshRegen)
-	end
+	ensureRegenConn()
 end
 
 local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	if not textures.canUseMeshApi() then
 		return buildAliasBoxEnt(def, parent)
 	end
-	local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
-	if not part then
-		return buildAliasBoxEnt(def, parent) -- budget exhausted / build failed
+	local suspect: boolean
+	local em: EditableMesh?, part: MeshPart?, vids: { number }?, backVids: { number }?, centerOffset: CFrame?
+	local inst = poolAcquire(def)
+	if inst then
+		em, part, vids, backVids, centerOffset = inst.em, inst.part, inst.vids, inst.backVids, inst.centerOffset
+		suspect = inst.suspect
+	else
+		-- pool empty: build live. This is the hot path the pool exists to
+		-- avoid — mark suspect so the quiet-window regen rerolls it.
+		em, part, vids, backVids, centerOffset = buildAliasMesh(def)
+		if not part then
+			return buildAliasBoxEnt(def, parent) -- budget exhausted / build failed
+		end
+		suspect = true
+		lastAliasCreate = os.clock()
+		overflowBuilds += 1
+		workspace:SetAttribute("RQDBG_PoolOverflow", overflowBuilds)
 	end
 	local p = part :: MeshPart
-	local skinImages = def.skinImages
-	local initialImg = if skinImages then skinImages[1] else nil
-	if initialImg then
-		p.TextureContent = Content.fromObject(initialImg)
-	end
+	p.Transparency = 0
+	local initialImg = bindFreshSkin(def, p)
 	p.Parent = parent
 
 	local re: RenderEnt = {
@@ -193,11 +332,90 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		part = p,
 		vids = vids,
 		backVids = backVids,
-		lastFrame = 0,
+		lastFrame = -999, -- pooled meshes hold their previous pose
 		centerOffset = centerOffset,
+		defRef = def,
 	}
-	queueMeshRegen(re, def)
+	if suspect then
+		queueMeshRegen(re, def)
+	end
 	return re
+end
+
+-- Pre-build pool instances for the given defs during the post-load
+-- settle window (creations there survive; mid-play ones zombie). Paced;
+-- aborts when canContinue() goes false (changelevel) or the mesh budget
+-- runs out. Returns how many instances were built.
+function entrender.prewarmPools(counts: { [ModelDef]: number }, parent: Instance, canContinue: () -> boolean): number
+	poolParent = parent
+	prewarming = true
+	local built = 0
+	for def, count in counts do
+		if def.kind ~= "alias" or not def.alias then
+			continue
+		end
+		local list = meshPool[def]
+		if not list then
+			list = {}
+			meshPool[def] = list
+		end
+		for _ = #list + 1, count do
+			if not canContinue() then
+				prewarming = false
+				return built
+			end
+			local em, part, vids, backVids, centerOffset = buildAliasMesh(def)
+			if not part then
+				prewarming = false -- mesh budget wall: stop growing pools
+				return built
+			end
+			local p = part :: MeshPart
+			bindFreshSkin(def, p)
+			p.Transparency = 1
+			p.CFrame = PARK_CFRAME
+			p.Parent = parent
+			table.insert(list, {
+				em = em :: EditableMesh,
+				part = p,
+				vids = vids :: { number },
+				backVids = backVids :: { number },
+				centerOffset = centerOffset,
+				suspect = false,
+			})
+			built += 1
+			workspace:SetAttribute("RQDBG_PoolPrewarmed", built)
+			task.wait(0.1)
+		end
+	end
+	prewarming = false
+	return built
+end
+
+-- Pool sizing for models spawned dynamically (no spawn baselines):
+-- projectiles, gibs, heads, backpacks. Baseline census covers the rest.
+function entrender.dynamicPoolCount(name: string): number?
+	if name == "progs/backpack.mdl" then
+		return 4
+	elseif name:match("^progs/gib%d") then
+		return 4
+	elseif name == "progs/zom_gib.mdl" then
+		return 6
+	elseif name:match("^progs/h_") then
+		return 2 -- heads persist as corpses; overflow regen covers pile-ups
+	elseif name == "progs/spike.mdl" then
+		return 12
+	elseif name == "progs/s_spike.mdl" then
+		return 8
+	elseif name == "progs/w_spike.mdl" or name == "progs/k_spike.mdl" or name == "progs/v_spike.mdl" then
+		return 6
+	elseif name == "progs/missile.mdl" or name == "progs/grenade.mdl" then
+		return 6
+	elseif name == "progs/laser.mdl" then
+		return 8
+	elseif name == "progs/eyes.mdl" or name == "progs/player.mdl" then
+		return 2
+	end
+	return nil
 end
 
 function buildAliasMesh(def: ModelDef): (EditableMesh?, MeshPart?, { number }?, { number }?, CFrame?)
@@ -512,6 +730,18 @@ end
 -- parts hold them only via Content, so GC is the only other releaser and
 -- long sessions starve the image budget (same class as the mesh leak)
 function entrender.destroyDef(def: ModelDef)
+	-- pooled instances die with their def (defs are per-level; the pool
+	-- must not outlive the images its parts are bound to, and parked
+	-- EditableMeshes would leak budget across map loads)
+	local pooled = meshPool[def]
+	if pooled then
+		for _, inst in pooled do
+			parkedCure[inst] = nil
+			inst.part:Destroy()
+			inst.em:Destroy()
+		end
+		meshPool[def] = nil
+	end
 	for _, list in { def.skinImages, def.spriteImages } do
 		if list then
 			for _, img in list do
@@ -530,21 +760,25 @@ function entrender.destroyDef(def: ModelDef)
 end
 
 function entrender.destroy(re: RenderEnt)
-	meshRegenQueue[re] = nil
-	if re.part then
-		re.part:Destroy()
+	-- alias meshes recycle through the pool (poolRelease also consumes the
+	-- regen-queue membership as the parked suspect flag)
+	if not poolRelease(re) then
+		meshRegenQueue[re] = nil
+		if re.part then
+			re.part:Destroy()
+		end
+		-- the fixed-size alias mesh holds EditableMesh memory budget; leaking
+		-- it across map loads starves the next world build
+		if re.em then
+			re.em:Destroy()
+			re.em = nil
+		end
 	end
 	if re.billboardPart then
 		re.billboardPart:Destroy()
 	end
 	if re.model then
 		re.model:Destroy()
-	end
-	-- the fixed-size alias mesh holds EditableMesh memory budget; leaking
-	-- it across map loads starves the next world build
-	if re.em then
-		re.em:Destroy()
-		re.em = nil
 	end
 end
 

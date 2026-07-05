@@ -82,6 +82,7 @@ return function()
 	local entFolder = Instance.new("Folder")
 	entFolder.Name = "QuakeEnts"
 	entFolder.Parent = Workspace
+	entrender.setPoolParent(entFolder)
 
 	local sndsys = soundlib.new(Workspace)
 	local psys = particleslib.new(pal, Workspace)
@@ -362,6 +363,40 @@ return function()
 			end
 			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
 			print(`[robloquake] qw texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
+			-- pre-warm per-entity mesh pools inside the settle window (see
+			-- the NQ twin): baselines census the level's entities per model;
+			-- dynamics (projectiles/gibs/backpacks) use fixed counts. QW
+			-- player models have no baselines — pool per client slot.
+			local counts: { [entrender.ModelDef]: number } = {}
+			local baseCounts: { [number]: number } = {}
+			for _, b in cl.baselines do
+				local bmi = b.modelindex
+				if bmi and bmi > 0 then
+					baseCounts[bmi] = (baseCounts[bmi] or 0) + 1
+				end
+			end
+			local function addCount(mi: number, n: number)
+				local def = modelDefs[mi]
+				if def and def.kind == "alias" and n > (counts[def] or 0) then
+					counts[def] = n
+				end
+			end
+			for mi, n in baseCounts do
+				addCount(mi, n)
+			end
+			for mi, name in cl.model_name do
+				local n = entrender.dynamicPoolCount(name)
+				if name == "progs/player.mdl" or name == "progs/eyes.mdl" then
+					n = 8 -- one per client slot; QW players are not baselined
+				end
+				if n then
+					addCount(mi, n)
+				end
+			end
+			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
+				return seenLevelResets == resets
+			end)
+			print(`[robloquake] qw mesh pools prewarmed: {prewarmed}`)
 		end)
 	end
 
@@ -1168,10 +1203,6 @@ return function()
 			worldBuilt = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
-			for _, def in modelDefs do
-				entrender.destroyDef(def)
-			end
-			table.clear(modelDefs)
 			-- release the old level's meshes SYNCHRONOUSLY: Destroying
 			-- signals are deferred, so ClearAllChildren alone still holds
 			-- the EditableMesh budget while the new world builds, starving
@@ -1196,6 +1227,14 @@ return function()
 				gunEnt = nil
 			end
 			gunModelIndex = 0
+			-- defs LAST: entrender.destroy above releases alias meshes into
+			-- the per-def pools, and destroyDef is what tears those pools
+			-- down (destroying a def's pool before its ents release would
+			-- leak the parked EditableMesh budget across level changes)
+			for _, def in modelDefs do
+				entrender.destroyDef(def)
+			end
+			table.clear(modelDefs)
 			for _, child in worldFolder:GetChildren() do
 				worldmesh.destroyBuild(child)
 			end

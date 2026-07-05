@@ -116,6 +116,7 @@ worldFolder.Parent = Workspace
 local entFolder = Instance.new("Folder")
 entFolder.Name = "QuakeEnts"
 entFolder.Parent = Workspace
+entrender.setPoolParent(entFolder)
 
 local playerGui = player:WaitForChild("PlayerGui")
 local hud = hudlib.create(fs, pal, playerGui)
@@ -424,6 +425,40 @@ c.onServerInfo = function()
 			end
 			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
 			print(`[cl] texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
+			-- pre-warm per-entity mesh pools, still inside the settle window:
+			-- mid-play mesh creation is the zombie exposure (a backpack drops
+			-- the same frame as the kill's gib burst), so instances are built
+			-- NOW and recycled for the rest of the level. Baselines give an
+			-- exact census of level entities per model; dynamically-spawned
+			-- models (projectiles/gibs/heads/backpacks) have no baselines and
+			-- use fixed counts.
+			local counts: { [entrender.ModelDef]: number } = {}
+			local baseCounts: { [number]: number } = {}
+			for _, e in c.entities do
+				local bmi = if e.baseline then e.baseline.modelindex else 0
+				if bmi and bmi > 0 then
+					baseCounts[bmi] = (baseCounts[bmi] or 0) + 1
+				end
+			end
+			local function addCount(mi: number, n: number)
+				local def = modelDefs[mi]
+				if def and def.kind == "alias" and n > (counts[def] or 0) then
+					counts[def] = n
+				end
+			end
+			for mi, n in baseCounts do
+				addCount(mi, n)
+			end
+			for mi = 1, #c.model_precache - 1 do
+				local n = entrender.dynamicPoolCount(c.model_precache[mi])
+				if n then
+					addCount(mi, n)
+				end
+			end
+			local prewarmed = entrender.prewarmPools(counts, entFolder, function()
+				return gen == worldBuildGen
+			end)
+			print(`[cl] mesh pools prewarmed: {prewarmed}`)
 		end)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
