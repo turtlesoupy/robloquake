@@ -172,6 +172,12 @@ return function(ctx: Ctx)
 				qwsv.conSay(svr, rest)
 			elseif verb == "changelevel" and rest ~= "" then
 				svr.changelevelTo = rest
+			elseif verb == "localinfo" then
+				-- SV_Localinfo_f: "localinfo key value" ("" clears)
+				local k, v = rest:match("^(%S+)%s*(.*)$")
+				if k then
+					svr.localinfo[k] = if v ~= "" then v else nil
+				end
 			end
 		end
 

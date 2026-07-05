@@ -54,8 +54,28 @@ rows.
 | S3 | NQ visual anchor: scripted fixed map + vantage screenshot committed under evidence/ | VERIFIED | [evidence/nq-e1m1-start.jpg](evidence/nq-e1m1-start.jpg) + [.txt capture context](evidence/nq-e1m1-start.txt): e1m1 start hall at the fixed anchor (480,-352,88 yaw 90, deathmatch 0, viewsize 100) — textured/lightmapped world, centered shotgun through the ViewportFrame projection, full sbar with live stats. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/nq-e1m1-start.jpg |
 | S4 | QW visual anchor: same vantage discipline, QW engine | VERIFIED | [evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg) + [.txt capture context](evidence/qw-dm3-stairs.txt): the QW boot at the fixed dm3 stair anchor (-64,470,44 yaw 90) — the truth-course risers visible, QW sbar via hudlib adapter, view weapon over the strip. | Stage via tools/verify_visual_anchor.luau, capture, diff against evidence/qw-dm3-stairs.jpg |
 | S5 | Unmodified third-party mod via gamedir: Threewave CTF 4.21 full loop on the QW boot | VERIFIED | tests/test_scenario_ctf.luau (29 checks): the mod's shipped qwprogs.dat (217-field foreign ABI) stacked over id1 exactly as build_assets.py stages it; two wire clients get color-assigned to teams and spawn at their bases, runes spawn, enemy flag grab → capture (+15 frags, flag rehomes solid) → carrier killed → flag drops/lands → defender touch-return, grapple selected by impulse 22 and fired (mod-added .hook_out field read by name from the mod's own fielddefs), rune picked up (player_flag bit + carried rune non-solid). Requires external_assets/threewave/ (gitignored; provenance in docs/mods-licenses.md). LIVE in Studio too: [evidence/qw-ctf2m3-bluebase.jpg](evidence/qw-ctf2m3-bluebase.jpg) (Blue-team spawn + CTF MOTD), [evidence/qw-ctf2m3-flag-carried.jpg](evidence/qw-ctf2m3-flag-carried.jpg) (red-flag carrier icon in the sbar), [evidence/qw-ctf2m3-capture.jpg](evidence/qw-ctf2m3-capture.jpg) ("BLUE 15" capture score) — gamedir=threewave chunks synced, full boot chain through init.server addGameDirectory. | `lune run tests/test_scenario_ctf.luau` |
+| S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-05 (second mod: Rocket Arena; QC toolchain; localinfo)
+- Rocket Arena "Final Arena" 1.20 (second unmodified third-party mod) runs
+  its full round/queue/rotation loop offline — S6 row. Zero per-mod engine
+  changes; the one engine addition is generic and C-faithful: PF_infokey's
+  serverinfo→localinfo fallback + svr.localinfo + a QW_HostCmd localinfo
+  setter (SV_Localinfo_f's store). Provenance/license in mods-licenses.md
+  (freely distributable unmodified, commercial murky → DEV ONLY).
+- QC toolchain landed: tools/build_progs.sh (gmqcc -std=qcc, auto-built
+  into build/gmqcc; compiles in a temp dir because gmqcc's progs.src mode
+  writes into CWD) — the GPL qw-qc source compiles to a 166KB qwprogs.dat
+  with the correct vanilla header CRC 54730 and BOOTS: test_gamedir's
+  toolchain leg (skip-gated on build/inhouse/qwprogs.dat).
+- RA findings worth keeping: fraglimit=1 makes round 1's win START THE
+  INTERMISSION, which freezes PlayerPreThink and with it RA's autorespawn
+  (use fraglimit 2 to see winner-stays); RA autorespawns the loser (crt
+  commented out the button wait); intermission exits on a button press,
+  THEN changelevelTo appears; RA's shipped qwsrc matches 1.20 (unlike
+  Threewave's partial drop).
 
 ### 2026-07-05 (gamedir mod support: Threewave CTF runs unmodified)
 - LIVE STUDIO CHECK PASSED: assets/threewave chunks synced into

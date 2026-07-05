@@ -10,10 +10,15 @@ boot — through the same searchpath, and the VM resolves the mod's ABI
 special-casing per mod, and **mod progs/QC are never edited**. If a mod
 trips an engine gap, fix the engine generically.
 
-Proven by `tests/test_scenario_ctf.luau`: Threewave CTF 4.21's shipped
-`qwprogs.dat` (a foreign 217-field ABI) plays a full CTF loop — team
-assignment, flag grab/capture/return, grapple, runes — over the loopback
-wire with zero mod edits.
+Proven twice, with zero per-mod engine changes:
+- `tests/test_scenario_ctf.luau` — Threewave CTF 4.21's shipped
+  `qwprogs.dat` (a foreign 217-field ABI) plays a full CTF loop: team
+  assignment, flag grab/capture/return, grapple, runes. Also verified live
+  in Studio (docs/coverage/evidence/qw-ctf2m3-*.jpg).
+- `tests/test_scenario_ra.luau` — Rocket Arena "Final Arena" 1.20 runs its
+  round/queue loop: challenger queue, 10..1 countdown, arena loadout,
+  winner-stays cycling, and fraglimit map rotation through QW localinfo
+  (the mod's own rotate.cfg mechanism).
 
 ## Add a mod in 6 steps
 
@@ -93,11 +98,29 @@ field by name.
 - **No monsters in QW:** qwprogs-based mods are deathmatch-only by design;
   campaign-style mods need the NetQuake boot.
 
+## Compiling source-only or in-house mods
+
+Third-party mods that ship compiled progs need none of this (and their
+progs/QC are never edited or recompiled). For a mod you own the source to
+(or a source-only mod), compile offline:
+
+```sh
+tools/build_progs.sh <qc-source-dir> <output-dir>
+# e.g. an in-house mod based on the GPL id QW QuakeC:
+tools/build_progs.sh reference/quake-c/qw-qc build/inhouse
+```
+
+The script builds gmqcc on first use (into `build/gmqcc`) and compiles in
+`-std=qcc` (vanilla) mode; the output keeps the standard progdefs header
+CRC so the engine accepts it, and `tests/test_gamedir.luau` boots the
+result as its toolchain leg. Stage the output like any other mod file
+(loose in the mod's gamedir; the asset build packs it). fteqcc in vanilla
+mode works too. CAUTION: gmqcc's progs.src auto-mode writes its output
+into the current directory — the script compiles in a temp copy for that
+reason; don't run compilers by hand inside a source tree you care about.
+
 ## Known limits
 
-- Compiled progs only: there is no in-repo QC compiler step yet, so
-  source-only mods must be compiled elsewhere (fteqcc in vanilla mode or id
-  qcc) before staging. (Planned as a `tools/` step.)
 - One gamedir at a time (`gamedir` attribute is a single name — matching
   vanilla Quake's `-game`).
 - Audio banks are per-place uploads with the usual grant dance (asset →

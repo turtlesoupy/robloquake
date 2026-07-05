@@ -43,7 +43,35 @@ it may be.
   Zoid's permission is required, or the mod must be excluded; (b) the CTF
   maps/models in the client paks are third-party art — same gate.
 
-## Rocket Arena (investigation pending)
+## Rocket Arena "Final Arena" 1.20 (`external_assets/rocketarena/`)
 
-Status: not yet staged. Verify what exists (source? compiled progs?
-license?) before downloading anything; record findings here first.
+- **Author:** David "crt" Wright (wrightd@stanford.edu — address long dead;
+  Wright went on to co-found GameSpy). Copyright nominally "PlanetQuake
+  1997" (PlanetQuake → GameSpy → IGN → Ziff Davis: the ownership chain is
+  murky).
+- **Source URLs (downloaded 2026-07-05, quaddicted.com mirror of
+  ftp.telefragged.com; sha256 in staged `SOURCES-sha256.txt`):**
+  - `https://www.quaddicted.com/files/mirrors/ftp.telefragged.com/quake/rocketarena/fasrv12.zip`
+    — server: compiled `qwprogs.dat` (QW, header CRC 54730, builtins ≤ #82
+    — the stock vanilla set) + `progs.dat` (NQ, CRC 5927), QuakeC source
+    zips, `raserver.txt`, rotation configs.
+  - `https://www.quaddicted.com/files/mirrors/ftp.telefragged.com/quake/rocketarena/farena12.zip`
+    — client: `pak0.pak` (46 arena maps + sounds), readme.
+- **License (verbatim, `raserver.txt`):**
+  > This patch is freely distributable provided that this readme is
+  > distributed as well and is unchanged. All code is copyright
+  > PlanetQuake 1997. Commercial code licensing is available by contacting
+  > wrightd@stanford.edu
+  Source-code terms additionally: no selling/licensing the source, no
+  derivative works (except MOTD/rotation tweaks), individual routines
+  reusable with credit.
+- **Reading:** running the UNMODIFIED shipped progs with readmes intact is
+  expressly permitted; commercial use requires a license from an
+  unreachable rights-holder, and the 46 client-pak maps are by ~30
+  third-party authors whose rights the readme itself admits were never
+  fully cleared.
+- **Ship gate:** LOCAL/DEV USE ONLY — this is a fidelity/stress target for
+  the mod pipeline (tests/test_scenario_ra.luau), not shippable content.
+  For a shippable arena mode, build in-house on the GPLv2 id QW QuakeC
+  (reference/quake-c/qw-qc) via tools/build_progs.sh; RA routines may be
+  referenced with credit per its own terms.

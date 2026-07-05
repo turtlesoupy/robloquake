@@ -152,6 +152,9 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	svr.serverflags = 0
 	svr.spawncount = 0
 	svr.serverinfo = { ["*version"] = "2.40", maxclients = tostring(MAX_CLIENTS), deathmatch = "1" }
+	-- SV_Localinfo_f's store: operator key/values QC reads via
+	-- infokey(world, ...) when serverinfo has no entry (map rotations etc)
+	svr.localinfo = {}
 	svr.datagram = msg.newBuf(4096)
 	svr.reliable_datagram = msg.newBuf(4096)
 	svr.signon = msg.newBuf(32768)

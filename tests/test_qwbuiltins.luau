@@ -407,6 +407,22 @@ vm.argc = 2
 B[80](vm)
 t.eq(vmlib.globalString(vm, RET), "qwtest", "infokey(world, hostname) reads serverinfo")
 
+-- C falls back to the operator's localinfo when serverinfo has no entry
+-- (Rocket Arena keeps its rotate.cfg map chain there)
+svr.localinfo = { crandome = "2pyramid" }
+vmlib.setGlobalInt(vm, P0, 0)
+vmlib.setGlobalInt(vm, P1, vmlib.allocString(vm, "crandome"))
+vm.argc = 2
+B[80](vm)
+t.eq(vmlib.globalString(vm, RET), "2pyramid", "infokey(world, key) falls back to localinfo")
+svr.serverinfo.crandome = "override"
+vmlib.setGlobalInt(vm, P0, 0)
+vmlib.setGlobalInt(vm, P1, vmlib.allocString(vm, "crandome"))
+vm.argc = 2
+B[80](vm)
+t.eq(vmlib.globalString(vm, RET), "override", "serverinfo wins over localinfo when both set")
+svr.serverinfo.crandome = nil
+
 --------------------------------------------------------------------------
 -- PF_localcmd(46) + PF_changelevel(70) double-issue guard
 callStr(46, "changelevel e1m2\n")

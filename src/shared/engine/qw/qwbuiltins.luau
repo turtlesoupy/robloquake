@@ -835,7 +835,12 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		local key = vmlib.globalString(vm, OFS_PARM1)
 		local value = ""
 		if e.num == 0 then
+			-- C: serverinfo first, then the server operator's localinfo
+			-- (mods like Rocket Arena keep their map rotation there)
 			value = (svr.serverinfo and svr.serverinfo[key]) or ""
+			if value == "" then
+				value = (svr.localinfo and svr.localinfo[key]) or ""
+			end
 		elseif e.num >= 1 and e.num <= svr.maxclients then
 			local cl = svr.clients[e.num]
 			value = (cl and cl.userinfo and cl.userinfo[key]) or ""

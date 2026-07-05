@@ -84,7 +84,28 @@ else
 	print("test_gamedir: QW vfs-progs leg SKIPPED (no reference qwprogs.dat)")
 end
 
--- 4. missing progs errors clearly, doesn't crash obscurely ----------------
+-- 4. QC toolchain: an in-house gmqcc-compiled progs runs unmodified -------
+-- (build with: tools/build_progs.sh reference/quake-c/qw-qc build/inhouse)
+
+local INHOUSE = "build/inhouse/qwprogs.dat"
+if fs.isFile(INHOUSE) then
+	local ihFs = testutil.gameFs()
+	local ihBuf = buffer.fromstring(fs.readFile(INHOUSE))
+	vfs.addPack(ihFs, pak.load("inhouse/pak0.pak", writePak({ { name = "qwprogs.dat", data = ihBuf } })))
+	local svr = qwsv.newGame(ihFs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+	check(svr.active == true, "gmqcc-compiled qwprogs boots e1m1")
+	qwsv.connectClient(svr, 1, { name = "compiled" })
+	local client = svr.clients[1]
+	check(client.spawned == true, "client spawns through the compiled progs")
+	local vmlib = require("../src/shared/engine/progs/vm")
+	eq(vmlib.edFloat(client.edict, svr.qdefs.ent.health), 100, "compiled progs gave spawn health 100")
+else
+	print("test_gamedir: in-house toolchain leg SKIPPED (run tools/build_progs.sh first)")
+end
+
+-- 5. missing progs errors clearly, doesn't crash obscurely ----------------
 
 local emptyFs = vfs.new()
 local ok, err = pcall(function()
