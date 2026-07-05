@@ -238,7 +238,26 @@ function texverify.verifySlots(slots: { Slot }): (number, number, number)
 			end
 			local verdicts = renderCheck(imgs)
 			if not verdicts then
-				return #slots, healed, 0 -- machinery unavailable; not zombie counts
+				-- readback unavailable (CreateEditableImageAsync currently
+				-- refuses rbxtemp capture ids): fall back to BLIND
+				-- regeneration — recreate every decidable image once, now
+				-- that the load burst is over. Quiet-window recreations
+				-- survived in every characterization run; this trades a
+				-- verified loop for a strong stochastic reroll until the
+				-- platform exposes capture readback.
+				for _, s2 in decidable do
+					local old2 = s2.tbl[s2.key]
+					local fresh = textures.createImage(s2.pixels, s2.w, s2.h, s2.pal, s2.alphaIndex)
+					if fresh and old2 then
+						s2.tbl[s2.key] = fresh
+						healed += 1
+						task.delay(1, function()
+							old2:Destroy()
+						end)
+					end
+				end
+				warn(`[robloquake] texverify: readback unavailable — blind-regenerated {healed} images post-load`)
+				return #slots, healed, 0
 			end
 			for i, s in chunk do
 				if not verdicts[i] then

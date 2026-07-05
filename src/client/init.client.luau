@@ -407,17 +407,24 @@ c.onServerInfo = function()
 			end
 		end
 		print(`[cl] precache defs built: {eagerBuilt}`)
-		-- closed-loop verification: render every def image, capture the
-		-- screen, read the tiles back, recreate any that went zombie
-		local slots: { any } = {}
-		for mi = 1, #c.model_precache - 1 do
-			local def = modelDefs[mi]
-			if def then
-				entrender.collectVerifySlots(def, pal, slots)
+		-- verification/regeneration pass: AFTER the load burst settles
+		-- (quiet-window recreations survive; burst-time ones can zombie),
+		-- without holding the loading plaque
+		task.spawn(function()
+			task.wait(1.5)
+			if gen ~= worldBuildGen then
+				return
 			end
-		end
-		local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
-		print(`[cl] texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
+			local slots: { any } = {}
+			for mi = 1, #c.model_precache - 1 do
+				local def = modelDefs[mi]
+				if def then
+					entrender.collectVerifySlots(def, pal, slots)
+				end
+			end
+			local _, healed, unhealed = texverifylib.verifySlots(slots :: any)
+			print(`[cl] texverify: {#slots} images checked, {healed} healed, {unhealed} unhealed`)
+		end)
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create

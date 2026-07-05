@@ -348,7 +348,11 @@ return function()
 				end
 			end
 			print(`[robloquake] qw precache defs built: {eagerBuilt}`)
-			-- closed-loop verification (see the NQ boot's twin pass)
+			-- verification/regeneration pass after the burst settles
+			task.wait(1.5)
+			if seenLevelResets ~= resets then
+				return
+			end
 			local slots: { any } = {}
 			for mi in cl.model_name do
 				local def = modelDefs[mi]
