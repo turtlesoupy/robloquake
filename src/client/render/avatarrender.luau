@@ -86,7 +86,7 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 			local anim = Instance.new("Animation")
 			anim.AnimationId = `rbxassetid://{n}`
 			local ok, track = pcall(function()
-				return animator:LoadAnimationTrack(anim)
+				return animator:LoadAnimation(anim)
 			end)
 			return if ok then track else nil
 		end
