@@ -744,6 +744,12 @@ function cl.relinkEntities(c: Client, modelFlags: (modelindex: number) -> number
 	-- start on the entity after the world
 	for i = 1, c.num_entities - 1 do
 		local e = c.entities[i]
+		-- C's cl_entities is a static array; ours grows lazily, so a nil
+		-- slot (seen transiently during changelevel re-signon) is the
+		-- representation of "never allocated" = modelindex 0 = skip
+		if not e then
+			continue
+		end
 		e.visible = false
 		if e.modelindex == 0 then
 			continue -- empty slot

@@ -222,6 +222,13 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 	local data = model.brush
 
+	-- the editable budget refunds ASYNCHRONOUSLY after a teardown: a
+	-- shortage during a build right after changelevel resolves within
+	-- seconds, and a skipped batch is PERMANENTLY missing geometry.
+	-- Batches share one per-build deadline so a genuine wall (not lag)
+	-- still degrades to skipping instead of hanging the build forever.
+	local budgetDeadline = os.clock() + 15
+
 	-- group surfaces by texture
 	local byTexture: { [number]: { bsp.Surface } } = {}
 	for i = 0, model.nummodelsurfaces - 1 do
@@ -281,9 +288,18 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			chunkVerts = 0
 
 			local em = AssetService:CreateEditableMesh()
+			local backoff = 0.25
+			while not em and os.clock() < budgetDeadline do
+				task.wait(backoff)
+				backoff = math.min(backoff * 2, 2)
+				em = AssetService:CreateEditableMesh()
+			end
 			if not em then
 				warn("[robloquake] EditableMesh budget exhausted; skipping batch")
 				return
+			end
+			if backoff > 0.25 then
+				print("[robloquake] mesh budget recovered after backoff")
 			end
 
 			local mins = Vector3.new(math.huge, math.huge, math.huge)
