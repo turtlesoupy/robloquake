@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Particle simulation — the pure-state half of WinQuake r_part.c: the
 -- particle pool, effect spawners (R_RunParticleEffect, R_ParticleExplosion,
 -- R_ParticleExplosion2, R_BlobExplosion, R_TeleportSplash, R_LavaSplash,

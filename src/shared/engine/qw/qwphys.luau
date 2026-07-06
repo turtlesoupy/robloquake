@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- QW server physics — port of QW/server/sv_phys.c: the movetype simulation
 -- (pushers, toss/bounce, step entities) driven each frame. Players do NOT
 -- move here in QW — SV_RunCmd runs them through pmove. Algorithms match

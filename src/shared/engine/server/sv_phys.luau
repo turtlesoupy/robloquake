@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Server physics — port of WinQuake sv_phys.c: the movetype simulation
 -- (pushers, toss/bounce, step monsters, walking players) driven each frame
 -- by SV_Physics.
@@ -257,12 +258,18 @@ function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantS
 	return blocked, steptrace
 end
 
--- SV_AddGravity
+-- SV_AddGravity (fielddef offset resolved once per progs, not per
+-- entity per tick — this runs for every TOSS/STEP entity every frame)
+local gravdefProgs: any, gravdefOfs: number? = nil, nil
 function sv_phys.addGravity(svr: svlib.Server, ed: vmlib.Edict)
 	local ent_gravity = 1.0
-	local gravdef = svr.vm.progs.fielddefsByName["gravity"]
-	if gravdef then
-		local v = vmlib.edFloat(ed, gravdef.ofs)
+	if gravdefProgs ~= svr.vm.progs then
+		gravdefProgs = svr.vm.progs
+		local gravdef = svr.vm.progs.fielddefsByName["gravity"]
+		gravdefOfs = if gravdef then gravdef.ofs else nil
+	end
+	if gravdefOfs then
+		local v = vmlib.edFloat(ed, gravdefOfs)
 		if v ~= 0 then
 			ent_gravity = v
 		end

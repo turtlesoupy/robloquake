@@ -1707,7 +1707,11 @@ return function()
 			msec = 100 -- CL_FinishMove's hitch substitution
 			accum = 0
 		end
-		if msec >= 1 and cl.state ~= "connected" and not demoBlocks then
+		-- cl_maxfps 77 equivalent: never send more than ~77 cmds/s. The
+		-- server does a full pmove + entity encode per packet, so a
+		-- 150fps client would otherwise double the per-client server
+		-- cost (and its own packet volume) for no gameplay benefit.
+		if msec >= 13 and cl.state ~= "connected" and not demoBlocks then
 			accum -= msec / 1000
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)
@@ -1912,12 +1916,16 @@ return function()
 			Workspace:SetAttribute("QW_Cmd", "")
 			qwcl.sendStringCmd(cl, pendingCmd)
 		end
-		Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
-		Workspace:SetAttribute("QW_OnGround", ownState.onground)
-		Workspace:SetAttribute("QW_State", cl.state)
-		Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
-		Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
-		Workspace:SetAttribute("QW_Valid", cl.validsequence)
+		-- per-frame attribute replication is not free: publish the
+		-- diagnostics only while a debugging session asks for them
+		if Workspace:GetAttribute("RQDBG_QWDiag") then
+			Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
+			Workspace:SetAttribute("QW_OnGround", ownState.onground)
+			Workspace:SetAttribute("QW_State", cl.state)
+			Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
+			Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
+			Workspace:SetAttribute("QW_Valid", cl.validsequence)
+		end
 
 		-- sounds
 		for i = sndDrained + 1, #cl.sounds do

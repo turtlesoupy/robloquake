@@ -45,6 +45,7 @@ export type RenderEnt = {
 	vids: { number }?, -- vertex ids by mdl vertex index (front + back seam copies)
 	backVids: { number }?,
 	lastFrame: number,
+	lastSubframe: any?, -- resolved framegroup subframe last posed
 	lastSkinKey: number?,
 	-- sprite
 	billboardPart: Part?,
@@ -238,19 +239,25 @@ function entrender.updateAlias(
 	if frame ~= re.lastFrame or am.frames[frame + 1] and am.frames[frame + 1].group then
 		re.lastFrame = frame
 		local f = aliasFrame(am, frame, syncbase, time)
-		local verts = f.verts
-		local scale = am.scale
-		local sorigin = am.scale_origin
-		local SCALE = qcoords.SCALE
-		local centerVec = (re.centerOffset or CFrame.identity).Position
-		for i = 1, am.numverts do
-			local o = (i - 1) * 4
-			local x = buffer.readu8(verts, o) * scale.x + sorigin.x
-			local y = buffer.readu8(verts, o + 1) * scale.y + sorigin.y
-			local z = buffer.readu8(verts, o + 2) * scale.z + sorigin.z
-			local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE) - centerVec
-			em:SetPosition(vids[i], rp)
-			em:SetPosition(backVids[i], rp)
+		-- framegroup models (torches/flames) hit this path every render
+		-- frame; re-pose (2 x numverts SetPosition calls) only when the
+		-- time-resolved subframe actually changed
+		if f ~= re.lastSubframe then
+			re.lastSubframe = f
+			local verts = f.verts
+			local scale = am.scale
+			local sorigin = am.scale_origin
+			local SCALE = qcoords.SCALE
+			local centerVec = (re.centerOffset or CFrame.identity).Position
+			for i = 1, am.numverts do
+				local o = (i - 1) * 4
+				local x = buffer.readu8(verts, o) * scale.x + sorigin.x
+				local y = buffer.readu8(verts, o + 1) * scale.y + sorigin.y
+				local z = buffer.readu8(verts, o + 2) * scale.z + sorigin.z
+				local rp = Vector3.new(x * SCALE, z * SCALE, -y * SCALE) - centerVec
+				em:SetPosition(vids[i], rp)
+				em:SetPosition(backVids[i], rp)
+			end
 		end
 	end
 

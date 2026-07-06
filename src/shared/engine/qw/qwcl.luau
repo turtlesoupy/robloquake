@@ -1473,6 +1473,12 @@ end
 -- Returns { [playernum]: origin }; the renderer and the solid-player
 -- physents both consume it.
 function qwcl.predictedPlayerOrigins(cl: any): { [number]: vector }
+	-- memoized per (realtime, parsecount): the renderer, the solid-player
+	-- physents, and the spectator cam all ask within one frame, and each
+	-- uncached call runs a full playerMove per visible player
+	if cl.predOriginsTime == cl.realtime and cl.predOriginsParse == cl.parsecount and cl.predOrigins then
+		return cl.predOrigins
+	end
 	local out: { [number]: vector } = {}
 	local playertime = cl.realtime - cl.latency + 0.02
 	if playertime > cl.realtime then
@@ -1505,6 +1511,9 @@ function qwcl.predictedPlayerOrigins(cl: any): { [number]: vector }
 		end
 	end
 	cl.predictPhysents = saved
+	cl.predOriginsTime = cl.realtime
+	cl.predOriginsParse = cl.parsecount
+	cl.predOrigins = out
 	return out
 end
 

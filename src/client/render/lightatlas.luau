@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Per-texel lightmap atlas — the software renderer's surface lighting
 -- (R_BuildLightMap / R_AddDynamicLights / R_MarkLights) realized as black
 -- alpha-overlay pages multiplied over fullbright base textures:

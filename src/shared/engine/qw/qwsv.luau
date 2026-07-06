@@ -27,6 +27,9 @@ local pmovelib = require("./pmove")
 local qwsv = {}
 
 local MAX_CLIENTS = 32
+-- read-only baseline for delta-cmd encoding (writeDeltaUsercmd never
+-- mutates its inputs; a fresh nullCmd per player per reply was garbage)
+local NULL_CMD = qwents.nullCmd()
 
 -- C (int) cast: truncation toward zero (// 1 floors, wrong for negatives)
 local function trunc(x: number): number
@@ -227,21 +230,40 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			table.remove(svr.fraglog, 1)
 		end
 	end
+	-- name -> 0-based precache index maps (modelIndex runs per client
+	-- per reply against the weaponmodel string; the linear scan was hot).
+	-- Maintained lazily: rebuilt when the list length changed.
+	local soundIndexMap: { [string]: number } = {}
+	local soundIndexFor: any, soundIndexCount = nil, -1
+	local modelIndexMap: { [string]: number } = {}
+	local modelIndexFor: any, modelIndexCount = nil, -1
 	svr.soundIndex = function(_svr: any, sample: string): number?
-		for i, name in svr.sound_precache do
-			if name == sample then
-				return i - 1
+		local list = svr.sound_precache
+		if soundIndexFor ~= list or soundIndexCount ~= #list then
+			table.clear(soundIndexMap)
+			for i, name in list do
+				if soundIndexMap[name] == nil then
+					soundIndexMap[name] = i - 1
+				end
 			end
+			soundIndexFor = list
+			soundIndexCount = #list
 		end
-		return nil
+		return soundIndexMap[sample]
 	end
 	svr.modelIndex = function(_svr: any, name: string): number?
-		for i, n in svr.model_precache do
-			if n == name then
-				return i - 1
+		local list = svr.model_precache
+		if modelIndexFor ~= list or modelIndexCount ~= #list then
+			table.clear(modelIndexMap)
+			for i, n in list do
+				if modelIndexMap[n] == nil then
+					modelIndexMap[n] = i - 1
+				end
 			end
+			modelIndexFor = list
+			modelIndexCount = #list
 		end
-		return nil
+		return modelIndexMap[name]
 	end
 	svr.startParticle = function(_svr: any, org: vector, dir: vector, color: number, count: number)
 		table.insert(svr.soundLog, { particle = true, org = org, color = color, count = count })
@@ -304,6 +326,7 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	svr.brushModels = {}
 	svr.lightstyles = {}
 	svr.phsCache = {}
+	svr.pvsCache = {}
 	msg.clear(svr.datagram)
 	msg.clear(svr.reliable_datagram)
 	svr.signon = msg.newBuf(1450)
@@ -691,62 +714,92 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 		watertype = 0,
 	}
 
-	-- AddLinksToPmove: solid bsp movers and other players within 256
+	-- AddLinksToPmove: solid bsp movers and other players within 256,
+	-- collected by walking the areanode solid lists like C (sv_user.c
+	-- recursion) instead of scanning every edict per cmd
 	local physentEdicts: { number } = { 0 } -- physent index -> edict num
 	local pmins = pm.origin - vector.create(256, 256, 256)
 	local pmaxs = pm.origin + vector.create(256, 256, 256)
-	for i = 1, vm.num_edicts - 1 do
-		local ed = vm.edicts[i + 1]
-		if ed.free or ed == player then
-			continue
+	local function addLinks(node: any)
+		local sentinel = node.solid_edicts
+		local l = sentinel.next
+		while l ~= sentinel do
+			local nxt = l.next
+			local ed = l.ed
+			repeat
+				if ed == player then
+					break
+				end
+				local solid = vmlib.edFloat(ed, ent.solid)
+				if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
+					break
+				end
+				if vmlib.edInt(ed, ent.owner) == player.num then
+					break -- player's own missile
+				end
+				if #pm.physents >= 32 then -- MAX_PHYSENTS
+					break
+				end
+				local amin = vmlib.edVector(ed, ent.absmin)
+				local amax = vmlib.edVector(ed, ent.absmax)
+				if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
+					break
+				end
+				if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
+					break
+				end
+				if solid == qd.SOLID_BSP then
+					local mi = vmlib.edFloat(ed, ent.modelindex)
+					local m = svr.models[mi + 1]
+					if m and m.kind == "brush" then
+						table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
+						table.insert(physentEdicts, ed.num)
+					end
+				else
+					table.insert(pm.physents, {
+						origin = vmlib.edVector(ed, ent.origin),
+						mins = vmlib.edVector(ed, ent.mins),
+						maxs = vmlib.edVector(ed, ent.maxs),
+					})
+					table.insert(physentEdicts, ed.num)
+				end
+			until true
+			l = nxt
 		end
-		local solid = vmlib.edFloat(ed, ent.solid)
-		if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
-			continue
+		if node.axis == -1 then
+			return
 		end
-		if vmlib.edInt(ed, ent.owner) == player.num then
-			continue -- player's own missile
+		if mathlib.comp(pmaxs, node.axis) > node.dist then
+			addLinks(node.children[1])
 		end
-		if #pm.physents >= 32 then -- MAX_PHYSENTS
-			continue
-		end
-		local amin = vmlib.edVector(ed, ent.absmin)
-		local amax = vmlib.edVector(ed, ent.absmax)
-		if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
-			continue
-		end
-		if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
-			continue
-		end
-		if solid == qd.SOLID_BSP then
-			local mi = vmlib.edFloat(ed, ent.modelindex)
-			local m = svr.models[mi + 1]
-			if m and m.kind == "brush" then
-				table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
-				table.insert(physentEdicts, i)
-			end
-		else
-			table.insert(pm.physents, {
-				origin = vmlib.edVector(ed, ent.origin),
-				mins = vmlib.edVector(ed, ent.mins),
-				maxs = vmlib.edVector(ed, ent.maxs),
-			})
-			table.insert(physentEdicts, i)
+		if mathlib.comp(pmins, node.axis) < node.dist then
+			addLinks(node.children[2])
 		end
 	end
+	addLinks(svr.world.areanodes[1])
 
-	local movevars: pmovelib.MoveVars = {
-		gravity = cvarlib.value(svr.cvars, "sv_gravity"),
-		stopspeed = cvarlib.value(svr.cvars, "sv_stopspeed"),
-		maxspeed = client.maxspeed,
-		spectatormaxspeed = cvarlib.value(svr.cvars, "sv_spectatormaxspeed"),
-		accelerate = cvarlib.value(svr.cvars, "sv_accelerate"),
-		airaccelerate = cvarlib.value(svr.cvars, "sv_airaccelerate"),
-		wateraccelerate = cvarlib.value(svr.cvars, "sv_wateraccelerate"),
-		friction = cvarlib.value(svr.cvars, "sv_friction"),
-		waterfriction = cvarlib.value(svr.cvars, "sv_waterfriction"),
-		entgravity = client.entgravity,
-	}
+	-- movevars: the cvar half is rebuilt at most once per server frame
+	-- (9 hash lookups per cmd otherwise); only maxspeed/entgravity vary
+	-- per client
+	local movevars: pmovelib.MoveVars = svr.movevarsScratch
+	if not movevars or svr.movevarsTime ~= svr.realtime then
+		movevars = {
+			gravity = cvarlib.value(svr.cvars, "sv_gravity"),
+			stopspeed = cvarlib.value(svr.cvars, "sv_stopspeed"),
+			maxspeed = 0,
+			spectatormaxspeed = cvarlib.value(svr.cvars, "sv_spectatormaxspeed"),
+			accelerate = cvarlib.value(svr.cvars, "sv_accelerate"),
+			airaccelerate = cvarlib.value(svr.cvars, "sv_airaccelerate"),
+			wateraccelerate = cvarlib.value(svr.cvars, "sv_wateraccelerate"),
+			friction = cvarlib.value(svr.cvars, "sv_friction"),
+			waterfriction = cvarlib.value(svr.cvars, "sv_waterfriction"),
+			entgravity = 1,
+		}
+		svr.movevarsScratch = movevars
+		svr.movevarsTime = svr.realtime
+	end
+	movevars.maxspeed = client.maxspeed
+	movevars.entgravity = client.entgravity
 
 	pmovelib.playerMove(pm, movevars)
 
@@ -1677,9 +1730,17 @@ function qwsv.writeClientdataToMessage(svr: any, client: Client, out: msg.SizeBu
 	end
 end
 
--- SV_SendClientDatagram
+-- SV_SendClientDatagram (the C stack buf is a reused per-client scratch:
+-- transmit copies out of it and clears, one reply per received packet)
 function qwsv.sendClientDatagram(svr: any, client: Client)
-	local out = msg.newBuf(MAX_MSGLEN, true)
+	local c = client :: any
+	local out: msg.SizeBuf = c.datagramScratch
+	if not out then
+		out = msg.newBuf(MAX_MSGLEN, true)
+		c.datagramScratch = out
+	end
+	msg.clear(out)
+	out.overflowed = false
 
 	qwsv.writeClientdataToMessage(svr, client, out)
 	qwsv.writeEntitiesToClient(svr, client, out)
@@ -1793,13 +1854,24 @@ end
 --------------------------------------------------------------------------
 -- frame updates (sv_ents.c)
 
+-- decompressed PVS rows cached per leaf for the life of the level
+local function leafPVSCached(svr: any, leaf: any): buffer
+	local row = svr.pvsCache[leaf]
+	if not row then
+		row = bsp.leafPVS(leaf, svr.worldmodel)
+		svr.pvsCache[leaf] = row
+	end
+	return row
+end
+qwsv.leafPVSCached = leafPVSCached
+
 local function addToFatPVS(svr: any, org: vector, child: number, fatpvs: buffer, fatbytes: number)
 	local data = svr.worldmodel.brush
 	while true do
 		if child < 0 then
 			local leaf = data.leafs[-child]
 			if leaf.contents ~= qd.CONTENTS_SOLID then
-				local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+				local pvs = leafPVSCached(svr, leaf)
 				for i = 0, math.min(fatbytes, buffer.len(pvs)) - 1 do
 					buffer.writeu8(fatpvs, i, bit32.bor(buffer.readu8(fatpvs, i), buffer.readu8(pvs, i)))
 				end
@@ -1821,12 +1893,21 @@ local function addToFatPVS(svr: any, org: vector, child: number, fatpvs: buffer,
 	end
 end
 
--- SV_FatPVS: inclusive or of all leafs within 8 units of the point
+-- SV_FatPVS: inclusive or of all leafs within 8 units of the point.
+-- The output is C's static fatpvs (reused per call — consumed within
+-- the same reply), and decompressed leaf rows are cached per level
+-- (the map is static; decompressing 10-30 leafs per reply was garbage)
 function qwsv.fatPVS(svr: any, org: vector): buffer
 	local fatbytes = bit32.rshift(svr.worldmodel.numleafs + 31, 3)
-	local fatpvs = buffer.create(fatbytes)
-	addToFatPVS(svr, org, 0, fatpvs, fatbytes)
-	return fatpvs
+	local fatpvs: buffer? = svr.fatpvsScratch
+	if not fatpvs or buffer.len(fatpvs) < fatbytes then
+		fatpvs = buffer.create(fatbytes)
+		svr.fatpvsScratch = fatpvs
+	end
+	local fp = fatpvs :: buffer
+	buffer.fill(fp, 0, 0, fatbytes)
+	addToFatPVS(svr, org, 0, fp, fatbytes)
+	return fp
 end
 
 local function edictInPVS(ed: vmlib.Edict, pvs: buffer): boolean
@@ -1929,14 +2010,26 @@ function qwsv.writePlayersToClient(svr: any, client: Client, pvs: buffer, out: m
 		end
 
 		if bit32.band(pflags, qwp.PF_COMMAND) ~= 0 then
-			local cmd = table.clone(cl.lastcmd)
+			-- C copies into a stack cmd; reuse one scratch table (this
+			-- runs per visible player per client per reply)
+			local cmd = svr.cmdScratch
+			if not cmd then
+				cmd = qwents.nullCmd()
+				svr.cmdScratch = cmd
+			end
+			local lc = cl.lastcmd
+			cmd.msec = lc.msec
+			cmd.angles = lc.angles
+			cmd.forwardmove = lc.forwardmove
+			cmd.sidemove = lc.sidemove
+			cmd.upmove = lc.upmove
 			if health <= 0 then
 				-- don't show the corpse looking around
 				cmd.angles = vector.create(0, vmlib.edVector(ed, ent.angles).y, cmd.angles.z)
 			end
 			cmd.buttons = 0 -- never send buttons
 			cmd.impulse = 0 -- never send impulses
-			qwents.writeDeltaUsercmd(out, qwents.nullCmd(), cmd)
+			qwents.writeDeltaUsercmd(out, NULL_CMD, cmd)
 		end
 
 		if bit32.band(pflags, qwp.PF_VELOCITY1) ~= 0 then
@@ -2077,7 +2170,7 @@ local function pvsRow(svr: any, leafnumC: number): buffer
 		return all
 	end
 	local leaf = svr.worldmodel.brush.leafs[leafnumC + 1]
-	local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+	local pvs = leafPVSCached(svr, leaf)
 	local row = buffer.create(rowbytes)
 	buffer.copy(row, 0, pvs, 0, math.min(rowbytes, buffer.len(pvs)))
 	return row
