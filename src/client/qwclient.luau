@@ -1353,6 +1353,25 @@ return function()
 		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
 	}
 
+	-- ===== touch + gamepad controls (PRODUCT layer) — twin of the NQ
+	-- block; see src/client/controls.luau for the removal note. =====
+	require(script.Parent.controls).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		exec = execCommand,
+		isUiOpen = function()
+			return con.open or chatOpen or directorUiOpen or menulib.isOpen(mnu)
+		end,
+		menuKey = function(key: Enum.KeyCode): boolean
+			if not menulib.isOpen(mnu) then
+				return false
+			end
+			menulib.handleKey(mnu, { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard } :: any)
+			refreshInputMode()
+			return true
+		end,
+	})
+	-- ===== end touch + gamepad controls =====
+
 	-- console text entry straight from key codes (same scheme as the NQ
 	-- boot: no TextBox, GetStringForKeyCode + shifted punctuation)
 	local SHIFT_MAP: { [string]: string } = {

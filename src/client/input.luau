@@ -39,6 +39,11 @@ local yaw = 0
 local pitch = 0
 local enabled = true
 
+-- analog move overlay (touch thumbstick / gamepad left stick), -1..1;
+-- fed by src/client/controls.luau, added into CL_BaseMove's sums
+local analogForward = 0
+local analogSide = 0
+
 local function btn(name: string): number
 	return if buttons[name] then 1 else 0
 end
@@ -103,6 +108,23 @@ function input.centerview()
 	pitch = 0
 end
 
+-- analog stick move (controls.luau): full deflection = run speed
+function input.setAnalogMove(forward: number, side: number)
+	analogForward = math.clamp(forward, -1, 1)
+	analogSide = math.clamp(side, -1, 1)
+end
+
+-- view delta in degrees (touch drag / gamepad right stick); same
+-- convention as IN_MouseMove: positive dyaw turns left, positive
+-- dpitch looks down
+function input.applyLook(dyaw: number, dpitch: number)
+	if not enabled then
+		return
+	end
+	yaw += dyaw
+	pitch = math.clamp(pitch + dpitch, -70, 80)
+end
+
 function input.lockMouse()
 	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 	UserInputService.MouseIconEnabled = false
@@ -125,7 +147,10 @@ function input.setEnabled(on: boolean)
 	if on then
 		input.lockMouse()
 	else
+		-- Key_ClearStates: analog sticks clear like held keys do
 		table.clear(buttons)
+		analogForward = 0
+		analogSide = 0
 	end
 end
 
@@ -195,6 +220,12 @@ function input.sample(): InputState
 		sidemove *= cl_movespeedkey
 		upmove *= cl_movespeedkey
 	end
+
+	-- analog sticks: full deflection = run speed (the server's
+	-- sv_maxspeed clamp evens out the fwd/side asymmetry), partial
+	-- deflection walks — the precision keyboards get from +speed
+	forwardmove += cl_forwardspeed * cl_movespeedkey * analogForward
+	sidemove += cl_sidespeed * cl_movespeedkey * analogSide
 
 	local state: InputState = {
 		forwardmove = forwardmove,

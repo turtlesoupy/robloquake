@@ -1485,6 +1485,26 @@ require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
+-- ===== touch + gamepad controls (PRODUCT layer): buttons run console
+-- lines through the bind exec, sticks feed input's analog hooks. See
+-- src/client/controls.luau for the removal note. =====
+require(script.controls).attach({
+	playerGui = playerGui,
+	exec = execLine,
+	isUiOpen = function()
+		return con.open or menulib.isOpen(mnu) or directorUiOpen
+	end,
+	menuKey = function(key: Enum.KeyCode): boolean
+		if not menulib.isOpen(mnu) then
+			return false
+		end
+		menulib.handleKey(mnu, { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard } :: any)
+		refreshInputMode()
+		return true
+	end,
+})
+-- ===== end touch + gamepad controls =====
+
 -- console text entry straight from key codes (no TextBox: Roblox chat and
 -- CoreGui focus never get involved). GetStringForKeyCode gives the layout
 -- character; shifted punctuation mapped for US layouts.

@@ -5,6 +5,12 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- the engine drives everything client-side (scriptable camera, no
+-- Humanoid): never spawn the default Roblox character — on touch
+-- devices it would also summon Roblox's own thumbstick/jump TouchGui
+-- over the game's controls (src/client/controls.luau)
+Players.CharacterAutoLoads = false
 local ServerStorage = game:GetService("ServerStorage")
 local RunService = game:GetService("RunService")
 
