@@ -112,7 +112,7 @@ end
 -- game-rule cvars from asset-folder attributes, applied before the world
 -- spawns so QC sees them (deathmatch spawn points, item rules, skill)
 local cvarlib = require(engine.common.cvar)
-for _, name in { "deathmatch", "coop", "skill", "fraglimit", "timelimit" } do
+for _, name in { "deathmatch", "coop", "skill", "fraglimit", "timelimit", "teamplay", "samelevel", "noexit" } do
 	local v = assets:GetAttribute(name)
 	if typeof(v) == "number" then
 		cvarlib.setValue(svr.cvars, name, v)
@@ -348,6 +348,36 @@ unreliable.OnServerEvent:Connect(onInbound)
 -- frame loop: Quake host frames clamped like host.c (max 0.1s per tick)
 local vmlib = require(engine.progs.vm)
 local defs = require(engine.progs.defs)
+
+-- ===== match director (PRODUCT layer): rotation, map voting, live
+-- admin params. REMOVAL: delete this block, the dir.step()/
+-- resolveChangelevel calls below, src/server/director.luau and
+-- src/client/directorui.luau. =====
+local directorlib = require(script.director)
+local dir = directorlib.attach({
+	assets = assets,
+	net = net,
+	isHost = playerIsHost,
+	getCurrentMap = function()
+		return svr.name
+	end,
+	getIntermission = function()
+		-- read the QC global by name: zero engine changes
+		local d = svr.vm.progs.globaldefsByName["intermission_running"]
+		return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+	end,
+	forceChangelevel = function(m: string)
+		svr.changelevelTo = m
+	end,
+	setRule = function(name: string, v: number)
+		cvarlib.setValue(svr.cvars, name, v)
+	end,
+	getRule = function(name: string)
+		return cvarlib.value(svr.cvars, name)
+	end,
+})
+-- ===== end match director =====
+
 local diagAccum = 0
 RunService.Heartbeat:Connect(function(dt: number)
 	if not svr.active then
@@ -564,10 +594,13 @@ RunService.Heartbeat:Connect(function(dt: number)
 		(sv :: StringValue).Value = sg.savegames[name]
 	end
 
+	dir.step() -- match director: vote lifecycle + idle expiry
+
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo
 	if nextLevel then
 		svr.changelevelTo = nil
+		nextLevel = dir.resolveChangelevel(nextLevel) -- rotation/vote seam
 		print(`[robloquake] changelevel to {nextLevel}`)
 		host.saveSpawnparms(svr) -- inventory carries across levels
 		host.spawnServer(svr, nextLevel)

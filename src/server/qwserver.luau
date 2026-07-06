@@ -15,9 +15,11 @@ local engine = Shared.engine
 local cvarlib = require(engine.common.cvar)
 local qwsv = require(engine.qw.qwsv)
 local vfs = require(engine.common.vfs)
+local vmlib = require(engine.progs.vm)
 
 local assetchunks = require(script.Parent.assetchunks)
 local clientbundle = require(script.Parent.clientbundle)
+local directorlib = require(script.Parent.director)
 
 export type Ctx = {
 	fsys: vfs.Vfs,
@@ -75,6 +77,43 @@ return function(ctx: Ctx)
 	local bundle = clientbundle.new(ctx.fsys, ctx.gameDir, ctx.gameFolder, ctx.modDir, ctx.modFolder)
 	bundle.clientFS:SetAttribute("engine", "qw")
 	bundle.publishAll(svr)
+
+	-- ===== match director (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/director.luau for the REMOVAL note =====
+	local function playerIsHost(player: Player): boolean
+		if RunService:IsStudio() then
+			return true
+		end
+		if game.PrivateServerOwnerId ~= 0 and player.UserId == game.PrivateServerOwnerId then
+			return true
+		end
+		if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
+			return true
+		end
+		return false
+	end
+	local dir = directorlib.attach({
+		assets = ctx.assets,
+		net = ctx.reliable.Parent :: Instance,
+		isHost = playerIsHost,
+		getCurrentMap = function()
+			return svr.name
+		end,
+		getIntermission = function()
+			local d = svr.vm.progs.globaldefsByName["intermission_running"]
+			return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+		end,
+		forceChangelevel = function(m: string)
+			svr.changelevelTo = m
+		end,
+		setRule = function(name: string, v: number)
+			cvarlib.setValue(svr.cvars, name, v)
+		end,
+		getRule = function(name: string)
+			return cvarlib.value(svr.cvars, name)
+		end,
+	})
+	-- ===== end match director =====
 
 	-- player <-> client slot bridging
 	local slotByPlayer: { [Player]: number } = {}
@@ -144,9 +183,12 @@ return function(ctx: Ctx)
 		-- changelevel): respawn the server, republish the bundle, and
 		-- send every connected client a fresh serverdata — they redo
 		-- the soundlist/modellist/prespawn/spawn/begin handshake
+		dir.step() -- match director: vote lifecycle + idle expiry
+
 		local nextLevel = svr.changelevelTo
 		if nextLevel then
 			svr.changelevelTo = nil
+			nextLevel = dir.resolveChangelevel(nextLevel) -- rotation/vote seam
 			print(`[robloquake] qw changelevel to {nextLevel}`)
 			qwsv.saveSpawnparms(svr) -- inventory carries across levels
 			qwsv.spawnServer(svr, nextLevel)

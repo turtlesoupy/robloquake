@@ -73,8 +73,15 @@ end
 -- Mesh & Image APIs are not enabled for the experience (Game Settings →
 -- Security); callers must tolerate untextured output.
 function textures.createImage(pixels: buffer, width: number, height: number, pal: Palette, alphaIndex: boolean): EditableImage?
-	local ok, img = pcall(function()
+	local ok, img = pcall(function(): EditableImage?
+		-- CreateEditableImage returns NIL without throwing when the
+		-- editable-image memory budget is exhausted — guard, don't index
+		-- (indexing nil trips break-on-exception debugging for a known,
+		-- tolerated condition)
 		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		if not image then
+			return nil
+		end
 		local rgba = textures.toRGBA(pixels, width * height, pal, alphaIndex)
 		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
 		return image
@@ -101,8 +108,11 @@ function textures.createFullbrightImage(pixels: buffer, width: number, height: n
 	if not any then
 		return nil
 	end
-	local ok, img = pcall(function()
+	local ok, img = pcall(function(): EditableImage?
 		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		if not image then
+			return nil -- budget exhausted (returns nil, no throw)
+		end
 		local rgba = buffer.create(count * 4)
 		local pr, pg, pb = pal.r, pal.g, pal.b
 		for i = 0, count - 1 do

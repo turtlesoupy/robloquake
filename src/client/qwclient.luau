@@ -199,6 +199,19 @@ return function()
 	local chatTeam = false -- chat_team
 	local chatBuffer = "" -- chat_buffer
 
+	-- ===== match director UI (PRODUCT layer) — twin of the NQ block;
+	-- see src/server/director.luau for the REMOVAL note. (Placed after
+	-- chatOpen's declaration: closures capture pre-declaration locals as
+	-- globals forever.) =====
+	require(script.Parent.directorui).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		net = net,
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+	})
+	-- ===== end match director UI =====
+
 	-- CL_AllocExplosion ring: s_explod.spr animated at 10 Hz
 	local explosions: { { origin: vector, start: number } } = {}
 	local explosionIndex: number? = nil

@@ -141,6 +141,18 @@ cshiftFrame.ZIndex = 1
 cshiftFrame.Parent = overlayGui
 
 local con = consolelib.create(fs, pal, overlayGui)
+
+-- ===== match director UI (PRODUCT layer): vote panel + admin menu.
+-- REMOVAL: delete this block, src/client/directorui.luau, and the
+-- server-side twin (see src/server/director.luau). =====
+require(script.directorui).attach({
+	playerGui = playerGui,
+	net = net,
+	isTyping = function()
+		return con.open
+	end,
+})
+-- ===== end match director UI =====
 local mnu = menulib.create(fs, pal, overlayGui)
 
 -- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair cvar
