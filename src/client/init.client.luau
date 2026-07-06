@@ -433,7 +433,7 @@ local function tagMuzzleOrigin(re: entrender.RenderEnt, e: any)
 	if bestPart then
 		local tip = bestPart.CFrame * Vector3.new(bestPart.Size.X / 2 + 0.1, 0, 0)
 		local r = re :: any
-		r.muzzleFrom = vector.create(tip.X * 10, -tip.Z * 10, tip.Y * 10)
+		r.muzzleFrom = qcoords.fromRoblox(tip)
 		r.muzzleT0 = c.time
 		workspace:SetAttribute("RQDBG_MuzzleBlends", (workspace:GetAttribute("RQDBG_MuzzleBlends") :: number? or 0) + 1)
 	end
@@ -535,6 +535,78 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 	elseif re then
 		setEntVisible(re :: entrender.RenderEnt, false)
 	end
+end
+
+-- RQDBG_AvatarDummy (debug hook family): render a mirror avatar N studs
+-- in front of the camera for dialing in rigs/grip/animations WITHOUT a
+-- second client. Pure render-layer — drives avatarrender/weapon-attach
+-- with synthetic entity data; no engine or server involvement. Attrs:
+--   RQDBG_AvatarDummy      number (distance in studs; 0/nil removes)
+--   RQDBG_AvatarDummyWalk  bool (orbit so the run animation engages)
+--   RQDBG_AvatarDummyFire  bool (muzzle flash burst every 0.7s)
+-- The dummy wears YOUR avatar and holds YOUR current weapon (weapon
+-- switching live-updates it); RQDBG_GripPos/GripYPR tune the grip live.
+local DUMMY_SLOT = 9999
+local dummyAe: avatarrender.AvatarEnt? = nil
+local dummyCenter: vector? = nil
+local dummyFaceYaw = 0
+local dummyNextFire = 0
+local function updateAvatarDummy()
+	local dist = workspace:GetAttribute("RQDBG_AvatarDummy")
+	if typeof(dist) ~= "number" or dist <= 0 then
+		if dummyAe then
+			avatarrender.destroy(dummyAe)
+			dummyAe = nil
+			dummyCenter = nil
+			local aw = avatarWeapons[DUMMY_SLOT]
+			if aw and aw.re then
+				entrender.destroy(aw.re :: entrender.RenderEnt)
+			end
+			avatarWeapons[DUMMY_SLOT] = nil
+		end
+		return
+	end
+	local lp = Players.LocalPlayer
+	if not dummyAe then
+		dummyAe = avatarrender.create(lp.UserId, avatarLocalFolder)
+	end
+	local ae = dummyAe :: avatarrender.AvatarEnt
+	if not avatarrender.ready(ae) then
+		return
+	end
+	local cam = Workspace.CurrentCamera
+	if not dummyCenter then
+		-- anchor where the camera looked when the dummy was summoned
+		local spot = cam.CFrame.Position + cam.CFrame.LookVector * dist
+		dummyCenter = qcoords.fromRoblox(spot)
+		-- face the camera ONCE at summon; after that the yaw is stable so
+		-- you can walk around him (Spin/Yaw attrs override)
+		local d = qcoords.fromRoblox(cam.CFrame.Position) - (dummyCenter :: vector)
+		dummyFaceYaw = math.deg(math.atan2(d.y, d.x))
+	end
+	local center = dummyCenter :: vector
+	local origin = center
+	local yawDeg = dummyFaceYaw
+	local yawAttr = workspace:GetAttribute("RQDBG_AvatarDummyYaw")
+	if workspace:GetAttribute("RQDBG_AvatarDummyWalk") == true then
+		-- orbit: ~200 qu/s so the measured-speed run threshold engages
+		local w, r = 5, 40
+		local a = c.time * w
+		origin = center + vector.create(math.cos(a) * r, math.sin(a) * r, 0)
+		yawDeg = math.deg(a) + 90 -- face along the orbit tangent
+	elseif workspace:GetAttribute("RQDBG_AvatarDummySpin") == true then
+		yawDeg = c.time * 45 -- turntable for all-angle inspection
+	elseif typeof(yawAttr) == "number" then
+		yawDeg = yawAttr
+	end
+	avatarrender.setVisible(ae, true)
+	avatarrender.update(ae, origin, vector.create(0, yawDeg, 0), c.time)
+	local effects = 0
+	if workspace:GetAttribute("RQDBG_AvatarDummyFire") == true and c.time > dummyNextFire then
+		dummyNextFire = c.time + 0.7
+		effects = 2 -- EF_MUZZLEFLASH: light + burst + recoil preview
+	end
+	updateAvatarWeapon(DUMMY_SLOT, lp, ae, effects)
 end
 
 -- world load on serverinfo
@@ -2036,6 +2108,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- CL_UpdateTEnts: lightning beam segments
 	updateBeams()
+	updateAvatarDummy() -- RQDBG debug hook; no-op unless the attr is set
 
 	-- view / camera
 	local refdef = viewlib.calcRefdef(c, dt)
