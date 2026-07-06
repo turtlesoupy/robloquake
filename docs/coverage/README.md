@@ -31,11 +31,11 @@ counterpart, each with its justification.
 
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 157 | 0 | 0 | 81 | 26 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 168 | 0 | 0 | 60 | 7 |
-| **Total** | **817** | **0** | **0** | **294** | **75** |
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 307 | 0 | 0 | 113 | 38 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 161 | 0 | 0 | 86 | 26 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 45 | 7 |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 169 | 0 | 0 | 70 | 7 |
+| **Total** | **825** | **0** | **0** | **314** | **78** |
 
 **BURN-DOWN COMPLETE 2026-07-06: zero UNIMPLEMENTED and zero PENDING
 across all four manifests** — every row is VERIFIED (re-runnable
@@ -94,6 +94,25 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (independent completeness audit: 31 rows added, zero state change)
+- A mechanical audit (every C function definition in WinQuake, QW/client,
+  QW/server extracted and word-boundary-matched against all four manifests,
+  then reconciled against group/family rows) found no missed FEATURES but
+  31 missing ROWS. Added: 8 VERIFIED (already-proven behavior that had no
+  row: Cvar_Command, W_GetLumpinfo, FindViewthing, CL_LerpPoint,
+  CL_EntityNum, Sbar_ColorForMap x2 manifests, Draw_PicFromWad/CachePic),
+  20 SUBSTITUTED (the QW common.c carve-out fallthrough — Info_* string
+  machinery, checksum/anti-spoof cluster incl. md4.c and CRC_Block,
+  COM_Gamedir, file plumbing — plus the platform-backend file groups:
+  vid_*/in_*/snd-hw/nonintel for WinQuake, cd/in/vid/sys/snd + net_udp/
+  net_wins for the QW tree, QW-server sys files, Hunk_Low/HighMark,
+  R_InitTextures, CL_CheckOrDownloadFile, Cmd_ForwardToServer_f), and
+  3 N/A (IsID id-staff IP whitelist; dos_v2/mplib/mplpc DOS-and-mplayer-era
+  glue; QW SV_TestPlayerPosition dead code — all flagged per the N/A rule
+  and user-ratified in the audit session). PM_HullForBox merged into the
+  existing PM_InitBoxHull rows. Cosmetic: the NQ cd group header named a
+  nonexistent cd_dos.c (DOS CD code is cd_audio.c) — fixed.
 
 ### 2026-07-06 (burn-down pass 8: qw-client reaches zero — ALL FOUR MANIFESTS DONE)
 - The flyby search lands (cl_cam.c complete): camVectoangles/camVlen with

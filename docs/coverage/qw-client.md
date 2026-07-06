@@ -61,6 +61,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Sound_NextDownload | inside `parseSoundlist` | VERIFIED | Loopback handshake: soundlist continuation (`soundlist N next`) then `modellist N 0` — handshake completes. Sounds resolve lazily by name in soundlib, not precached. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_RequestNextDownload | — | SUBSTITUTED | No download phases; asset bundle replaces them. | — (substitution; verify justification still holds) |
 | CL_ParseDownload | — | SUBSTITUTED | `svc_download` never sent by qwsv; assets pre-shipped. | — (substitution; verify justification still holds) |
+| CL_CheckOrDownloadFile (cl_parse.c:145) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: the entry point of the download cluster above (checks local presence, else requests). Same substitution: the asset bundle pre-ships everything, so the check always "has" the file and the request path is dead. | — (substitution; verify justification still holds) |
 | CL_NextUpload / CL_StartUpload / CL_IsUploading / CL_StopUpload | — | SUBSTITUTED | clc_upload (RSShot upload) N/A; no screenshots over the wire. | — (substitution; verify justification still holds) |
 | CL_ParseServerData | `parseServerData` | VERIFIED | Loopback: protocol 28 enforced, "spawncount agreed", "movevars received (gravity 800)", "assigned player slot 0", spectator bit split. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_ParseSoundlist | `parseSoundlist` | VERIFIED | Loopback: "precache lists received" (#cl.sound_name > 1). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -198,6 +199,7 @@ The QW boot drives the shared sbar.c port (`src/client/hud.luau`) through a qwcl
 | Sbar_Changed / Sbar_Init | sig-diff rebuild in `updateOverlaysQW` + lazy `getPic` loads (hud.create) | SUBSTITUTED | Sbar_Changed's dirty-flag redraw is replaced by the signature-diff overlay rebuild plus retained-mode GUI widget updates (no framebuffer to re-blit); Sbar_Init's pic precache is replaced by lazy gfx.wad pic loads on first draw through the shared image page. Both serve the same purpose: draw only what changed, have the pics when needed. | code: hud.luau updateOverlaysQW sig / getPic |
 | Sbar_DrawPic / Sbar_DrawSubPic / Sbar_DrawTransPic / Sbar_DrawCharacter / Sbar_DrawString / Sbar_itoa / Sbar_DrawNum | hudlib `setPic`/`charPic`/`drawNum`/`interText`/`interFill` + confont rows | VERIFIED | Every committed QW sbar capture renders through these primitives: main bar pics/nums ([evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg)), conchars strings + Draw_Fill bars ([evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg), [evidence/qw-team-overlay.jpg](evidence/qw-team-overlay.jpg)). | Any QW sbar capture procedure (S4 anchor / scoreboard evidence files) |
 | Sbar_SortFrags / Sbar_SortTeams | `qwview.sortFrags` / `qwview.sortTeams` (hudlib consumes) | VERIFIED | test_qwview: frags descending with the C bubble-sort tie stability, spectator exclusion + the includespec -999 quirk; team aggregation (frags/players), ping low/high/total, teamplay-0 early-out. | `lune run tests/test_qwview.luau` |
+| Sbar_ColorForMap (sbar.c:463) | shared frag-cell/rankings fills: palette row base + 8 (hud.luau:627 and the hudlib cells) | VERIFIED | Row added by the 2026-07-06 audit. [evidence/qw-color-crosshair.jpg](evidence/qw-color-crosshair.jpg): "color 4 12" produces the yellow/red fills in the rankings row, in-sbar frag cell, and mini overlay at once — that mapping is this function. 13-clamp happens on the send side (CL_Color_f row). | Stage per evidence/qw-color-crosshair.txt |
 | Sbar_SoloScoreboard / Sbar_DrawInventory / Sbar_DrawFace / Sbar_DrawNormal / Sbar_Draw | hudlib `update` via the qwcl adapter | VERIFIED | The full main-bar composite is the committed S4 anchor ([evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg): sbar + ibar with live stats) and every subsequent QW capture (face pain/dead states visible across the burn-down set); solo scoreboard fields are the same shared hudlib rows evidenced by nq-solo-scoreboard.jpg. | S4 anchor procedure; `lune run tests/test_qw_loopback.luau` (stats wire) |
 | Sbar_DrawFrags | shared hudlib `updateFragCells` (the QW adapter feeds it; QW layout identical) | VERIFIED | Shared implementation live-evidenced under NQ ([evidence/nq-fragcells-minidm.jpg](evidence/nq-fragcells-minidm.jpg)); sorting offline-tested (test_qwview sortFrags). The QW boot drives the same code through updateHudAdapter's scores. | Stage per evidence/nq-fragcells-minidm.txt (shared path); `lune run tests/test_qwview.luau` |
 | Sbar_DeathmatchOverlay | hudlib QW overlay driver ("dm" mode) | VERIFIED | [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) + .txt: RANKINGS plaque with the QW ping/pl/time/frags/name columns and self-row highlight. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
@@ -241,6 +243,7 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 | Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | VERIFIED | Committed captures: qw-messagemode.jpg (say: line typed through messageKey live) and qw-console-open.jpg (console battery typed through handleKey/handleText — same shared consolelib as the NQ battery). | qw-messagemode + qw-console-open evidence |
 | CompleteCommand | consolelib Tab handler + `com.completePrefix` | VERIFIED | Live: Tab completed "use" -> "user " on the QW boot ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)); matcher offline-tested (test_com). | `lune run tests/test_com.luau`; battery .txt |
 | CheckForCommand | unknown console lines forward as clc_stringcmd (Cmd_ForwardToServer) instead of becoming implicit `say` | SUBSTITUTED | C uses CheckForCommand so bare console text becomes chat; on this platform player speech MUST route through the filtered TextChatService say path, so implicit console-chat is deliberately not reproduced — bare text forwards to the server like any command. | — (substitution; platform chat filtering) |
+| Cmd_ForwardToServer_f (cmd.c:627 — the explicit `cmd <args>` command) | — | SUBSTITUTED | Row added by the 2026-07-06 audit. `cmd X` exists in C to force-forward when a local command shadows a server one; the port's execCommand already forwards every unrecognized line verbatim, so typing the target command directly produces the same wire bytes. | — (substitution; verify justification still holds) |
 | Key_StringToKeynum / Key_KeynumToString | shared `keymap` (quake key names <-> KeyCodes; both boots) | VERIFIED | Live bind battery: "zz" isn't a valid key (StringToKeynum refusal), bind echoes by name ([evidence/qw-menu-fps.txt](evidence/qw-menu-fps.txt)). | Battery per the evidence .txt |
 | Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | the QW bindings table (Key_Init seeds default.cfg-parity binds; keys route bindings through execCommand, +cmd release sends -cmd) | VERIFIED | Live battery: bind x +attack echoed, unbind cleared, invalid key refused ([evidence/qw-menu-fps.txt](evidence/qw-menu-fps.txt)). Key_WriteBindings within the family stays SUBSTITUTED (platform owns storage — see Host_WriteConfiguration). | Battery per the evidence .txt |
 | Key_ClearStates | `input.setEnabled(false)` clears every held button (console/chat/menu open) | VERIFIED | The same shared mechanism live-proven by the messagemode evidence (a forced attack did not fire while typing — qw-messagemode.jpg battery); the menu now routes through the identical refreshInputMode path. | qw-messagemode evidence (shared mechanism) |
@@ -296,6 +299,7 @@ Netchan-lite (`qwnetchan.luau`): the transport is already reliable+ordered, so t
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Netchan_Init | — | SUBSTITUTED | No qport (no NAT rebinding over remotes). | — (substitution; verify justification still holds) |
+| net_udp.c / net_wins.c (entire files: NET_GetPacket/NET_SendPacket/NET_StringToAdr/NET_CompareAdr/UDP_OpenSocket etc.) | RemoteEvent/UnreliableRemoteEvent wiring (qwserver.luau / qwclient boot) | SUBSTITUTED | Row added by the 2026-07-06 audit: the UDP socket layer under netchan had no row (the NQ manifest's NET group covers NQ's different net_* architecture, not these). Roblox remotes replace sockets and addressing wholesale — netadr_t has no counterpart; per-player remotes are the address. | — (substitution; verify justification still holds) |
 | Netchan_OutOfBand / Netchan_OutOfBandPrint | — | SUBSTITUTED | No connectionless packets. | — (substitution; verify justification still holds) |
 | Netchan_Setup | `qwnetchan.new` | VERIFIED | Loopback + qwents suites construct channels; C POST-increment semantics preserved (packet carries current outgoing_sequence, incremented after — code comment + backlog note). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Netchan_CanPacket / Netchan_CanReliable | — | SUBSTITUTED | No rate choke/backoff; Roblox transport paces. | — (substitution; verify justification still holds) |
@@ -308,7 +312,7 @@ Ported verbatim in `src/shared/engine/qw/pmove.luau`; ground truth = `tools/pmov
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Pmove_Init / PM_InitBoxHull | `hullForBox` per call | SUBSTITUTED | Fresh 6-clipnode box hull built per trace instead of a static; identical plane layout (verified transitively by pmove-truth, whose player-vs-box path is unused with world-only physents). | — (substitution; verify justification still holds) |
+| Pmove_Init / PM_InitBoxHull / PM_HullForBox (pmovetst.c:64) | `hullForBox` per call | SUBSTITUTED | (PM_HullForBox added to this row by the 2026-07-06 audit — it is the fill half of the same static-hull pair.) Fresh 6-clipnode box hull built per trace instead of a static; identical plane layout (verified transitively by pmove-truth, whose player-vs-box path is unused with world-only physents). | — (substitution; verify justification still holds) |
 | PM_ClipVelocity | `clipVelocity` | VERIFIED | pmove-truth (every slide/landing tick). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_FlyMove | `flyMove` | VERIFIED | pmove-truth (air phases, clip-plane creases, waterjump velocity restore). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_GroundMove | `groundMove` | VERIFIED | pmove-truth (step-up/down vs slide comparison on e1m1 terrain). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -328,7 +332,7 @@ Ported verbatim in `src/shared/engine/qw/pmove.luau`; ground truth = `tools/pmov
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PM_InitBoxHull | `hullForBox` | SUBSTITUTED | See pmove.c row. | — (substitution; verify justification still holds) |
+| PM_InitBoxHull / PM_HullForBox | `hullForBox` | SUBSTITUTED | See pmove.c row (PM_HullForBox added by the 2026-07-06 audit). | — (substitution; verify justification still holds) |
 | PM_HullPointContents | `hullPointContents` | VERIFIED | pmove-truth (every trace/contents call for 300 ticks). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_PointContents | `pointContents` | VERIFIED | pmove-truth (waterlevel equality each tick). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PM_RecursiveHullCheck | `recursiveHullCheck` | VERIFIED | pmove-truth (DIST_EPSILON crossings, re-enter-solid backoff loop) — position error at the f32/f64 noise floor. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -345,6 +349,12 @@ Base MSG_Read/Write* live in the shared `src/shared/engine/common/msg.luau` (cov
 | MSG_ReadDeltaUsercmd | `qwents.readDeltaUsercmd` | VERIFIED | qwents: forwardmove/side/buttons/impulse/msec exact; loopback replays them through the server. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | MSG_WriteAngle16 / MSG_ReadAngle16 | `msg.writeAngle16` / `msg.readAngle16` | VERIFIED | test_msg: 90 deg -> 16384 -> 90 deg; test_qwents "cmd angle1/2 round-trips (angle16, mod 360)". | `lune run tests/test_msg.luau`; `lune run tests/test_qwents.luau` |
 | MSG_WriteAngle (QW byte angle) | `msg.writeAngleQW` | VERIFIED | Entity angles in qwents delta rows round-trip in the qwents suite. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
+| Info_ValueForKey / Info_RemoveKey / Info_RemovePrefixedKeys / Info_SetValueForStarKey / Info_SetValueForKey / Info_Print (common.c:1852-2095) | Luau `{[string]: string}` tables everywhere info strings appear; `qwsv.infoString` (qwsv.luau:843) serializes for the wire, `qwsv.infoPrint` is the 20-column dump | SUBSTITUTED | Rows added by the 2026-07-06 audit (the info-string machinery fell through the MSG-scope carve-out). The backslash-string representation is replaced by tables; the SEMANTICS are verified through their consumers: setinfo round-trip + `_`-prefix strip (test_qw_loopback), star-key refusal (setServerinfo row), 20-column Info_Print (SV_ShowServerinfo_f/CL_User_f rows). Delta: no 512-byte MAX_INFO_STRING truncation. | `lune run tests/test_qw_loopback.luau` (consumers) |
+| MSG_GetReadCount / MSG_ReadStringLine (common.c:661,777) | reader object carries its own cursor (msg.luau:reader); no ReadStringLine | SUBSTITUTED | Rows added by the 2026-07-06 audit. GetReadCount's global-cursor bookkeeping is the reader object itself; ReadStringLine only parses connectionless (OOB) console packets, which the transport substitution removed entirely. | — (substitution; verify justification still holds) |
+| COM_BlockSequenceCheckByte / COM_BlockSequenceCRCByte (common.c:2179,2224) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: the clc_move anti-spoof checksum byte. Roblox remotes are per-player authenticated; both ends write/read the byte as 0 (recorded as deltas on the CL_SendCmd and SV_ExecuteClientMessage rows). | — (substitution; verify justification still holds) |
+| COM_Gamedir (common.c:1748) | `addGameDirectory` at boot (init.server gamedir chunks; staged by build_assets.py) | SUBSTITUTED | Row added by the 2026-07-06 audit: C's runtime `gamedir` switch. The port fixes the gamedir per published place/boot config — the mechanism itself is proven end-to-end by S5/S6 (Threewave, Rocket Arena); runtime switching is publish-time configuration on this platform. | `lune run tests/test_scenario_ctf.luau` (mechanism) |
+| COM_AddParm / COM_filelength / COM_FileOpenRead (common.c:1179,1324,1343) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: argv injection and FILE-handle plumbing; no command line and no file handles — the vfs serves buffers (same substitution as the NQ COM_ file rows). | — (substitution; verify justification still holds) |
+| build_number (common.c:2265 + buildnum.c) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: the build number feeds CL_Version_f/f_version replies (proxy/cheat ecosystem checks). Version identity here is the conback stamp ("(ROBLOQUAKE) 1.09", Draw_CharToConback row) + the repo itself; there is no f_version ecosystem to answer. | — (substitution; verify justification still holds) |
 
 ## wad.c / draw.c (2D assets & drawing — as relevant)
 
@@ -381,6 +391,15 @@ Per the port architecture, the software rasterizer is replaced wholesale; groups
 | r_light.c: R_LightPoint | shared `engine/client/lightpoint.at` | VERIFIED | Shared module (one implementation for both boots) covered by test_render_misc: e1m1 samples, style scaling, -2048 reach, fullbright fallback. Gun light floor 24 note stands. | `lune run tests/test_render_misc.luau` |
 | r_surf.c / d_surf.c (surface cache + lightmaps) | `lightatlas.luau` + worldmesh lighting | VERIFIED | QW world renders lit, live 547df88 — including the recorded observation that dm3's spawn is genuinely 12/255 light ("near-black screens there are faithful, not a bug"), which is a lightmap-correctness check. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
+## QW platform backend files (group; rows added by the 2026-07-06 independent audit)
+
+QW-tree copies of the DOS/Win platform layer that previously had no row in
+any manifest (the NQ groups cover the WinQuake tree, not these copies).
+
+| C group / files | Port | Status | Evidence / Delta | How to verify |
+|---|---|---|---|---|
+| cd_*.c / in_*.c / vid_*.c / sys_*.c (client tree) / snd_win.c / snd_linux.c / nonintel.c (entire files) | — | SUBSTITUTED | Same substitutions as the NQ platform groups: Roblox runtime owns CD audio, input devices, display modes, timers/files, and sound DMA; the ported behaviors behind these APIs (input, sound, timing) are accounted on their engine-side rows. | — (substitution; verify justification still holds) |
+
 ## Port-side additions with no C counterpart
 
 | Addition | Where | Justification |
@@ -410,11 +429,18 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 168 |
+| VERIFIED | 169 |
 | PENDING | 0 |
 | UNIMPLEMENTED | 0 |
-| SUBSTITUTED | 60 |
+| SUBSTITUTED | 70 |
 | N/A | 7 |
+
+(2026-07-06 independent audit added 11 rows: Sbar_ColorForMap -> VERIFIED;
+the QW common.c additions that fell through the MSG-scope carve-out
+(Info_* machinery, MSG_GetReadCount/ReadStringLine, COM_BlockSequence*,
+COM_Gamedir, COM file plumbing, build_number), CL_CheckOrDownloadFile,
+Cmd_ForwardToServer_f, net_udp/net_wins, and the QW platform-file group
+-> SUBSTITUTED. PM_HullForBox merged into the existing PM_InitBoxHull rows.)
 | **Total rows** | **235** |
 
 Counts are the mechanical status-column count (2026-07-05 presentation pass;

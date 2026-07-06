@@ -213,6 +213,7 @@ evidence is transitive through test_qwsv/test_qw_loopback movement, touch trigge
 | SV_MoveBounds | `moveBounds` (qwworld.luau:710) | VERIFIED | test_qwtrace battery depends on it to gather areanode candidates for every SV_Move (door + player clips found through the bounds). | `lune run tests/test_qwtrace.luau` |
 | SV_Move | `world.move` (qwworld.luau:717) | VERIFIED | test_qwtrace: full move pipeline (world clip + areanode links) — door hit, unlink/relink toggle, hull selection, player box. | `lune run tests/test_qwtrace.luau` |
 | (world.h) SV_TestEntityPosition | `world.testEntityPosition` (qwworld.luau:757) | VERIFIED | test_qwtrace: free at the spawn spot, solid inside the door. | `lune run tests/test_qwtrace.luau` |
+| SV_TestPlayerPosition (world.c:864) | — | N/A | Row added by the 2026-07-06 audit: defined and declared (world.h) but has ZERO callers in the QW server build — player position testing moved into pmove (PM_TestPlayerPosition, VERIFIED). N/A: dead code in the QW source itself. Flagged by the audit; user-ratified this session. | — (N/A) |
 
 ## pr_cmds.c
 
@@ -358,7 +359,7 @@ approach) — four courses, 600 ticks total.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Pmove_Init / PM_InitBoxHull | `hullForBox` (pmove.luau:109) | SUBSTITUTED | Fresh 6-clipnode hull per call instead of a mutated static (no globals on a shared-module platform); identical plane math — covered by the ground truth. | — (substitution; verify justification still holds) |
+| Pmove_Init / PM_InitBoxHull / PM_HullForBox (pmovetst.c:64) | `hullForBox` (pmove.luau:109) | SUBSTITUTED | (PM_HullForBox added to this row by the 2026-07-06 audit — the fill half of the same static-hull pair.) Fresh 6-clipnode hull per call instead of a mutated static (no globals on a shared-module platform); identical plane math — covered by the ground truth. | — (substitution; verify justification still holds) |
 | PM_ClipVelocity | `clipVelocity` (pmove.luau:345) | VERIFIED | test_qw_pmove ground truth (slide-along-wall phases in the script). | `lune run tests/test_qw_pmove.luau` |
 | PM_FlyMove | `flyMove` (pmove.luau:371) | VERIFIED | Ground truth incl. air ticks, both courses. | `lune run tests/test_qw_pmove.luau` |
 | PM_GroundMove | `groundMove` (pmove.luau:463) | VERIFIED | Ground truth: e1m1 flat course PLUS the dm3 staircase course (2026-07-04 playtest finding: the old fixture was flat-only) — step-ups match C to 0.000122 units under straight, re-climb, jumping, and diagonal approaches. | `lune run tests/test_qw_pmove.luau` |
@@ -378,6 +379,16 @@ approach) — four courses, 600 ticks total.
 | PM_TestPlayerPosition | `testPlayerPosition` (pmove.luau:266) | VERIFIED | Two-course pmove ground truth (NudgePosition calls it each tick; stair-course landings depend on it). | `lune run tests/test_qw_pmove.luau` |
 | PM_PlayerMove (pmovetst trace) | `playerTrace` (pmove.luau:285) | VERIFIED | Same ground truth. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 
+## crc.c (QW addition) / md4.c / sys files (rows added by the 2026-07-06 independent audit)
+
+These previously had no row in any manifest.
+
+| C group / function | Port | Status | Evidence / Delta | How to verify |
+|---|---|---|---|---|
+| CRC_Block (crc.c:83) | — | SUBSTITUTED | Live in C: the `*progs` serverinfo CRC (pr_edict.c:976) and SV_CheckModel's model CRCs. Both are integrity checks against separately-downloaded files; here the server publishes the assets (clientbundle), so there is nothing that can diverge to checksum (same justification as the SV_CheckModel row). Base CRC_Init/ProcessByte/Value are on the NQ crc.c rows. | — (substitution; verify justification still holds) |
+| md4.c (entire file: Com_BlockChecksum / Com_BlockFullChecksum + MD4 core) | — | SUBSTITUTED | Feeds `mod->checksum/checksum2` (map anti-wallhack) and the `check` command — the anti-cheat layer already recorded as dropped deltas on the SV_Begin_f / Mod_LoadBrushModel / COM_BlockSequence* rows; authenticated transport + single asset source remove what it defended against. | — (substitution; verify justification still holds) |
+| sys_unix.c / sys_win.c (QW server tree, entire files) | init.server runtime + Lune test runner | SUBSTITUTED | Same substitution as the NQ sys group: file I/O -> vfs over asset chunks, Sys_DoubleTime -> Heartbeat/os.clock, Sys_Error -> Luau error, no console stdin. | — (substitution; verify justification still holds) |
+
 ## Totals
 
 > N/A status formalized 2026-07-05 (see coverage README): concept cannot exist in the port (dead-in-C, DOS/transport-era, unused-in-scope, platform-owned). Initial N/A pass done by hand; counts below are column-exact.
@@ -392,10 +403,14 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 |---|---|
 | VERIFIED | 188 |
 | PENDING | 0 |
-| SUBSTITUTED | 42 |
-| N/A | 6 |
+| SUBSTITUTED | 45 |
+| N/A | 7 |
 | UNIMPLEMENTED | 0 |
-| Total rows | 236 |
+| Total rows | 240 |
+
+(2026-07-06 independent audit added 4 rows: CRC_Block, md4.c, the QW-tree
+sys files -> SUBSTITUTED; SV_TestPlayerPosition (dead in the QW build) ->
+N/A, user-ratified. PM_HullForBox merged into the PM_InitBoxHull row.)
 
 (2026-07-05: corrected to the mechanical status-column count — the previous
 table split N/A across two lines and under-counted UNIMPLEMENTED at 7; the

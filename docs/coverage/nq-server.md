@@ -133,6 +133,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | Cvar_SetValue (cvar.c:135) | cvar.luau:setValue | VERIFIED | test_multiplayer sets coop=1 → QC coop behavior asserted (instant respawn, -2 frag suicide) | `lune run tests/test_multiplayer.luau` |
 | Cvar_RegisterVariable (cvar.c:151) | cvar.luau DEFAULTS table | SUBSTITUTED | static default table instead of dynamic registration; no engine code registers at runtime | — (substitution; verify justification still holds) |
 | Cvar_WriteVariables (cvar.c:216) | — | SUBSTITUTED | no writable config.cfg on Roblox (FIDELITY.md platform substitutions) | — (substitution; verify justification still holds) |
+| Cvar_Command (cvar.c:179) | per-cvar branches in the console execCommand paths (both boots): bare name prints `"name" is "value"`, name+arg sets | VERIFIED | Row added by the 2026-07-06 independent audit (function had no row). NQ: `"sensitivity" is "3"` ([evidence/nq-console-open.txt](evidence/nq-console-open.txt)), `"developer" is "0" -> "1"` ([evidence/nq-admin-console-battery.txt](evidence/nq-admin-console-battery.txt)); QW console shares the pattern (fov/sensitivity in qwclient execCommand). Delta: fixed per-cvar branch list, not a registry walk — unhandled names fall through to the server forward. | Console battery per the evidence .txt files |
 
 ## cmd.c
 
@@ -182,6 +183,7 @@ F11 zoom chain) but there is no offline test.
 | W_LoadWadFile (wad.c:68) | wad.luau:load | VERIFIED | test_wad against real gfx.wad (WAD2 magic, lump dir) | `lune run tests/test_wad.luau` |
 | W_GetLumpName (wad.c:125) | wad.luau:getLump / getPic | VERIFIED | test_wad: conchars/sbar/num_* present, qpic dims asserted | `lune run tests/test_wad.luau` |
 | W_GetLumpNum (wad.c:134) | — | N/A | port looks up by name only. N/A: unused in scope (name lookup only). | — (implement first) |
+| W_GetLumpinfo (wad.c:100) | wad.luau:getLump (wad.luau:75) | VERIFIED | Row added by the 2026-07-06 audit (the helper W_GetLumpName wraps had no row). test_wad exercises it through every name lookup (8 known lumps found, misses error). | `lune run tests/test_wad.luau` |
 | SwapPic (wad.c:154) | — | SUBSTITUTED | little-endian buffer reads; no swap needed | — (substitution; verify justification still holds) |
 
 ## model.c
@@ -448,6 +450,7 @@ parses (test_bsp/test_models headers).
 | Host_Kick_f (host_cmd.c:1424) | `host.kick` (by name or "# slot", "Kicked by" message, kicker "Console" for host-tool kicks) + the `kick` host command + per-player KICK buttons in the admin menu | VERIFIED | test_server: self-kick refused, unknown name refused (the C guards); the admin surface is live in [evidence/nq-admin-menu-players.jpg](evidence/nq-admin-menu-players.jpg) (self correctly shows no KICK button); drop mechanics are the test-covered svlib.dropClient. | `lune run tests/test_server.luau`; evidence capture |
 | Host_Give_f (host_cmd.c:1516) | clientCommand "give" | VERIFIED | test_server: give r 44 sets rockets; test_savegame gives weapon 7 + rockets. | `lune run tests/test_server.luau`; `lune run tests/test_savegame.luau` |
 | Host_Viewmodel_f (host_cmd.c:1690) | `host.viewmodel` (+`viewmodel` host command) on the classname-"viewthing" entity | VERIFIED | test_server: precached model assigned with frame reset; "Can't load" for unknown; "No viewthing on map" path. Delta: C side-loads into the CLIENT's precache list (unreachable across the server/client split) — the port requires the model precached. | `lune run tests/test_server.luau` |
+| FindViewthing (host_cmd.c:1670) | the viewthing-entity lookup inside `host.viewmodel`/viewframe/viewnext/viewprev | VERIFIED | Row added by the 2026-07-06 audit (static helper of the four Viewthing commands above). Its two behaviors are already asserted: entity found by classname (viewmodel assigns), miss prints "No viewthing on map" (test_server). | `lune run tests/test_server.luau` |
 | Host_Viewframe_f (host_cmd.c:1715) | `host.viewframe` | VERIFIED | test_server: sets the frame, clamps at numframes-1. | `lune run tests/test_server.luau` |
 | PrintFrameName (host_cmd.c:1734) | `host.printFrameName` (alias frame name) | VERIFIED | test_server: "frame %i: %s" printed on viewnext/viewprev. | `lune run tests/test_server.luau` |
 | Host_Viewnext_f (host_cmd.c:1752) | `host.viewnext` | VERIFIED | test_server: steps forward, clamps at the last frame, announces the frame name. | `lune run tests/test_server.luau` |
@@ -551,6 +554,7 @@ and message buffers are ordinary GC values; per-level state is rebuilt in spawnS
 | Hunk_Check / Hunk_Print (zone.c:293,315) | — | SUBSTITUTED | GC | — (substitution; verify justification still holds) |
 | Hunk_AllocName / Hunk_Alloc (zone.c:399,434) | — | SUBSTITUTED | GC | — (substitution; verify justification still holds) |
 | Hunk_FreeToLowMark / Hunk_FreeToHighMark (zone.c:444,463) | — | SUBSTITUTED | per-level state rebuilt in spawnServer instead of hunk marks | — (substitution; verify justification still holds) |
+| Hunk_LowMark / Hunk_HighMark (zone.c:439,452) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: the mark *getters* for the FreeTo* pair above; same substitution (no hunk, per-level state rebuilt in spawnServer). | — (substitution; verify justification still holds) |
 | Hunk_HighAllocName / Hunk_TempAlloc (zone.c:482,528) | — | SUBSTITUTED | GC | — (substitution; verify justification still holds) |
 | Cache_Move / Cache_FreeLow / Cache_FreeHigh (zone.c:575-628) | — | SUBSTITUTED | no cache eviction; models held by registry until level teardown | — (substitution; verify justification still holds) |
 | Cache_UnlinkLRU / Cache_MakeLRU / Cache_TryAlloc (zone.c:650-680) | — | SUBSTITUTED | GC | — (substitution; verify justification still holds) |
@@ -584,6 +588,7 @@ silently drop >~900-byte packets.
 | NET_CanSendMessage (net_main.c:695) | client.canSendReliable | SUBSTITUTED | always true on remotes | — (substitution; verify justification still holds) |
 | NET_SendToAll (net_main.c:722) | per-client loop in sendClientMessages | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | NET_Init / NET_Shutdown / NET_Poll / SchedulePollProcedure (net_main.c:804-958) | remote creation in init.server.luau | SUBSTITUTED | no polling procedures | — (substitution; verify justification still holds) |
+| IsID (net_main.c:985) | — | N/A | Hardcoded id-staff IP whitelist that sets `client->privileged` in SV_ConnectClient (live in C). Roblox remotes have no IP addressing and no privileged tier — every client takes the `!privileged` path, which is C's behavior for all non-id players. N/A: transport-era machinery. Flagged by the 2026-07-06 audit; user-ratified this session. | — (N/A) |
 | net_dgrm.c / net_loop.c / net_wins.c / net_udp / net_vcr / net_ser (group) | — | SUBSTITUTED | datagram framing, ack/resend, loopback driver all unnecessary on Roblox remotes; the loopback tests wire client and server directly through the same transport hooks (tests/test_loopback.luau) | — (substitution; verify justification still holds) |
 
 ## sys_win.c / sys_dos.c / conproc.c (group)
@@ -591,8 +596,10 @@ silently drop >~900-byte packets.
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | sys_win.c / sys_dos.c / conproc.c (entire files) | src/server/init.server.luau + Lune test runner | SUBSTITUTED | file I/O → vfs over asset chunks; timers → RunService.Heartbeat / os.clock in tests; Sys_Error → Luau error; no console process to manage | — (substitution; verify justification still holds) |
+| sys_linux.c / sys_null.c / sys_sun.c / sys_wind.c (entire files) | same as the sys_win/sys_dos row | SUBSTITUTED | Row added by the 2026-07-06 audit: alternate platform backends of the identical Sys_* API surface; the substitution above covers the API, these files add no engine behavior. | — (substitution; verify justification still holds) |
+| dos_v2.c / mplib.c / mplpc.c (entire files) | — | N/A | Row added by the 2026-07-06 audit: DJGPP DOS-extender helpers (dos_v2) and the mplayer.com matchmaking-service DLL glue (mplib/mplpc) — DOS/transport-era machinery with no concept in the port. Flagged by the audit; user-ratified this session. | — (N/A) |
 
-## cd_win.c / cd_dos.c etc. (group)
+## cd_win.c / cd_audio.c (DOS) / cd_linux.c / cd_null.c (group)
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
@@ -624,17 +631,20 @@ silently drop >~900-byte packets.
 
 
 Scope: 19 enumerated C files plus 3 substituted platform groups (net drivers,
-sys/conproc, cd). 455 table rows; a few rows group trivial sibling functions
+sys/conproc, cd). 462 table rows; a few rows group trivial sibling functions
 (endian swaps, floor/ceil, traceon/traceoff, the zone allocator, net_main
 socket entries), so the rows cover ~490 C function definitions.
+(2026-07-06 independent audit added 7 rows: Cvar_Command, W_GetLumpinfo,
+FindViewthing → VERIFIED; Hunk_Low/HighMark + the non-Win sys backends →
+SUBSTITUTED; IsID + dos_v2/mplib/mplpc → N/A, user-ratified.)
 
 | Status | Count (rows) |
 |---|---|---|
-| VERIFIED | 304 |
+| VERIFIED | 307 |
 | PENDING | 0 |
 | UNIMPLEMENTED | 0 |
-| SUBSTITUTED | 111 |
-| N/A | 36 |
+| SUBSTITUTED | 113 |
+| N/A | 38 |
 
 Notes on the UNIMPLEMENTED bucket: 13 of the 49 are dead code in the WinQuake NQ build
 (QUAKE2/FPS_20/#if 0 ifdefs or PF_Fixme slots); most of the rest are console/debug

@@ -21,6 +21,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_AllocDlight | init.client allocDlight | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the rocket explosion allocates a dlight whose radial wash re-lights the floor mid-flash. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | CL_DecayLights | heartbeat decay pass | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the wash is gone 1.2s after unpause — radius decay + die gate. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | CL_RelinkEntities | cl.luau relinkEntities + init.client effects/trails dispatch | VERIFIED | tests/test_loopback.luau: forward motion interpolated, visible-entity counts; FIDELITY.md trail record; delta: visedict list → per-entity visible flag on persistent instances | `lune run tests/test_loopback.luau` |
+| CL_LerpPoint (cl_main.c:381) | cl.luau:lerpPoint (cl.luau:716) | VERIFIED | Row added by the 2026-07-06 audit (the interpolation fraction CL_RelinkEntities consumes had no row). Direct transliteration incl. the cl_nolerp/timedemo bypass and the -0.01/1.01 time-snap clamps; test_loopback's "forward motion interpolated" assertion runs through it every relink. | `lune run tests/test_loopback.luau` |
 | CL_ReadFromServer | inbound queue pump in heartbeat | VERIFIED | tests/test_loopback.luau drives the same parse path end to end | `lune run tests/test_loopback.luau` |
 | CL_SendCmd | 72Hz-throttled sample + buildMove + takeReliable | VERIFIED | Real-key battery: W held 1s moved the server-authoritative origin ~273 units (200 u/s + spawn ramp) and stopped on release — the move reached the server over the wire ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). Offline wire shape: test_loopback buildMove. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script); `lune run tests/test_loopback.luau` |
 | CL_Init | init.client boot sequence | VERIFIED | The boot sequence is exercised end-to-end by every committed capture and battery (signon to 4, world built, HUD/console/menu live — S3 anchor + input battery). Delta stands: cvars are hardcoded constants, no registration layer. | Start Play on the NQ boot; RQ_Signon must reach 4 (tools/verify_input_nq.luau preamble) |
@@ -34,6 +35,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_ParseServerInfo | cl.luau parseServerInfo | VERIFIED | tests/test_loopback.luau: levelname/maxclients/precache lists; test_changelevel.luau. FIDELITY FIX 2026-07-04: now wipes item_gettime/stats/clocks like C's CL_ClearState memset (stale stamps caused the all-items-highlighted playtest bug — evidence/nq-inventory-steady.txt) | `lune run tests/test_changelevel.luau`; `lune run tests/test_loopback.luau` |
 | CL_ParseUpdate | cl.luau parseUpdate | VERIFIED | tests/test_loopback.luau: entity positions/visibility through fast updates | `lune run tests/test_loopback.luau` |
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) | `lune run tests/test_loopback.luau` |
+| CL_EntityNum (cl_parse.c:69) | cl.luau entity-table growth loop (cl.luau:243) | VERIFIED | Row added by the 2026-07-06 audit. Grows cl.num_entities and allocates fresh entities exactly as C; every loopback ParseUpdate/ParseBaseline runs through it. Delta: no MAX_EDICTS Host_Error cap. | `lune run tests/test_loopback.luau` |
 | CL_ParseClientdata | cl.luau parseClientdata | VERIFIED | tests/test_loopback.luau: health 100, shells 25, velocity, onground | `lune run tests/test_loopback.luau` |
 | CL_NewTranslation | textures.translatePixels + entrender translatedSkins cache | VERIFIED | test_render_misc translate battery: shirt 16..31 from colors&0xf0, pants 96..111 from (colors&15)<<4, the 128+ "backwards ranges" reversal (cl_parse.c:649 quirk), identity elsewhere. Delta stands: applied as whole-skin image, not colormap. | `lune run tests/test_render_misc.luau` |
 | CL_ParseStatic | cl.luau parseStatic + statics spawn pass | VERIFIED | test_scenario_nq "torch statics parsed on e1m2" (svc_spawnstatic through the wire client; the statics spawn pass renders them Studio-side). | `lune run tests/test_scenario_nq.luau` |
@@ -129,6 +131,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Sbar_DrawScoreboard | updateOverlays dispatch | VERIFIED | Dispatch shown across the committed set: solo overlay in single player (nq-solo-scoreboard, nq-death-cam) and the deathmatch overlay under deathmatch 1 ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
 | Sbar_DrawInventory | weapon icons + flash + counts + items + sigils | VERIFIED | [evidence/nq-sbar-inventory.jpg](evidence/nq-sbar-inventory.jpg): all weapon icons post-impulse-9 with current-weapon variant, ammo counts 100/200/100/200 as conchars over the row, keys/items column. Steady state now captured: exactly one highlighted slot (the active weapon) 3s after an impulse-9 grant across a level change ([nq-inventory-steady.jpg](evidence/nq-inventory-steady.jpg)). FIDELITY FIX 2026-07-04 (user playtest): stale item_gettime stamps survived level changes (C memsets cl in CL_ClearState) and Luau's positive modulo pinned every icon on a flash frame forever — [nq-inventory-flash.jpg](evidence/nq-inventory-flash.jpg) is the bug's before-image, originally mislabelled as pickup flash. | Stage per evidence/nq-sbar-faces.txt (impulse 9, capture immediately) |
 | Sbar_DrawFrags | hudlib `updateFragCells` (sig-rebuild into the ibar row) | VERIFIED | [evidence/nq-fragcells-minidm.jpg](evidence/nq-fragcells-minidm.jpg): color fill (28x4+28x3), %3i frags, own-slot brackets at x=23*8, gated on sb_lines>24 + maxclients!=1. Sorting = qwview.sortFrags (offline-tested). Recorded delta: C's deathmatch xofs=0 quirk (fills screen-left at wide vid.width) collapses at the 320 canvas — both halves draw sbar-relative. | Stage per evidence/nq-fragcells-minidm.txt |
+| Sbar_ColorForMap (sbar.c:416) | inline in the frag/rankings fills: `band(colors,0xf0)+8` top, `lshift(band(colors,15),4)+8` bottom (hud.luau:627) | VERIFIED | Row added by the 2026-07-06 audit (the row-base+8 palette mapping had no row). The color bars in [evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) and [evidence/nq-fragcells-minidm.jpg](evidence/nq-fragcells-minidm.jpg) are its output. Delta: no 0..13 clamp at draw time (the colors byte arrives server-validated; QW's send side clamps at 13 per the CL_Color_f row). | Stage per the two evidence .txt files |
 | Sbar_DrawFace | hud face branch | VERIFIED | Health bands shown across committed captures: 100 (S3 anchor), 49 = band 3 ([nq-sbar-face49.jpg](evidence/nq-sbar-face49.jpg)), 5 = band 5 ([nq-sbar-face5.jpg](evidence/nq-sbar-face5.jpg)). Not yet shown visually: 0.2s pain frame and invis/invuln/quad specials (no artifacts near the e1m1 start) — formulas match C in code; re-stage on a powerup map to close. | Stage per evidence/nq-sbar-faces.txt |
 | Sbar_Draw | hud.update | VERIFIED | Full sbar layout (inventory row, armor/face/health/ammo bar) live in the battery captures and the S3 anchor. Delta stands: no viewsize/lineadj interaction. | Stage per evidence/nq-sbar-faces.txt; S3 anchor diff |
 | Sbar_IntermissionNumber | interBigNum | VERIFIED | [evidence/nq-intermission.jpg](evidence/nq-intermission.jpg): big digits for Time/Secrets/Kills at the C coordinates. | Exit-trigger procedure per evidence/nq-intermission.txt, capture, compare |
@@ -236,6 +239,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Draw_DebugChar | — | N/A | N/A: dev tooling ruled out 2026-07-05 (Studio profiler/debugger is this port's equivalent). | — (implement first) |
 | Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | VERIFIED | Transparent-pic compositing is visible in the committed menu/help/plaque captures (MAIN plaque, QUAKE sidebar and spinner cursor drawn over the 3D view with index-255 holes — nq-menu-cursor-help.jpg, nq-help-page1/2.jpg). | Open the menu, capture, compare |
 | Draw_TransPicTranslate | the setup page's translated pic draw (translatePixels + createImage) | VERIFIED | [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg) — its one C consumer, live. | Stage per evidence/nq-setup-menu.txt |
+| Draw_PicFromWad / Draw_CachePic (draw.c:54,58) | wad.getPic (wad.luau:84) for gfx.wad lumps; wad.parseQPic (wad.luau:97) for gfx/*.lmp files | VERIFIED | Row added by the 2026-07-06 audit (the two pic loaders behind every Draw_Pic consumer had no row). test_wad asserts qpic dims on wad lumps; the .lmp path is live in every committed menu/plaque capture (MAIN plaque, help pages come through it). Delta: no cache_user_t eviction — pics load once and stay. | `lune run tests/test_wad.luau`; any menu capture |
 | Draw_CharToConback | version chars composited into the conback PIXELS at y=186 (Con_Init's stamp; transparent-0 glyphs) | VERIFIED | [evidence/nq-conback-stamp.jpg](evidence/nq-conback-stamp.jpg): "(ROBLOQUAKE) 1.09" baked into the image bottom-right. | Stage per evidence/nq-conback-stamp.txt |
 | Draw_ConsoleBackground | conback ImageLabel in console.create | VERIFIED | The conback art fills the console in evidence/nq-console-open.jpg. Delta stands: the frame slides instead of cropping the pic. | RQDBG_Console "toggle", capture |
 | R_DrawRect8 / R_DrawRect16 | — | SUBSTITUTED | framebuffer rect blits; GPU composites GUI | — (substitution; verify justification still holds) |
@@ -283,6 +287,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | R_Init / R_InitTurb | worldmesh/textures init | SUBSTITUTED | software init; turb warp lives in textures.writeTurbFrame | — (substitution; verify justification still holds) |
+| R_InitTextures (r_main.c:144) | — | SUBSTITUTED | Row added by the 2026-07-06 audit: builds the r_notexture_mip checkerboard used for missing textures. The port's missing-texture path is bsp.luau:444 (texture nil, flags cleared; surface renders untextured) — no checkerboard art is generated. | — (substitution; verify justification still holds) |
 | R_NewMap | onServerInfo world build (worldmesh.build, deferred one Heartbeat) | VERIFIED | tests/test_loopback.luau + test_changelevel.luau world loads; rebuild-starvation fix (user playtest "black square"): 4-rebuild gauntlet leaves 61 world parts + animated style-10 alcove region, flicker pair committed ([evidence/nq-e1m1-flicker-bright.jpg](evidence/nq-e1m1-flicker-bright.jpg), [-dark.jpg](evidence/nq-e1m1-flicker-dark.jpg), [.txt](evidence/nq-e1m1-flicker.txt)) | `lune run tests/test_changelevel.luau`; Studio: tools/verify_meshbudget.luau gauntlet prints PASS |
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport | — (substitution; verify justification still holds) |
 | R_MarkLeaves | — | SUBSTITUTED | R_MarkLeaves limits the SOFTWARE rasterizer's surface walk to the PVS; the Roblox GPU renderer owns visibility (frustum culling over retained meshes), so the platform mechanism serving the purpose is the renderer itself. Perf-only; correctness is unaffected (the row's own audit note). | — (substitution; platform renderer owns visibility) |
@@ -430,6 +435,18 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | gl_draw/gl_mesh/gl_model/gl_refrag/gl_rlight/gl_rmain/gl_rmisc/gl_rsurf/gl_screen/gl_test/gl_vid*/gl_warp.c | — | SUBSTITUTED | GLQuake is not the reference target (WinQuake software is canon); the EditableMesh approach merely resembles GL's geometry path — no gl_* code was ported | — (substitution; verify justification still holds) |
 
+## Platform backend files (group; rows added by the 2026-07-06 independent audit)
+
+These WinQuake files previously had no row in any manifest. All are device
+drivers behind APIs whose ported behavior is accounted above.
+
+| C group / files | Port | Status | Evidence / Delta | How to verify |
+|---|---|---|---|---|
+| vid_*.c (vid_win, vid_dos, vid_ext, vid_vga, vid_svgalib, vid_x, vid_sunx, vid_sunxil, vid_null) + vregset.c (entire files) | — | SUBSTITUTED | Display-mode/palette/page-flip drivers (incl. the vid mode menus). The ViewportFrame + EditableImage pipeline and the Roblox window replace the display layer wholesale; palette effects that matter (cshift/gamma feel) have their own rows. | — (substitution; verify justification still holds) |
+| in_*.c (in_win, in_dos, in_null, in_sun) (entire files) | — | SUBSTITUTED | Mouse/joystick device drivers feeding IN_Move/IN_Commands. UserInputService is the device layer; the ported input behavior (KeyDown/Up, mouse look, IN_Move accumulation) is covered by the cl_input.c/keys.c rows and the input battery. | — (substitution; verify justification still holds) |
+| snd hardware backends: snd_win.c, snd_dos.c, snd_gus.c, snd_linux.c, snd_next.c, snd_sun.c (entire files) | — | SUBSTITUTED | SNDDMA_* DMA-buffer drivers under snd_dma/snd_mix. The engine mixes Roblox Sound instances (see the snd_mix.c entire-file row); there is no PCM DMA ring to fill. | — (substitution; verify justification still holds) |
+| nonintel.c (entire file) | — | SUBSTITUTED | C fallbacks for the asm surface-patch routines — rasterizer internals; same substitution as the d_*.c group (GPU rasterizes). | — (substitution; verify justification still holds) |
+
 ## Port-side additions with no C counterpart
 
 | Addition | Where | Justification |
@@ -458,12 +475,16 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 ## Totals
 
-- Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 157
+- Rows: 273 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
+- VERIFIED: 161
 - PENDING: 0
 - UNIMPLEMENTED: 0
-- SUBSTITUTED: 81
+- SUBSTITUTED: 86
 - N/A: 26
+
+(2026-07-06 independent audit added 9 rows: CL_LerpPoint, CL_EntityNum,
+Sbar_ColorForMap, Draw_PicFromWad/CachePic -> VERIFIED; R_InitTextures +
+the 4 platform-backend group rows (vid/in/snd-hw/nonintel) -> SUBSTITUTED.)
 
 (2026-07-06: ZERO UNIMPLEMENTED. The flag pass is resolved: the user
 ruled Con_NotifyBox ported (now VERIFIED with the missing-soundbank
