@@ -33,9 +33,9 @@ counterpart, each with its justification.
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 292 | 0 | 12 | 111 | 36 |
 | [nq-client.md](nq-client.md) — WinQuake client/presentation | 141 | 0 | 20 | 78 | 25 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 176 | 1 | 11 | 42 | 6 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
 | [qw-client.md](qw-client.md) — QuakeWorld client | 138 | 0 | 38 | 53 | 5 |
-| **Total** | **747** | **1** | **81** | **284** | **72** |
+| **Total** | **759** | **0** | **70** | **284** | **72** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -44,8 +44,8 @@ totals tables and reason cells, so count the status COLUMN only. The
 2026-07-05 presentation pass also corrected two stale per-file totals to
 the mechanical column count (qw-server UNIMPLEMENTED was 14, not 7 — the
 broken-wiring and ruled-IMPLEMENT debug rows; qw-client had one more
-UNIMPLEMENTED row than its table claimed). The 1 PENDING is qw-server's
-SV_Serverinfo/Localinfo honest partial, noted in that file.
+UNIMPLEMENTED row than its table claimed). PENDING reached ZERO on
+2026-07-06 (the serverinfo runtime-mutability partial landed).
 
 Notes on reading the numbers: dead-in-C code (QUAKE2/#if 0/PF_Fixme slots)
 now sits in N/A; the SUBSTITUTED columns are dominated by the software
@@ -93,6 +93,26 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (burn-down pass 4: qw-server reaches ZERO open rows)
+- sv_move.luau parameterized over the engine ABI: offsets resolve through
+  svr.qdefs (QW's name-derived progs layout) and the world module through
+  svr.worldMod, so ONE sv_move.c port serves both engines — C-truth
+  fixture still passes bit-exact (test_svmove 0.000000 error). QW builtins
+  17/32/40/49/67 (checkclient/walkmove/checkbottom/changeyaw/movetogoal)
+  now really work; test_qwsv drives them on a droptofloor-seated actor.
+- SV_Serverinfo_f runtime mutability (the last PENDING): qwsv.setServerinfo
+  with star-key refusal + cvar mirroring + SV_SendServerInfoChange
+  broadcast; SV_BroadcastCommand; SV_ShowServerinfo_f as the `serverinfo`
+  user command (Info_Print, sorted-key delta noted);
+  SV_FullClientUpdateToClient named and used by the spawn handshake. All
+  wire-proven in test_qw_loopback (the earlier svc_serverinfo check was
+  crafted; this one rides the real broadcast).
+- SV_SetPlayer/SV_God_f/SV_Noclip_f/SV_Give_f as host-gated QW_HostCmd
+  verbs by userid (the host gate replaces C's -cheats flag; user ruled
+  implement-not-substitute). test_qwsv toggling/grant batteries.
+- qw-server manifest: ZERO UNIMPLEMENTED / ZERO PENDING — first of the
+  four manifests done. Stale "known defects" list marked resolved.
 
 ### 2026-07-05 (burn-down pass 3: QC introspection + profiler/tracer, both servers)
 - New shared `src/shared/engine/progs/prdebug.luau`: PR_ValueString/

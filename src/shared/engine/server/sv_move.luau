@@ -9,19 +9,30 @@ local defs = require("../progs/defs")
 local vmlib = require("../progs/vm")
 local qd = require("../quakedef")
 local svlib = require("./sv")
-local world = require("./world")
+local nqworld = require("./world")
 
 local sv_move = {}
 
 local STEPSIZE = 18
 local DI_NODIR = -1
 
-local ent = defs.ent
-local glob = defs.glob
+-- The NQ server uses the static progdefs offsets and the NQ world
+-- module; the QW server carries its own ABI (svr.qdefs, name-resolved
+-- from the loaded qwprogs) and its own world module (svr.worldMod).
+-- Resolving per call keeps ONE sv_move.c port serving both engines.
+local function abi(svr: any): ({ [string]: number }, { [string]: number }, any)
+	local q = svr.qdefs
+	return (if q then q.ent else defs.ent), (if q then q.glob else defs.glob), (svr.worldMod or nqworld)
+end
+
+local function randOf(svr: any): number
+	return if svr.rand then svr.rand(svr) else svlib.rand(svr)
+end
 
 -- SV_CheckBottom: returns false if any part of the bottom of the entity is
 -- off an edge that is not a staircase
-function sv_move.checkBottom(svr: svlib.Server, ed: vmlib.Edict): boolean
+function sv_move.checkBottom(svr: any, ed: vmlib.Edict): boolean
+	local ent, _glob, world = abi(svr)
 	local w = svr.world
 	local origin = vmlib.edVector(ed, ent.origin)
 	local mins = origin + vmlib.edVector(ed, ent.mins)
@@ -95,7 +106,8 @@ end
 -- SV_movestep: called by monster program code. The move will be adjusted
 -- for slopes and stairs, but if the move isn't possible, no move is done
 -- and false is returned.
-function sv_move.movestep(svr: svlib.Server, ed: vmlib.Edict, move: vector, relink: boolean): boolean
+function sv_move.movestep(svr: any, ed: vmlib.Edict, move: vector, relink: boolean): boolean
+	local ent, _glob, world = abi(svr)
 	local vm = svr.vm
 	local w = svr.world
 
@@ -201,7 +213,8 @@ function sv_move.movestep(svr: svlib.Server, ed: vmlib.Edict, move: vector, reli
 end
 
 -- PF_changeyaw (operates on the edict in the self global)
-function sv_move.changeYaw(svr: svlib.Server)
+function sv_move.changeYaw(svr: any)
+	local ent, glob, _world = abi(svr)
 	local vm = svr.vm
 	local ed = vmlib.edictNum(vm, vmlib.globalInt(vm, glob.self))
 	local angles = vmlib.edVector(ed, ent.angles)
@@ -237,7 +250,8 @@ end
 
 -- SV_StepDirection: turns to the movement direction, and walks the current
 -- distance if facing it
-local function stepDirection(svr: svlib.Server, ed: vmlib.Edict, yaw: number, dist: number): boolean
+local function stepDirection(svr: any, ed: vmlib.Edict, yaw: number, dist: number): boolean
+	local ent, glob, world = abi(svr)
 	local w = svr.world
 
 	vmlib.edSetFloat(ed, ent.ideal_yaw, yaw)
@@ -267,12 +281,13 @@ local function stepDirection(svr: svlib.Server, ed: vmlib.Edict, yaw: number, di
 end
 
 -- SV_FixCheckBottom
-local function fixCheckBottom(ed: vmlib.Edict)
+local function fixCheckBottom(ent: { [string]: number }, ed: vmlib.Edict)
 	vmlib.edSetFloat(ed, ent.flags, bit32.bor(vmlib.edFloat(ed, ent.flags), qd.FL_PARTIALGROUND))
 end
 
 -- SV_NewChaseDir
-local function newChaseDir(svr: svlib.Server, actor: vmlib.Edict, enemy: vmlib.Edict, dist: number)
+local function newChaseDir(svr: any, actor: vmlib.Edict, enemy: vmlib.Edict, dist: number)
+	local ent, _glob, _world = abi(svr)
 	local olddir = mathlib.anglemod(mathlib.trunc(vmlib.edFloat(actor, ent.ideal_yaw) / 45) * 45)
 	local turnaround = mathlib.anglemod(olddir - 180)
 
@@ -311,7 +326,7 @@ local function newChaseDir(svr: svlib.Server, actor: vmlib.Edict, enemy: vmlib.E
 	end
 
 	-- try other directions
-	if bit32.band(bit32.band(svlib.rand(svr), 3), 1) ~= 0 or math.abs(deltay) > math.abs(deltax) then
+	if bit32.band(bit32.band(randOf(svr), 3), 1) ~= 0 or math.abs(deltay) > math.abs(deltax) then
 		d1, d2 = d2, d1
 	end
 
@@ -327,7 +342,7 @@ local function newChaseDir(svr: svlib.Server, actor: vmlib.Edict, enemy: vmlib.E
 		return
 	end
 
-	if bit32.band(svlib.rand(svr), 1) ~= 0 then
+	if bit32.band(randOf(svr), 1) ~= 0 then
 		-- randomly determine direction of search
 		for tdir = 0, 315, 45 do
 			if tdir ~= turnaround and stepDirection(svr, actor, tdir, dist) then
@@ -351,12 +366,12 @@ local function newChaseDir(svr: svlib.Server, actor: vmlib.Edict, enemy: vmlib.E
 	-- if a bridge was pulled out from underneath a monster, it may not have
 	-- a valid standing position at all
 	if not sv_move.checkBottom(svr, actor) then
-		fixCheckBottom(actor)
+		fixCheckBottom(ent, actor)
 	end
 end
 
 -- SV_CloseEnough
-local function closeEnough(ed: vmlib.Edict, goal: vmlib.Edict, dist: number): boolean
+local function closeEnough(ent: { [string]: number }, ed: vmlib.Edict, goal: vmlib.Edict, dist: number): boolean
 	local gmin = vmlib.edVector(goal, ent.absmin)
 	local gmax = vmlib.edVector(goal, ent.absmax)
 	local emin = vmlib.edVector(ed, ent.absmin)
@@ -373,7 +388,8 @@ local function closeEnough(ed: vmlib.Edict, goal: vmlib.Edict, dist: number): bo
 end
 
 -- SV_MoveToGoal (builtin #67)
-function sv_move.moveToGoal(svr: svlib.Server)
+function sv_move.moveToGoal(svr: any)
+	local ent, glob, _world = abi(svr)
 	local vm = svr.vm
 	local ed = vmlib.edictNum(vm, vmlib.globalInt(vm, glob.self))
 	local goal = vmlib.edictNum(vm, vmlib.edInt(ed, ent.goalentity))
@@ -385,12 +401,12 @@ function sv_move.moveToGoal(svr: svlib.Server)
 	end
 
 	-- if the next step hits the enemy, return immediately
-	if vmlib.edInt(ed, ent.enemy) ~= 0 and closeEnough(ed, goal, dist) then
+	if vmlib.edInt(ed, ent.enemy) ~= 0 and closeEnough(ent, ed, goal, dist) then
 		return
 	end
 
 	-- bump around...
-	if bit32.band(svlib.rand(svr), 3) == 1 or not stepDirection(svr, ed, vmlib.edFloat(ed, ent.ideal_yaw), dist) then
+	if bit32.band(randOf(svr), 3) == 1 or not stepDirection(svr, ed, vmlib.edFloat(ed, ent.ideal_yaw), dist) then
 		newChaseDir(svr, ed, goal, dist)
 	end
 end

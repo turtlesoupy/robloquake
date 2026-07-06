@@ -26,7 +26,7 @@ Status legend:
 | SV_DropClient | `qwsv.dropClient` (qwsv.luau:1213) | VERIFIED | test_qw_loopback "kicked client dropped". | `lune run tests/test_qw_loopback.luau` |
 | SV_CalcPing | `qwsv.calcPing` (qwsv.luau:930) | VERIFIED | test_qw_loopback: pings answers with svc_updateping (calcPing output on the wire). | `lune run tests/test_qw_loopback.luau` |
 | SV_FullClientUpdate | `qwsv.fullClientUpdate` (qwsv.luau:946) | VERIFIED | test_qw_loopback: "own player info received" (name via svc_updateuserinfo); `_`-prefixed keys stripped as in Info_RemovePrefixedKeys. | `lune run tests/test_qw_loopback.luau` |
-| SV_FullClientUpdateToClient | — | UNIMPLEMENTED | Single-client resend path unused; setinfo broadcasts via reliable_datagram instead. | — (implement first) |
+| SV_FullClientUpdateToClient | `qwsv.fullClientUpdateToClient` (the spawn handshake's per-slot resend now goes through it; no backbuf branch — the transport is reliable) | VERIFIED | test_qw_loopback: direct call grows the target netchan reliable stream; the spawn path it serves is every loopback/scenario scoreboard handshake. | `lune run tests/test_qw_loopback.luau` |
 | SVC_Status | — | SUBSTITUTED | Out-of-band status query; Roblox server browser/matchmaking replaces it. | — (substitution; verify justification still holds) |
 | SV_CheckLog / SVC_Log | `svr.fraglog` ring (qwsv.luau:196) | SUBSTITUTED | Frag log kept as in-memory ring of 512 `{killer,killee,time}`; no UDP log pull — external stat pullers don't exist on this transport. | — (substitution; verify justification still holds) |
 | SVC_Ping | — | SUBSTITUTED | Out-of-band ping probe; transport RTT is Roblox's concern. | — (substitution; verify justification still holds) |
@@ -67,7 +67,7 @@ Status legend:
 | SV_Rate_f | — | SUBSTITUTED | Bandwidth rate control meaningless on Roblox remotes (no per-client UDP throttling). | — (substitution; verify justification still holds) |
 | SV_Msg_f | `userCommands.msg` (qwsv.luau:1186) | VERIFIED | test_qwsv: msg 1 sets messagelevel. | `lune run tests/test_qwsv.luau` |
 | SV_SetInfo_f | `userCommands.setinfo` (qwsv.luau:1155) | VERIFIED | test_qw_loopback "SV_SetInfo_f updated the server-side userinfo". | `lune run tests/test_qw_loopback.luau` |
-| SV_ShowServerinfo_f | — | UNIMPLEMENTED | `serverinfo` user command absent (table exists; only sent via fullserverinfo at connect). | — (implement first) |
+| SV_ShowServerinfo_f | `serverinfo` user command → `qwsv.infoPrint` (20-column keys; sorted for stable order — recorded delta vs C's raw string order) | VERIFIED | test_qw_loopback: the command answers the requesting client with the info table over the wire (PRINT_HIGH). | `lune run tests/test_qw_loopback.luau` |
 | SV_NoSnap_f | — | SUBSTITUTED | Snap/upload (remote screenshot) feature absent — depends on the upload protocol, dropped with it. | — (substitution; verify justification still holds) |
 | SV_ExecuteUserCommand | `qwsv.executeUserCommand` (qwsv.luau:1203) + `tokenize` | VERIFIED | Drives the whole loopback handshake (new/soundlist/modellist/prespawn/spawn/begin). Delta: unknown commands only dprint (C prints to client). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | V_CalcRoll | `calcRoll` (qwsv.luau:542) | VERIFIED | test_qwsv "V_CalcRoll leaned the strafing player" (roll*4 into angles.z from lateral velocity). | `lune run tests/test_qwsv.luau` |
@@ -99,7 +99,7 @@ Status legend:
 | Con_Printf / Con_DPrintf | `svr.print` / `svr.dprint` hooks (qwsv.luau:153) | SUBSTITUTED | Route to Roblox `print`; dprint default no-op (developer cvar replaced by hook swap). | — (substitution; verify justification still holds) |
 | SV_PrintToClient / SV_ClientPrintf | `svr.clientPrint` (qwsv.luau:178) | VERIFIED | Loopback receives svc_print traffic during handshake/play; messagelevel filter honored. Also mirrors into `client.prints` (see additions). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_BroadcastPrintf | `svr.broadcastPrint` (qwsv.luau:166) | VERIFIED | test_qw_loopback: conSay + say broadcasts arrive as prints; test_qwbuiltins bprint hook check. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_qwbuiltins.luau` |
-| SV_BroadcastCommand | — | UNIMPLEMENTED | svc_stufftext broadcast (used by SV_Gamedir/serverinfo changes) absent along with those commands. | — (implement first) |
+| SV_BroadcastCommand | `qwsv.broadcastCommand` (svc_stufftext onto reliable_datagram, sv.state guard) | VERIFIED | test_qw_loopback: a broadcast "bf" lands in the client's rawStufftext over the real wire. | `lune run tests/test_qw_loopback.luau` |
 | SV_Multicast | `qwsv.svMulticast` (qwsv.luau:1810) | VERIFIED | test_qw_loopback: "svc_sound guncock arrived through the PHS multicast". ALL/PHS/PVS + _R variants, 1024-unit PHS distance override, reliable→netchan.message vs datagram routing. Delta: reliable path writes straight to netchan.message (no backbuf, see sv_nchan.c). | `lune run tests/test_qw_loopback.luau` |
 | SV_StartSound | `qwsv.startSoundWire` via `svr.startSound` (qwsv.luau:1872) | VERIFIED | Same loopback check; channel packing (ent<<3), SND_VOLUME/SND_ATTENUATION flags, bmodel origin midpoint, phs/reliable channel-8 rules ported. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_FindModelNumbers | inline in `spawnServer` (qwsv.luau:347) | VERIFIED | test_qwsv "player model number found"; nail/supernail indexes drive the nails path. | `lune run tests/test_qwsv.luau` |
@@ -158,9 +158,9 @@ Extra NQ-only functions present in qwphys.luau (`checkStuck`, `checkWater`, `wal
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_CheckBottom | NQ-shared `src/shared/engine/server/sv_move.luau` `checkBottom` | UNIMPLEMENTED (broken wiring) | qwbuiltins.luau builtin 40 calls `sv_move.checkBottom` but **qwbuiltins.luau never requires sv_move** — `sv_move` is a dangling global; the builtin errors if a QW mod calls it. Harmless for id1 qwprogs deathmatch (no monsters), fatal for any progs using it. |
-| SV_movestep | NQ-shared `sv_move.movestep` | UNIMPLEMENTED (broken wiring) | Same dangling `sv_move` global via builtin 32 (walkmove). Also typed against the NQ `svlib.Server`/NQ world — untested against the QW server object. |
-| SV_StepDirection / SV_FixCheckBottom / SV_NewChaseDir / SV_CloseEnough / SV_MoveToGoal | NQ-shared `sv_move.luau` | UNIMPLEMENTED (broken wiring) | builtin 67 (movetogoal) hits the same missing require. |
+| SV_CheckBottom | shared `sv_move.checkBottom` — sv_move now resolves the progs ABI (svr.qdefs) and world module (svr.worldMod) per server, so one sv_move.c port serves both engines | VERIFIED | test_qwsv: a droptofloor-seated actor on a QW-booted e1m1 has a bottom (builtin 40); the algorithm itself is C-truth-tested via test_svmove (0.000000 error vs the compiled fixture, unchanged by the ABI parameterization). | `lune run tests/test_qwsv.luau`; `lune run tests/test_svmove.luau` |
+| SV_movestep | shared `sv_move.movestep` (ABI/world resolved per server) | VERIFIED | test_qwsv: PF_walkmove takes a real 8-unit step on the QW server object through qwworld traces; C-truth via test_svmove. | `lune run tests/test_qwsv.luau` |
+| SV_StepDirection / SV_FixCheckBottom / SV_NewChaseDir / SV_CloseEnough / SV_MoveToGoal | shared `sv_move.luau` (randOf dispatches to the QW server's LCG) | VERIFIED | test_qwsv: PF_movetogoal steps a seated actor toward its goalentity on the QW server; the chase logic is C-truth-tested in test_svmove (200 MoveToGoal calls, 0 yaw error). | `lune run tests/test_qwsv.luau`; `lune run tests/test_svmove.luau` |
 
 ## sv_nchan.c
 
@@ -178,12 +178,12 @@ Server operator console commands. No console exists on the Roblox deployment; St
 |---|---|---|---|---|
 | SV_SetMaster_f / SV_Heartbeat_f | — | SUBSTITUTED | No master server. | — (substitution; verify justification still holds) |
 | SV_Quit_f / SV_Logfile_f / SV_Fraglogfile_f | — | SUBSTITUTED | Process/file lifecycle absent; fraglog ring replaces the frag logfile. | — (substitution; verify justification still holds) |
-| SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f | — | UNIMPLEMENTED | No cheat commands (no console); could be added via Studio. | ruled: IMPLEMENT as host-gated commands — user explicitly rejected substituting these (2026-07-05) |
+| SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f | `qwsv.setPlayer/godF/noclipF/giveF` + host-gated QW_HostCmd verbs ("god <uid>" etc. — the host gate replaces C's -cheats launch flag) | VERIFIED | test_qwsv: godmode toggles FL_GODMODE both ways, noclip toggles MOVETYPE_NOCLIP<->WALK, give grants weapon bits (IT_SHOTGUN<<n-2) and s/n/r/h/c values, unknown userid refused with the C message. | `lune run tests/test_qwsv.luau` |
 | SV_Map_f | `qwsv.spawnServer` callable; no command/changelevel driver | VERIFIED | Changelevel driver exists since b98aa9a: loopback re-handshake after spawnServer + S1 scenario carry; test_qwbuiltins localcmd routing. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_scenario_qw.luau` |
 | SV_Kick_f | qw/qwsv.luau:kick | VERIFIED | test_qw_loopback "kick found the userid"/"kicked client dropped": broadcast + direct notice + dropClient. Exposed to the host via ServerStorage QW_HostCmd (owner-gating UI hook). | `lune run tests/test_qw_loopback.luau` |
 | SV_Status_f | attribute diagnostics (qwserver.luau Heartbeat) | SUBSTITUTED | SV_Time/SV_Edicts/SV_Origin ServerStorage attributes replace the console status dump for Studio. | — (substitution; verify justification still holds) |
 | SV_ConSay_f | qw/qwsv.luau:conSay | VERIFIED | test_qw_loopback "conSay reached the client": console:-prefixed PRINT_CHAT to every spawned client over the reliable stream. | `lune run tests/test_qw_loopback.luau` |
-| SV_SendServerInfoChange / SV_Serverinfo_f / SV_Localinfo_f | static `svr.serverinfo`; `svr.localinfo` + QW_HostCmd "localinfo k v" (qwserver.luau) | PENDING | localinfo store + host-command setter landed (Rocket Arena's rotate.cfg chain works through it, S6); serverinfo still fixed at newGame — no runtime serverinfo change or svc_serverinfo broadcast yet. | `lune run tests/test_scenario_ra.luau` (localinfo consumer) |
+| SV_SendServerInfoChange / SV_Serverinfo_f / SV_Localinfo_f | `qwsv.setServerinfo`/`sendServerInfoChange` (+ QW_HostCmd "serverinfo k v" / bare print in qwserver.luau); `svr.localinfo` + QW_HostCmd "localinfo k v" | VERIFIED | test_qw_loopback: a runtime setServerinfo broadcasts svc_serverinfo to the connected client, star keys refused, a matching cvar mirrors (fraglimit 25); localinfo half via the Rocket Arena rotation (S6). CVAR_SERVERINFO attrs also seed svr.serverinfo at boot (qwserver.luau). | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_scenario_ra.luau` |
 | SV_User_f / SV_Gamedir / SV_Gamedir_f | — | SUBSTITUTED | Single gamedir baked into the asset bundle. | — (substitution; verify justification still holds) |
 | SV_Floodprot_f / SV_Floodprotmsg_f | hardcoded values in `say` handler | SUBSTITUTED | Flood protection on (4/4s/10s) but not tunable; C default is off until configured. | — (substitution; verify justification still holds) |
 | SV_Snap / SV_Snap_f / SV_SnapAll_f | — | SUBSTITUTED | Depends on the upload protocol (dropped). | — (substitution; verify justification still holds) |
@@ -238,7 +238,7 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_break (6) | qwbuiltins.luau:131 | N/A | C deliberately crashes into the debugger (*(int*)-4 = 0); a debugger trap is platform-meaningless — port errors with a message instead. | — (N/A) |
 | PF_traceline (16) | qwbuiltins.luau:209 | VERIFIED | Shotgun fire traces in test_qwsv. | `lune run tests/test_qwsv.luau` |
 | PF_checkpos | — | N/A | Stubbed/unused in C too (never registered). N/A: dead in C (never registered). | — (implement first) |
-| PF_newcheckclient / PF_checkclient (17) | qwbuiltins.luau:219,250 | UNIMPLEMENTED (broken wiring) | Logic fully ported but references `bsplib` **which is never required** in qwbuiltins.luau — dangling global, errors if qwprogs calls checkclient. |
+| PF_newcheckclient / PF_checkclient (17) | qwbuiltins.luau (bsplib require landed 2026-07-04; the stale broken-wiring note outlived the fix) | VERIFIED | test_qwsv: builtin 17 cycles to a client and caches the check PVS through bsplib on the QW-booted e1m1. | `lune run tests/test_qwsv.luau` |
 | PF_stuffcmd (21) | qwbuiltins.luau:352 | VERIFIED | Handshake "skins"/"cmd spawn" stufftexts drive the verified loopback flow via svr.clientCommands. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PF_localcmd (46) | qwbuiltins.luau:605 | VERIFIED | test_qwbuiltins: "changelevel e1m2" routes to svr.changelevelTo (consumed by the QW boot since b98aa9a). Delta: only changelevel/restart routed; others logged. | `lune run tests/test_qwbuiltins.luau` |
 | PF_cvar (45) / PF_cvar_set (72) | qwbuiltins.luau:600,759 | VERIFIED | test_qwbuiltins: cvar_set + cvar round-trip on sv_gravity. | `lune run tests/test_qwbuiltins.luau` |
@@ -251,15 +251,15 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_precache_file (68/77) | qwbuiltins.luau:723 | VERIFIED | test_qwbuiltins: passes the parm through (no-op, as C). | `lune run tests/test_qwbuiltins.luau` |
 | PF_precache_sound (19/76) / PF_precache_model (20/75) | qwbuiltins.luau:309,328 | VERIFIED | test_qwbuiltins: ss_loading gate errors post-spawn even for known names (gate precedes dedup, as C); lists feed the loopback-verified soundlist/modellist. | `lune run tests/test_qwbuiltins.luau`; `lune run tests/test_qw_loopback.luau` |
 | PF_coredump (28) / PF_traceon (29) / PF_traceoff (30) / PF_eprint (31) | qwbuiltins def(28-31) → shared prdebug (real implementations replaced the notice stubs 2026-07-05) | VERIFIED | test_prdebug drives the identical NQ twins (same shared module and register conventions); stock qwprogs still never calls them — they now work when a mod does | `lune run tests/test_prdebug.luau` |
-| PF_walkmove (32) | qwbuiltins.luau:437 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global (no require) — see sv_move.c section. |
+| PF_walkmove (32) | qwbuiltins def(32) → shared sv_move.movestep | VERIFIED | test_qwsv: 8-unit +x step taken by a seated actor (FL_ONGROUND gate respected). | `lune run tests/test_qwsv.luau` |
 | PF_droptofloor (34) | qwbuiltins.luau:461 | VERIFIED | test_qwbuiltins: staged edict drops onto the start floor, returns 1, sets FL_ONGROUND. | `lune run tests/test_qwbuiltins.luau` |
 | PF_lightstyle (35) | qwbuiltins.luau:487 | VERIFIED | Broadcast fixed (state==2 + netchan reliable); test_qw_loopback "runtime PF_lightstyle broadcast reached the client". | `lune run tests/test_qw_loopback.luau` |
 | PF_rint (36) / PF_floor (37) / PF_ceil (38) | qwbuiltins.luau:507-517 | VERIFIED | test_qwbuiltins: half-away-from-zero rint (4 cases), floor/ceil on negatives/fractions. | `lune run tests/test_qwbuiltins.luau` |
-| PF_checkbottom (40) | qwbuiltins.luau:519 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global. |
+| PF_checkbottom (40) | qwbuiltins def(40) → shared sv_move.checkBottom | VERIFIED | test_qwsv: returns 1 for the seated actor. | `lune run tests/test_qwsv.luau` |
 | PF_pointcontents (41) | qwbuiltins.luau:524 | VERIFIED | test_qwbuiltins: EMPTY at the start area, SOLID outside the world hull. | `lune run tests/test_qwbuiltins.luau` |
 | PF_nextent (47) | qwbuiltins.luau:619 | VERIFIED | test_qwbuiltins: nextent(world) returns edict 1, skipping free slots. | `lune run tests/test_qwbuiltins.luau` |
 | PF_aim (44) | qwbuiltins.luau:533 | VERIFIED | test_qwbuiltins: with sv_aim 2 (the QW default — assist off) returns v_forward unchanged, which is the only branch stock QW play reaches. Assist branch remains untested (dead under default cvars). | `lune run tests/test_qwbuiltins.luau` |
-| PF_changeyaw (49) | qwbuiltins.luau:643 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global. |
+| PF_changeyaw (49) | qwbuiltins def(49) → shared sv_move.changeYaw | VERIFIED | test_qwsv: exact 20-degree yaw_speed step toward ideal_yaw (anglemod-quantized like C). | `lune run tests/test_qwsv.luau` |
 | WriteDest / Write_GetClient | `writeDest` (qwbuiltins.luau:674) | VERIFIED | test_qwbuiltins "WriteDest MSG_ONE lands on the client netchan reliable stream" + the MSG_MULTICAST byte battery; MSG_BROADCAST covered by the NQ twin battery on the same writeDest pattern. | `lune run tests/test_qwbuiltins.luau` |
 | PF_WriteByte..PF_WriteEntity (52-59) | qwbuiltins.luau:694-717 | VERIFIED | test_qwbuiltins: byte-exact MSG_MULTICAST writes (byte/char/short/long/angle 90->64/coord 12.5->100/entity-as-short). | `lune run tests/test_qwbuiltins.luau` |
 | PF_makestatic (69) | qwbuiltins.luau:728 | VERIFIED | svc_spawnstatic in signon parsed by loopback client. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -381,7 +381,7 @@ approach) — four courses, 600 ticks total.
 ## Totals
 
 > N/A status formalized 2026-07-05 (see coverage README): concept cannot exist in the port (dead-in-C, DOS/transport-era, unused-in-scope, platform-owned). Initial N/A pass done by hand; counts below are column-exact.
-> PENDING 1 = SV_Serverinfo/Localinfo row (honest partial: localinfo landed for Rocket Arena, serverinfo still fixed at newGame) — the previous 'PENDING 0' total was stale.
+> 2026-07-06: qw-server reached ZERO UNIMPLEMENTED / ZERO PENDING — every row VERIFIED, SUBSTITUTED, or hand-ruled N/A. The former PENDING (SV_Serverinfo runtime mutability) landed with the svc_serverinfo broadcast.
 
 
 Counted per manifest row (some rows deliberately merge families of C functions, e.g. the 11
@@ -390,22 +390,21 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 
 | Status | Rows |
 |---|---|
-| VERIFIED | 176 |
-| PENDING | 1 |
+| VERIFIED | 188 |
+| PENDING | 0 |
 | SUBSTITUTED | 42 |
 | N/A | 6 |
-| UNIMPLEMENTED | 11 |
+| UNIMPLEMENTED | 0 |
 | Total rows | 236 |
 
 (2026-07-05: corrected to the mechanical status-column count — the previous
 table split N/A across two lines and under-counted UNIMPLEMENTED at 7; the
 "broken wiring" rows and the ruled-IMPLEMENT debug rows are UNIMPLEMENTED.)
 
-Headline: the whole gameplay core (pmove vs verbatim-C ground truth, SV_RunCmd, sv_phys frame loop,
-world/trace, delta entity codec, netchan-lite, handshake, PVS/PHS multicast, stats) is VERIFIED by four
-passing offline tests. The UNIMPLEMENTED bucket is dominated by console/debug tooling plus five
-genuinely broken wirings listed below; the PENDING bucket is mostly chat/pause/spectator/setinfo paths
-and pusher physics that run in tests but are never asserted.
+Headline: this manifest is DONE (2026-07-06) — zero UNIMPLEMENTED, zero PENDING. The whole gameplay
+core (pmove vs verbatim-C ground truth, SV_RunCmd, sv_phys frame loop, world/trace, delta entity
+codec, netchan-lite, handshake, PVS/PHS multicast, stats) is VERIFIED by passing offline tests;
+everything else is a justified SUBSTITUTED (transport/platform) or hand-ruled N/A row.
 
 ### Port-side additions with no C counterpart
 
@@ -424,15 +423,15 @@ and pusher physics that run in tests but are never asserted.
 | `svr.flushMulticast` legacy hook | qwsv.luau:192 | Marked "legacy" in-code (builtin 82 now routes svMulticast). NO JUSTIFICATION FOUND for keeping it — no remaining caller found in the QW path; deletion candidate. |
 | `qwents.parseDelta` / `parsePacketEntities` / qwcl.luau client half | qwents.luau:286+, qwcl.luau | Justified: client-side counterparts (CL_ParseDelta etc.) needed for the loopback test and the Roblox client; out of scope for this server manifest. |
 
-### Known port-side defects found during this audit (cross-referenced above)
+### Known port-side defects found during this audit (all since RESOLVED)
 
-1. `qwbuiltins.luau` never requires `bsplib` or `sv_move` — builtins 17 (checkclient), 32 (walkmove),
-   40 (checkbottom), 49 (changeyaw), 67 (movetogoal) reference dangling globals and will error at
-   runtime if qwprogs calls them (id1 deathmatch happens not to).
-2. MSG_ONE (`client.message`) and MSG_BROADCAST (`svr.datagram`) WriteDest targets are never flushed
-   to the wire; PF_centerprint shares the dead `client.message` buffer.
-3. SV_UpdateToReliableMessages is only partially ported: frags never rebroadcast during play,
-   svc_entgravity/svc_maxspeed never sent.
+1. ~~qwbuiltins dangling `bsplib`/`sv_move` globals~~ — bsplib require landed 2026-07-04;
+   sv_move fully wired 2026-07-06 (the shared module now resolves the QW ABI/world per server;
+   builtins 17/32/40/49/67 are test-covered in test_qwsv).
+2. ~~MSG_ONE / PF_centerprint dead buffers~~ — rerouted to the netchan reliable stream 2026-07-04
+   (wire-proven in test_qw_loopback / test_qwbuiltins).
+3. ~~SV_UpdateToReliableMessages partial~~ — fully ported 2026-07-04 (frag rebroadcast
+   loopback-verified).
 4. PF_lightstyle's live-broadcast branch is dead (`svr.ss_active` is nil) — runtime lightstyle
    changes are invisible until a client respawns.
 5. changelevel is latched but never consumed in the QW boot — fraglimit/timelimit end-of-map stalls.

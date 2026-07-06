@@ -437,4 +437,112 @@ t.check(
 	"upward velocity unsticks a grounded toss item (SV_Physics_Toss QW onground clear)"
 )
 
+--------------------------------------------------------------------------
+-- sv_move on the QW server (builtins 32/40/49/67 were dangling stubs):
+-- the shared sv_move.c port resolves the QW progs ABI + world module.
+-- A fresh grunt-sized entity dropped at a deathmatch spawn keeps the
+-- battery independent of whatever state the player is in by now.
+do
+	local defs = require("../src/shared/engine/progs/defs")
+	local qd = require("../src/shared/engine/quakedef")
+	local glob = svr.qdefs.glob
+	local B = vm.builtins
+
+	local spawnOrg
+	for i = 1, vm.num_edicts - 1 do
+		local e = vm.edicts[i + 1]
+		if not e.free and vmlib.edString(vm, e, ent.classname) == "info_player_deathmatch" then
+			spawnOrg = vmlib.edVector(e, ent.origin)
+			break
+		end
+	end
+	t.check(spawnOrg ~= nil, "sv_move fixture: found a deathmatch spawn")
+
+	local actor = vmlib.alloc(vm)
+	vmlib.edSetVector(actor, ent.origin, spawnOrg)
+	vmlib.edSetVector(actor, ent.mins, vector.create(-16, -16, -24))
+	vmlib.edSetVector(actor, ent.maxs, vector.create(16, 16, 32))
+	vmlib.edSetFloat(actor, ent.movetype, 4) -- MOVETYPE_STEP
+	vmlib.edSetFloat(actor, ent.solid, 2) -- SOLID_SLIDEBOX
+
+	-- droptofloor (34) seats it on the ground and sets FL_ONGROUND
+	vmlib.setGlobalInt(vm, glob.self, actor.num)
+	B[34](vm)
+	t.eq(vmlib.globalFloat(vm, defs.OFS_RETURN), 1, "sv_move fixture: droptofloor seated the actor")
+
+	-- checkbottom (40)
+	vmlib.setGlobalInt(vm, defs.OFS_PARM0, actor.num)
+	B[40](vm)
+	t.eq(vmlib.globalFloat(vm, defs.OFS_RETURN), 1, "PF_checkbottom: seated actor has a bottom")
+
+	-- changeyaw (49): exact 20-degree step toward ideal_yaw (yaw_speed 20)
+	vmlib.edSetVector(actor, ent.angles, vector.create(0, 0, 0))
+	vmlib.edSetFloat(actor, ent.ideal_yaw, 90)
+	vmlib.edSetFloat(actor, ent.yaw_speed, 20)
+	vmlib.setGlobalInt(vm, glob.self, actor.num)
+	B[49](vm)
+	t.check(math.abs(vmlib.edVector(actor, ent.angles).y - 20) < 0.01, "PF_changeyaw: 20-degree step toward ideal (anglemod-quantized)")
+
+	-- walkmove (32): 8-unit step along +x from the spawn pad
+	local porg = vmlib.edVector(actor, ent.origin)
+	vmlib.edSetFloat(actor, ent.flags, bit32.bor(vmlib.edFloat(actor, ent.flags), qd.FL_ONGROUND))
+	vmlib.setGlobalInt(vm, glob.self, actor.num)
+	vmlib.setGlobalFloat(vm, defs.OFS_PARM0, 0) -- yaw 0 = +x
+	vmlib.setGlobalFloat(vm, defs.OFS_PARM0 + 3, 8)
+	B[32](vm)
+	local moved = vmlib.edVector(actor, ent.origin) - porg
+	t.check(vmlib.globalFloat(vm, defs.OFS_RETURN) == 1 and math.abs(moved.x - 8) < 0.01, "PF_walkmove: 8-unit +x step taken")
+
+	-- movetogoal (67): steps toward goalentity
+	local goal = vmlib.alloc(vm)
+	vmlib.edSetVector(goal, ent.origin, vmlib.edVector(actor, ent.origin) + vector.create(100, 0, 0))
+	vmlib.edSetInt(actor, ent.goalentity, goal.num)
+	vmlib.edSetInt(actor, ent.enemy, 0)
+	vmlib.edSetFloat(actor, ent.ideal_yaw, 0)
+	local before = vmlib.edVector(actor, ent.origin)
+	vmlib.setGlobalInt(vm, glob.self, actor.num)
+	vmlib.setGlobalFloat(vm, defs.OFS_PARM0, 8)
+	B[67](vm)
+	local after = vmlib.edVector(actor, ent.origin)
+	t.check((after - before).x > 1, "PF_movetogoal: actor stepped toward the goal")
+end
+
+--------------------------------------------------------------------------
+-- PF_checkclient (17): cycles to a live client and caches its PVS
+do
+	local defs = require("../src/shared/engine/progs/defs")
+	local glob = svr.qdefs.glob
+	svr.lastchecktime = -1 -- force a newCheckClient cycle
+	vmlib.setGlobalInt(vm, glob.self, player.num)
+	vm.builtins[17](vm)
+	local ret = vmlib.globalInt(vm, defs.OFS_RETURN)
+	t.check(ret == player.num or ret == 0, "PF_checkclient returns a client edict (or world if unseeable)")
+	t.check(svr.checkpvs ~= nil, "PF_checkclient cached the check PVS (bsplib wiring)")
+end
+
+--------------------------------------------------------------------------
+-- SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f (host-gated cheats)
+do
+	local qd = require("../src/shared/engine/quakedef")
+	local uid = client.userid
+	qwsv.godF(svr, uid)
+	t.check(bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_GODMODE) ~= 0, "SV_God_f: godmode ON (FL_GODMODE toggled)")
+	qwsv.godF(svr, uid)
+	t.check(bit32.band(vmlib.edFloat(player, ent.flags), qd.FL_GODMODE) == 0, "SV_God_f: toggles back OFF")
+
+	qwsv.noclipF(svr, uid)
+	t.eq(vmlib.edFloat(player, ent.movetype), qd.MOVETYPE_NOCLIP, "SV_Noclip_f: MOVETYPE_NOCLIP")
+	qwsv.noclipF(svr, uid)
+	t.eq(vmlib.edFloat(player, ent.movetype), qd.MOVETYPE_WALK, "SV_Noclip_f: back to MOVETYPE_WALK")
+
+	qwsv.giveF(svr, uid, "7", 0)
+	t.check(bit32.band(vmlib.edFloat(player, ent.items), bit32.lshift(1, 5)) ~= 0, "SV_Give_f: weapon 7 = IT_SHOTGUN<<5")
+	qwsv.giveF(svr, uid, "r", 42)
+	t.eq(vmlib.edFloat(player, ent.ammo_rockets), 42, "SV_Give_f: rockets by letter")
+	qwsv.giveF(svr, uid, "h", 77)
+	t.eq(vmlib.edFloat(player, ent.health), 77, "SV_Give_f: health")
+
+	t.check(qwsv.setPlayer(svr, 99999) == nil, "SV_SetPlayer: unknown userid refused")
+end
+
 t.finish("test_qwsv")

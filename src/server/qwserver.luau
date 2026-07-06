@@ -228,6 +228,30 @@ return function(ctx: Ctx)
 				if k then
 					svr.localinfo[k] = if v ~= "" then v else nil
 				end
+			elseif verb == "god" or verb == "noclip" or verb == "give" then
+				-- SV_God_f / SV_Noclip_f / SV_Give_f: host-gated cheats by
+				-- userid (the host gate replaces C's -cheats launch flag);
+				-- "god <uid>", "noclip <uid>", "give <uid> <what> [amount]"
+				local uid, tail = rest:match("^(%d+)%s*(.*)$")
+				if uid then
+					if verb == "god" then
+						qwsv.godF(svr, tonumber(uid) :: number)
+					elseif verb == "noclip" then
+						qwsv.noclipF(svr, tonumber(uid) :: number)
+					else
+						local what, amount = tail:match("^(%S+)%s*(%d*)$")
+						qwsv.giveF(svr, tonumber(uid) :: number, what or "", tonumber(amount or "") or 0)
+					end
+				end
+			elseif verb == "serverinfo" then
+				-- SV_Serverinfo_f: bare prints the table, "key value" sets
+				-- + broadcasts svc_serverinfo
+				local k, v = rest:match("^(%S+)%s*(.*)$")
+				if k then
+					qwsv.setServerinfo(svr, k, v)
+				else
+					svr.print("Server info settings:\n" .. qwsv.infoPrint(svr.serverinfo))
+				end
 			elseif verb == "edicts" then
 				svr.print(prdebug.edPrintEdicts(svr.vm)) -- ED_PrintEdicts
 			elseif verb == "edict" then

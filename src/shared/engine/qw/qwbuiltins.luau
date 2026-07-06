@@ -18,6 +18,7 @@ local defs = require("../progs/defs") -- ev_* type constants only
 local proto = require("../protocol")
 local qd = require("../quakedef")
 local world = require("./qwworld")
+local sv_move = require("../server/sv_move")
 local qwdefslib = require("./qwdefs")
 
 local pr_cmds = {}
@@ -459,7 +460,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		local oldf = vm.xfunction
 		local oldself = vmlib.globalInt(vm, glob.self)
 
-		error("walkmove: QW port of sv_move pending (stock qwprogs never calls this)")
+		vmlib.setGlobalFloat(vm, OFS_RETURN, if sv_move.movestep(svr, edict, move, true) then 1 else 0)
 
 		-- restore program state
 		vm.xfunction = oldf
@@ -526,7 +527,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 
 	def(40, "checkbottom", function()
 		local edict = vmlib.globalEdict(vm, OFS_PARM0)
-		error("checkbottom: QW port of sv_move pending (stock qwprogs never calls this)")
+		vmlib.setGlobalFloat(vm, OFS_RETURN, if sv_move.checkBottom(svr, edict) then 1 else 0)
 	end)
 
 	def(41, "pointcontents", function()
@@ -649,7 +650,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(49, "changeyaw", function()
-		error("changeyaw: QW port of sv_move pending (stock qwprogs never calls this)")
+		sv_move.changeYaw(svr)
 	end)
 
 	def(51, "vectoangles", function()
@@ -727,7 +728,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(67, "movetogoal", function()
-		error("movetogoal: QW port of sv_move pending (stock qwprogs never calls this)")
+		sv_move.moveToGoal(svr)
 	end)
 
 	def(68, "precache_file", function()

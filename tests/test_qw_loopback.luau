@@ -369,6 +369,53 @@ do
 	t.check(cl.servercount ~= nil, "reconnect: client re-sent new and still tracks servercount")
 end
 
+--------------------------------------------------------------------------
+-- SV_Serverinfo_f mutability + SV_BroadcastCommand + SV_ShowServerinfo_f
+-- over the REAL wire (the earlier svc_serverinfo check was crafted)
+do
+	-- runtime serverinfo change broadcasts svc_serverinfo to the client
+	t.check(qwsv.setServerinfo(svr, "teamplay", "3"), "setServerinfo accepts a normal key")
+	t.eq(svr.serverinfo.teamplay, "3", "setServerinfo updates svr.serverinfo")
+	tick(0)
+	tick(0)
+	t.eq(cl.serverinfo.teamplay, "3", "svc_serverinfo broadcast reached the client (SV_SendServerInfoChange)")
+
+	-- star keys refused like C
+	t.check(not qwsv.setServerinfo(svr, "*version", "9"), "star variables cannot be changed")
+	t.eq(svr.serverinfo["*version"], "2.40", "star key untouched")
+
+	-- a serverinfo cvar mirrors into the cvar table
+	local cvarlib = require("../src/shared/engine/common/cvar")
+	qwsv.setServerinfo(svr, "fraglimit", "25")
+	t.eq(cvarlib.value(svr.cvars, "fraglimit"), 25, "matching cvar updated too")
+
+	-- SV_BroadcastCommand: svc_stufftext lands in rawStufftext
+	cl.rawStufftext = ""
+	qwsv.broadcastCommand(svr, "bf\n")
+	tick(0)
+	tick(0)
+	t.check(cl.rawStufftext:find("bf") ~= nil, "SV_BroadcastCommand: stufftext broadcast arrived")
+
+	-- SV_ShowServerinfo_f: the serverinfo user command prints the table
+	local before = #cl.prints
+	qwcl.sendStringCmd(cl, "serverinfo")
+	tick(0)
+	tick(0)
+	local dump = ""
+	for i = before + 1, #cl.prints do
+		dump ..= cl.prints[i].text
+	end
+	t.check(dump:find("*version", 1, true) ~= nil and dump:find("2.40", 1, true) ~= nil, "serverinfo user command prints the info table (20-col keys)")
+
+	-- SV_FullClientUpdateToClient: the named single-client resend path is
+	-- what the spawn handshake now uses; exercise it directly too
+	local out = svr.clients[1].netchan.message
+	local size0 = out.cursize
+	qwsv.fullClientUpdateToClient(svr, svr.clients[1], svr.clients[1])
+	t.check(out.cursize > size0, "fullClientUpdateToClient writes the update onto the target netchan")
+end
+
+
 -- CL_Disconnect (svc_disconnect handler)
 do
 	local sb = msg.newBuf(16)

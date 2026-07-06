@@ -328,6 +328,9 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	svr.worldmodel = worldmod.brush :: any
 
 	svr.world = qwworld.new(vm, svr.worldmodel, svr.brushModels, qdefs)
+	-- sv_move (walkmove/checkbottom/changeyaw/movetogoal) resolves the
+	-- world module + progs ABI through these (shared with the NQ port)
+	svr.worldMod = qwworld
 
 	svr.sound_precache[1] = ""
 	svr.model_precache[1] = ""
@@ -1028,7 +1031,7 @@ function qwsv.spawnF(svr: any, client: Client, args: { string })
 	-- current status of every slot from n on, inactive ones included
 	-- (clears stale scoreboard entries client-side)
 	for i = n + 1, svr.maxclients do
-		qwsv.fullClientUpdate(svr, svr.clients[i], out)
+		qwsv.fullClientUpdateToClient(svr, svr.clients[i], client)
 	end
 
 	for i = 0, 63 do
@@ -1092,6 +1095,129 @@ function qwsv.beginF(svr: any, client: Client, args: { string })
 		msg.writeByte(out, 1)
 		svr.clientPrint(svr, client, qwp.PRINT_HIGH, "Server is paused.\n")
 	end
+end
+
+-- SV_SetPlayer: find the target client by userid (cheat commands)
+function qwsv.setPlayer(svr: any, uid: number): Client?
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if cl.active and cl.userid == uid then
+			return cl
+		end
+	end
+	svr.print(`Userid {uid} is not on the server`)
+	return nil
+end
+
+-- SV_God_f: toggle FL_GODMODE on the target (host-gated at the caller —
+-- the platform's host check replaces C's -cheats launch flag)
+function qwsv.godF(svr: any, uid: number)
+	local cl = qwsv.setPlayer(svr, uid)
+	if not cl then
+		return
+	end
+	local flags = bit32.bxor(vmlib.edFloat(cl.edict, svr.qdefs.ent.flags), qd.FL_GODMODE)
+	vmlib.edSetFloat(cl.edict, svr.qdefs.ent.flags, flags)
+	svr.clientPrint(svr, cl, qwp.PRINT_HIGH, if bit32.band(flags, qd.FL_GODMODE) ~= 0 then "godmode ON\n" else "godmode OFF\n")
+end
+
+-- SV_Noclip_f: toggle MOVETYPE_NOCLIP <-> MOVETYPE_WALK
+function qwsv.noclipF(svr: any, uid: number)
+	local cl = qwsv.setPlayer(svr, uid)
+	if not cl then
+		return
+	end
+	local mt = svr.qdefs.ent.movetype
+	if vmlib.edFloat(cl.edict, mt) ~= qd.MOVETYPE_NOCLIP then
+		vmlib.edSetFloat(cl.edict, mt, qd.MOVETYPE_NOCLIP)
+		svr.clientPrint(svr, cl, qwp.PRINT_HIGH, "noclip ON\n")
+	else
+		vmlib.edSetFloat(cl.edict, mt, qd.MOVETYPE_WALK)
+		svr.clientPrint(svr, cl, qwp.PRINT_HIGH, "noclip OFF\n")
+	end
+end
+
+-- SV_Give_f: weapons by number 2-9 (IT_SHOTGUN << n-2), ammo/health by letter
+function qwsv.giveF(svr: any, uid: number, what: string, amount: number)
+	local cl = qwsv.setPlayer(svr, uid)
+	if not cl or what == "" then
+		return
+	end
+	local ed = cl.edict
+	local ent2 = svr.qdefs.ent
+	local c0 = what:sub(1, 1)
+	if c0 >= "2" and c0 <= "9" then
+		local items = vmlib.edFloat(ed, ent2.items)
+		vmlib.edSetFloat(ed, ent2.items, bit32.bor(items, bit32.lshift(1, (c0:byte() - string.byte("2")))))
+	elseif c0 == "s" then
+		vmlib.edSetFloat(ed, ent2.ammo_shells, amount)
+	elseif c0 == "n" then
+		vmlib.edSetFloat(ed, ent2.ammo_nails, amount)
+	elseif c0 == "r" then
+		vmlib.edSetFloat(ed, ent2.ammo_rockets, amount)
+	elseif c0 == "h" then
+		vmlib.edSetFloat(ed, ent2.health, amount)
+	elseif c0 == "c" then
+		vmlib.edSetFloat(ed, ent2.ammo_cells, amount)
+	end
+end
+
+-- SV_SendServerInfoChange: svc_serverinfo key/value to every client
+function qwsv.sendServerInfoChange(svr: any, key: string, value: string)
+	if not svr.active then
+		return
+	end
+	msg.writeByte(svr.reliable_datagram, qwp.svc_serverinfo)
+	msg.writeString(svr.reliable_datagram, key)
+	msg.writeString(svr.reliable_datagram, value)
+end
+
+-- SV_Serverinfo_f's mutation body: set key (star keys refused, "" clears),
+-- mirror into a matching cvar, broadcast the change. Returns false when
+-- refused.
+function qwsv.setServerinfo(svr: any, key: string, value: string): boolean
+	if key:sub(1, 1) == "*" then
+		svr.print("Star variables cannot be changed.")
+		return false
+	end
+	svr.serverinfo[key] = if value ~= "" then value else nil
+	-- "if this is a cvar, change it too" (C pokes string+value directly)
+	if svr.cvars and svr.cvars.vars[key] then
+		cvarlib.set(svr.cvars, key, value)
+	end
+	qwsv.sendServerInfoChange(svr, key, value)
+	return true
+end
+
+-- Info_Print: 20-column keys (keys sorted for a stable table; C prints
+-- raw string order)
+function qwsv.infoPrint(t: { [string]: string }): string
+	local keys = {}
+	for k in t do
+		table.insert(keys, k)
+	end
+	table.sort(keys)
+	local out = {}
+	for _, k in keys do
+		local key = if #k > 20 then k:sub(1, 20) else k .. (" "):rep(20 - #k)
+		table.insert(out, key .. t[k] .. "\n")
+	end
+	return table.concat(out)
+end
+
+-- SV_BroadcastCommand: svc_stufftext to every client
+function qwsv.broadcastCommand(svr: any, text: string)
+	if not svr.active then
+		return
+	end
+	msg.writeByte(svr.reliable_datagram, qwp.svc_stufftext)
+	msg.writeString(svr.reliable_datagram, text)
+end
+
+-- SV_FullClientUpdateToClient: one client's full update onto another
+-- client's reliable stream (no backbuf branch: the transport is reliable)
+function qwsv.fullClientUpdateToClient(svr: any, about: Client, to: Client)
+	qwsv.fullClientUpdate(svr, about, to.netchan.message)
 end
 
 local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw: string) -> () } = {
@@ -1209,6 +1335,10 @@ local userCommands: { [string]: (svr: any, client: Client, args: { string }, raw
 		msg.writeByte(rd, client.num - 1)
 		msg.writeString(rd, key)
 		msg.writeString(rd, value)
+	end,
+	serverinfo = function(svr, client)
+		-- SV_ShowServerinfo_f: Info_Print to the requesting client
+		svr.clientPrint(svr, client, qwp.PRINT_HIGH, qwsv.infoPrint(svr.serverinfo))
 	end,
 	pause = function(svr, client)
 		if cvarlib.value(svr.cvars, "pausable") == 0 then
