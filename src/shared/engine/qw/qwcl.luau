@@ -458,7 +458,11 @@ end
 --------------------------------------------------------------------------
 -- server message parsing (cl_parse.c)
 
--- CL_ClearState: wipe per-level state before a new serverdata
+-- CL_ClearState: wipe per-level state before a new serverdata. C is a
+-- memset of the whole cl struct — the delta-stats protocol depends on
+-- it: the server zeroes its sent-stats mirror on spawn and only sends
+-- stats that CHANGED from zero, so stats (and the other fields below)
+-- must reset here or last level's values ghost into the new one.
 local function clearState(cl: any)
 	cl.baselines = {}
 	cl.lightstyles = {}
@@ -469,9 +473,19 @@ local function clearState(cl: any)
 	cl.models = {}
 	cl.worldmodel = nil
 	cl.playerindex = nil
+	cl.flagindex = nil
 	cl.spikeindex = nil
 	cl.validsequence = 0
 	cl.nails = {}
+	for i = 0, 31 do
+		cl.stats[i] = 0
+	end
+	cl.movemessages = 0 -- the first two moves flush stale input again
+	cl.players = {}
+	cl.punchangle = 0
+	cl.simorg = vector.zero
+	cl.simvel = vector.zero
+	cl.cam = { autocam = 0, spec_track = 0, locked = false, oldbuttons = 0 }
 	for i = 0, UPDATE_BACKUP - 1 do
 		local f: Frame = cl.frames[i]
 		f.packet_entities = {}

@@ -135,4 +135,64 @@ do
 	t.eq(c3.active, true, "B2 talking client survives the sweep")
 end
 
+-- C1-C4: QW CL_ClearState memset parity across changelevel ----------------
+do
+	local qwp = require("../src/shared/engine/qw/qwprotocol")
+	local qwprogs = buffer.fromstring(fs.readFile("reference/quake-c/qw-qc/qwprogs.dat"))
+	local svr = qwsv.newGame(gamefs, qwprogs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+
+	local queue: { buffer } = {}
+	local sc = qwsv.wireConnect(svr, 1, { name = "carrier" }, function(packet: buffer)
+		table.insert(queue, packet)
+	end)
+	local cl = qwcl.new(gamefs)
+	qwcl.connect(cl, function(packet: buffer)
+		qwsv.executeClientMessage(svr, sc, packet)
+	end)
+	for _ = 1, 40 do
+		qwsv.sendClientMessages(svr)
+		while #queue > 0 do
+			qwcl.processPacket(cl, table.remove(queue, 1) :: buffer)
+		end
+		if sc.spawned then
+			break
+		end
+	end
+	t.check(sc.spawned, "C handshake completed")
+
+	-- give armor server-side; the stat delta rides the next reply
+	local ent = svr.qdefs.ent
+	vmlib.edSetFloat(sc.edict, ent.armorvalue, 100)
+	sc.send_message = true
+	qwsv.replyToClient(svr, sc)
+	while #queue > 0 do
+		qwcl.processPacket(cl, table.remove(queue, 1) :: buffer)
+	end
+	t.eq(cl.stats[qwp.STAT_ARMOR], 100, "C armor stat arrived over the wire")
+
+	-- stale-state markers that CL_ClearState must wipe (this harness
+	-- never sends moves, so simulate a played level's counter)
+	cl.flagindex = 33
+	cl.movemessages = 10
+
+	-- changelevel: fresh serverdata must memset the cl fields
+	qwsv.saveSpawnparms(svr)
+	qwsv.spawnServer(svr, "e1m2")
+	queue = {}
+	sc.spawned = false
+	qwsv.newF(svr, sc)
+	sc.send_message = true
+	qwsv.replyToClient(svr, sc)
+	while #queue > 0 do
+		qwcl.processPacket(cl, table.remove(queue, 1) :: buffer)
+	end
+	t.eq(cl.state, "connected", "C new serverdata parsed")
+	t.eq(cl.stats[qwp.STAT_ARMOR], 0, "C1 stats zeroed by clearState (no armor ghost)")
+	t.eq(cl.movemessages, 0, "C2 movemessages reset per level")
+	t.eq(cl.flagindex, nil, "C3 flagindex reset per level")
+	t.eq(next(cl.players), nil, "C4 players table cleared until fresh updates")
+end
+
 t.finish("test_audit")
