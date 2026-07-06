@@ -267,16 +267,16 @@ parses (test_bsp/test_models headers).
 | ED_FindGlobal (pr_edict.c:206) | progs.luau:globaldefsByName | VERIFIED | savegame globals restore (test_savegame) | `lune run tests/test_savegame.luau` |
 | ED_FindFunction (pr_edict.c:226) | progs.luau:functionsByName | VERIFIED | test_vm: anglemod=90, worldspawn=209, SUB_Null=66 | `lune run tests/test_vm.luau` |
 | GetEdictFieldValue (pr_edict.c:241) | vm.luau:findFieldDef + edFloat | VERIFIED | test_savegame round-trip parses every entity field by name through findFieldDef (ED_ParseEpair on arbitrary fields). | `lune run tests/test_savegame.luau` |
-| PR_ValueString (pr_edict.c:280) | — | UNIMPLEMENTED | debug printing (ED_Print) | ruled: IMPLEMENT (2026-07-05) |
+| PR_ValueString (pr_edict.c:280) | progs/prdebug.luau valueString | VERIFIED | test_prdebug: %5.1f floats, quoted vector triple, entity %i, function name(), .field by ofs, void/pointer/bad-type, DEF_SAVEGLOBAL masked, string via the blob/dynstrings | `lune run tests/test_prdebug.luau` |
 | PR_UglyValueString (pr_edict.c:332) | server/savegame.luau:uglyValue | VERIFIED | test_savegame: function/field/entity values round-trip through save text | `lune run tests/test_savegame.luau` |
-| PR_GlobalString (pr_edict.c:381) | — | UNIMPLEMENTED | debug trace printing | ruled: IMPLEMENT (2026-07-05) |
-| PR_GlobalStringNoContents (pr_edict.c:407) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
-| ED_Print (pr_edict.c:435) | — | UNIMPLEMENTED | edicts/edict console commands | ruled: IMPLEMENT (2026-07-05) |
+| PR_GlobalString (pr_edict.c:381) | prdebug.globalString | VERIFIED | test_prdebug: %i(name)value with the 20-char pad + trailing space, (???) for unknown offsets | `lune run tests/test_prdebug.luau` |
+| PR_GlobalStringNoContents (pr_edict.c:407) | prdebug.globalStringNoContents | VERIFIED | test_prdebug: %i(name) padded, no value | `lune run tests/test_prdebug.luau` |
+| ED_Print (pr_edict.c:435) | prdebug.edPrint | VERIFIED | test_prdebug on the booted e1m1 world: EDICT %i header, exact 15-column name field, non-zero fields only, _x/_y/_z skipped, FREE for freed edicts | `lune run tests/test_prdebug.luau` |
 | ED_Write (pr_edict.c:485) | savegame.luau:writeEdict | VERIFIED | test_savegame: full state round-trip (health/items/rockets/origin/edict count) | `lune run tests/test_savegame.luau` |
-| ED_PrintNum (pr_edict.c:525) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
-| ED_PrintEdicts (pr_edict.c:537) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
-| ED_PrintEdict_f (pr_edict.c:553) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
-| ED_Count (pr_edict.c:573) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
+| ED_PrintNum (pr_edict.c:525) | prdebug.edPrintNum | VERIFIED | test_prdebug: routes by edict number (also the PF_eprint body) | `lune run tests/test_prdebug.luau` |
+| ED_PrintEdicts (pr_edict.c:537) | prdebug.edPrintEdicts + the `edicts` host command | VERIFIED | test_prdebug: '%i entities' header + every edict on live e1m1 | `lune run tests/test_prdebug.luau` |
+| ED_PrintEdict_f (pr_edict.c:553) | `edict <n>` host command (host.clientCommand) | VERIFIED | test_server: "edict 0" prints the worldspawn dump through the command dispatch (host-gated) | `lune run tests/test_server.luau` |
+| ED_Count (pr_edict.c:573) | prdebug.edCount + the `edictcount` host command | VERIFIED | test_prdebug: num_edicts/active/view/touch/step tallies on live e1m1 (MOVETYPE_STEP monsters counted; field offsets resolved by name so QW progs work too); test_server drives the command | `lune run tests/test_prdebug.luau`; `lune run tests/test_server.luau` |
 | ED_WriteGlobals (pr_edict.c:616) | savegame.luau:writeGlobals | VERIFIED | test_savegame: world message/serverflags/totals survive reload | `lune run tests/test_savegame.luau` |
 | ED_ParseGlobals (pr_edict.c:649) | savegame.luau:load (globals block) | VERIFIED | test_savegame round-trip | `lune run tests/test_savegame.luau` |
 | ED_NewString (pr_edict.c:693) | vm.luau:newString | VERIFIED | test_vm: `\n` escape converted, other backslashes preserved | `lune run tests/test_vm.luau` |
@@ -292,9 +292,9 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PR_PrintStatement (pr_exec.c:150) | — | UNIMPLEMENTED | trace/debug printing | ruled: IMPLEMENT (2026-07-05) |
-| PR_StackTrace (pr_exec.c:190) | vm.luau:runError (function+statement in message) | VERIFIED | runError carries function name + statement into the Luau error (test_qwbuiltins exec(0) check). Delta: single-frame context, not a full stack walk. | `lune run tests/test_qwbuiltins.luau` |
-| PR_Profile_f (pr_exec.c:222) | — | UNIMPLEMENTED | profiling console command | ruled: IMPLEMENT (2026-07-05) |
+| PR_PrintStatement (pr_exec.c:150) | prdebug.statementString (+ the vm.trace per-statement hook) | VERIFIED | test_prdebug: opname padded to 10 with operand global strings on real progs statements, IF/GOTO 'branch %i' forms; live tracing exercised through PF_traceon | `lune run tests/test_prdebug.luau` |
+| PR_StackTrace (pr_exec.c:190) | prdebug.stackTrace (full '%12s : %s' walk) + runError's function/statement context | VERIFIED | test_prdebug: <NO STACK> at rest; captured from inside a builtin mid-exec with the current function on top; runError message context separately covered (test_qwbuiltins exec(0)) | `lune run tests/test_prdebug.luau` |
+| PR_Profile_f (pr_exec.c:222) | prdebug.profileReport + the `profile` host command; per-function statement attribution at the C call/leave sites in vm.luau | VERIFIED | test_prdebug: counts accumulate through host.frame QC, '%7i %s' lines descending, counters zeroed by the report (the C do/while); test_server drives the command | `lune run tests/test_prdebug.luau` |
 | PR_RunError (pr_exec.c:261) | vm.luau:runError | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)" — shared vm.luau implementation serves both engines. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction (pr_exec.c:294) | vm.luau:enterFunction | VERIFIED | parm copy-in/locals save; test_vm anglemod bytecode + stack balanced after calls | `lune run tests/test_vm.luau` |
 | PR_LeaveFunction (pr_exec.c:333) | vm.luau:leaveFunction | VERIFIED | locals restore; test_vm stack depth 0 after nested calls | `lune run tests/test_vm.luau` |
@@ -507,9 +507,9 @@ build are absent and hit the VM's bad-builtin error).
 | PF_precache_file #68 (pr_cmds.c:1062) | def(68) | VERIFIED | No-op returning parm as C; the NQ *2 table aliases are identity-checked in test_server. | `lune run tests/test_server.luau` |
 | PF_precache_sound #19 (pr_cmds.c:1067) | def(19) | VERIFIED | test_server: >30 sounds precached; loading-state guard + overflow error ported | `lune run tests/test_server.luau` |
 | PF_precache_model #20 (pr_cmds.c:1092) | def(20) | VERIFIED | test_server: >30 models, player.mdl indexed; loads model + registers brush submodels | `lune run tests/test_server.luau` |
-| PF_coredump #28 (pr_cmds.c:1119) | def(28) stub | UNIMPLEMENTED | prints a stub line; no ED_PrintEdicts to call | — (implement first) |
-| PF_traceon/PF_traceoff #29/#30 (pr_cmds.c:1124,1129) | def(29)/def(30) | UNIMPLEMENTED | sets vm.trace but exec() resets it and no statement printer exists — effectively inert | — (implement first) |
-| PF_eprint #31 (pr_cmds.c:1134) | def(31) empty | UNIMPLEMENTED | debug print stub | — (implement first) |
+| PF_coredump #28 (pr_cmds.c:1119) | def(28) → prdebug.edPrintEdicts | VERIFIED | test_prdebug: builtin prints the full edict dump through svr.print | `lune run tests/test_prdebug.luau` |
+| PF_traceon/PF_traceoff #29/#30 (pr_cmds.c:1124,1129) | def(29)/def(30) + the exec-loop trace hook | VERIFIED | test_prdebug: traceon mid-execution prints every following statement until DONE (opnames visible); pr_trace resets at the next exec entry exactly like C | `lune run tests/test_prdebug.luau` |
+| PF_eprint #31 (pr_cmds.c:1134) | def(31) → prdebug.edPrintNum(G_EDICTNUM(PARM0)) | VERIFIED | test_prdebug: prints the requested edict dump | `lune run tests/test_prdebug.luau` |
 | PF_walkmove #32 (pr_cmds.c:1146) | def(32) | VERIFIED | test_nqbuiltins: a grounded grunt steps along its facing (result/displacement consistency), program-state save/restore around movestep. | `lune run tests/test_nqbuiltins.luau` |
 | PF_droptofloor #34 (pr_cmds.c:1189) | def(34) | VERIFIED | test_nqbuiltins: staged edict lands, returns 1, FL_ONGROUND set. | `lune run tests/test_nqbuiltins.luau` |
 | PF_lightstyle #35 (pr_cmds.c:1221) | def(35) | VERIFIED | test_server: styles 0/63/10 registered; loopback receives style 0 "m" | `lune run tests/test_server.luau` |
@@ -630,9 +630,9 @@ socket entries), so the rows cover ~490 C function definitions.
 
 | Status | Count (rows) |
 |---|---|---|
-| VERIFIED | 279 |
+| VERIFIED | 292 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 25 |
+| UNIMPLEMENTED | 12 |
 | SUBSTITUTED | 111 |
 | N/A | 36 |
 

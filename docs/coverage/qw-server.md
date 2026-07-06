@@ -250,7 +250,7 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PR_CheckEmptyString | `checkEmptyString` (qwbuiltins.luau:303) | VERIFIED | test_qwbuiltins: precache_sound("") errors through it. | `lune run tests/test_qwbuiltins.luau` |
 | PF_precache_file (68/77) | qwbuiltins.luau:723 | VERIFIED | test_qwbuiltins: passes the parm through (no-op, as C). | `lune run tests/test_qwbuiltins.luau` |
 | PF_precache_sound (19/76) / PF_precache_model (20/75) | qwbuiltins.luau:309,328 | VERIFIED | test_qwbuiltins: ss_loading gate errors post-spawn even for known names (gate precedes dedup, as C); lists feed the loopback-verified soundlist/modellist. | `lune run tests/test_qwbuiltins.luau`; `lune run tests/test_qw_loopback.luau` |
-| PF_coredump (28) / PF_traceon (29) / PF_traceoff (30) / PF_eprint (31) | qwbuiltins.luau:426-435 | N/A | Interactive debugger aids (edict dump / VM trace toggles); stock qwprogs never calls them and they carry no gameplay state. Port keeps notice-printing stubs. | — (N/A) |
+| PF_coredump (28) / PF_traceon (29) / PF_traceoff (30) / PF_eprint (31) | qwbuiltins def(28-31) → shared prdebug (real implementations replaced the notice stubs 2026-07-05) | VERIFIED | test_prdebug drives the identical NQ twins (same shared module and register conventions); stock qwprogs still never calls them — they now work when a mod does | `lune run tests/test_prdebug.luau` |
 | PF_walkmove (32) | qwbuiltins.luau:437 | UNIMPLEMENTED (broken wiring) | Dangling `sv_move` global (no require) — see sv_move.c section. |
 | PF_droptofloor (34) | qwbuiltins.luau:461 | VERIFIED | test_qwbuiltins: staged edict drops onto the start floor, returns 1, sets FL_ONGROUND. | `lune run tests/test_qwbuiltins.luau` |
 | PF_lightstyle (35) | qwbuiltins.luau:487 | VERIFIED | Broadcast fixed (state==2 + netchan reliable); test_qw_loopback "runtime PF_lightstyle broadcast reached the client". | `lune run tests/test_qw_loopback.luau` |
@@ -283,8 +283,8 @@ evidence via test_qwsv/test_qw_loopback which run id1 qwprogs.dat through it wit
 | ED_Free | `vmlib.free` (vm.luau:289) | VERIFIED | test_vm "freed flag"/"free clears solid"/"free sets nextthink -1"; unlink hook installed by qwbuiltins and exercised by PF_Remove check. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
 | ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | VERIFIED | test_vm globaldef/fielddef offset and functionsByName checks; qwdefs.build resolves the whole QW ABI by name at load and test_qwsv boots through it (a missing def fails loudly). | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | GetEdictFieldValue | field lookups via qwdefs `ent` table | SUBSTITUTED | Static name→offset resolution replaces per-call cached lookup. Note: the `gravity`/`maxspeed` optional-field pickup that C does with it is missing (see SV_UpdateToReliableMessages). | — (substitution; verify justification still holds) |
-| PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | — | UNIMPLEMENTED | Debug printing (edict dumps) not ported. | ruled: IMPLEMENT (2026-07-05) |
-| ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | — | UNIMPLEMENTED | Console debug + savegame globals; QW has no savegames. | ruled: IMPLEMENT (2026-07-05) |
+| PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | shared progs/prdebug.luau (one VM serves both engines) | VERIFIED | test_prdebug format batteries (floats/vectors/entities/functions/fields, savegame ugly variants, 20-char global padding) run against real progs through the same shared module the QW server uses | `lune run tests/test_prdebug.luau` |
+| ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | debug half: shared prdebug (QW_HostCmd verbs edicts/edict/edictcount/profile in qwserver.luau); savegame half: the shared savegame.luau writers | VERIFIED | test_prdebug (ED_Print family incl. the by-name field resolution that makes ED_Count progs-layout-agnostic); test_savegame (ED_Write/ED_WriteGlobals/ED_ParseGlobals round-trip — QW authentically never calls them, no save command exists) | `lune run tests/test_prdebug.luau`; `lune run tests/test_savegame.luau` |
 | ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | VERIFIED | test_vm: "newString escape n" / backslash-only escape check. | `lune run tests/test_vm.luau` |
 | ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | VERIFIED | test_vm: parsed classname/origin + "anglehack applied"; e1m1 entity lump loads in every QW test. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | ED_LoadFromFile | `vmlib.loadFromFileQW` (vm.luau:791) | VERIFIED | test_qwsv: deathmatch inhibit flags (13 inhibited, no monsters in DM). | `lune run tests/test_qwsv.luau` |
@@ -298,7 +298,7 @@ Shared NQ port: `src/shared/engine/progs/vm.luau`.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PR_PrintStatement / PR_StackTrace / PR_Profile_f | — | UNIMPLEMENTED | Profiling/trace printing not ported (vm.trace flag exists but prints nothing). | ruled: IMPLEMENT (2026-07-05) |
+| PR_PrintStatement / PR_StackTrace / PR_Profile_f | shared prdebug + the vm.luau trace hook / profile attribution; `profile` via QW_HostCmd | VERIFIED | test_prdebug: statement printer on real progs, mid-exec stack walk, profile accumulate/report/zero — the same shared VM executes qwprogs | `lune run tests/test_prdebug.luau` |
 | PR_RunError | `runError` (vm.luau:311) | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)"; errors carry the function name through Luau error. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | VERIFIED | test_vm "stack balanced after calls" across the anglemod exec battery; full-game recursion in every QW suite. | `lune run tests/test_vm.luau` |
 | PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | VERIFIED | test_vm anglemod exec battery (5 argument cases) + -0.0 IFNOT semantics; whole opcode interpreter runs id1 qwprogs in every QW test incl. OP_STATE through vm.stateOffsets. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
@@ -390,11 +390,11 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 
 | Status | Rows |
 |---|---|
-| VERIFIED | 172 |
+| VERIFIED | 176 |
 | PENDING | 1 |
 | SUBSTITUTED | 42 |
-| N/A | 7 |
-| UNIMPLEMENTED | 14 |
+| N/A | 6 |
+| UNIMPLEMENTED | 11 |
 | Total rows | 236 |
 
 (2026-07-05: corrected to the mechanical status-column count — the previous

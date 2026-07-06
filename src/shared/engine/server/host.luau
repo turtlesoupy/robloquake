@@ -12,6 +12,7 @@ local msg = require("../common/msg")
 local vfslib = require("../common/vfs")
 local modelslib = require("../models/models")
 local defs = require("../progs/defs")
+local prdebug = require("../progs/prdebug")
 local progslib = require("../progs/progs")
 local vmlib = require("../progs/vm")
 local proto = require("../protocol")
@@ -398,6 +399,10 @@ local HOST_ONLY = {
 	sv_maxspeed = true,
 	save = true,
 	load = true,
+	edicts = true,
+	edict = true,
+	edictcount = true,
+	profile = true,
 }
 
 -- Host_ClientCommand dispatch (the clc_stringcmd cases SV_ReadClientMessage allows)
@@ -496,6 +501,18 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 				vmlib.edSetFloat(edict, ent.health, n)
 			end
 		end
+	elseif cmd == "edicts" then
+		-- ED_PrintEdicts (pr_edict.c console command)
+		svr.print(prdebug.edPrintEdicts(svr.vm))
+	elseif cmd == "edict" then
+		-- ED_PrintEdict_f
+		svr.print(prdebug.edPrintNum(svr.vm, tonumber(args) or 0))
+	elseif cmd == "edictcount" then
+		-- ED_Count
+		svr.print(prdebug.edCount(svr.vm))
+	elseif cmd == "profile" then
+		-- PR_Profile_f: top-10 statement counts, all counters zeroed
+		svr.print(prdebug.profileReport(svr.vm))
 	elseif cmd == "save" then
 		-- Host_Savegame_f (storage is the platform layer's concern)
 		local name = (args :: string):match("[%w_%-]+")

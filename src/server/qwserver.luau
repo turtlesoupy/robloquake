@@ -16,6 +16,7 @@ local cvarlib = require(engine.common.cvar)
 local qwsv = require(engine.qw.qwsv)
 local vfs = require(engine.common.vfs)
 local vmlib = require(engine.progs.vm)
+local prdebug = require(engine.progs.prdebug)
 
 local assetchunks = require(script.Parent.assetchunks)
 local clientbundle = require(script.Parent.clientbundle)
@@ -227,6 +228,14 @@ return function(ctx: Ctx)
 				if k then
 					svr.localinfo[k] = if v ~= "" then v else nil
 				end
+			elseif verb == "edicts" then
+				svr.print(prdebug.edPrintEdicts(svr.vm)) -- ED_PrintEdicts
+			elseif verb == "edict" then
+				svr.print(prdebug.edPrintNum(svr.vm, tonumber(rest) or 0)) -- ED_PrintEdict_f
+			elseif verb == "edictcount" then
+				svr.print(prdebug.edCount(svr.vm)) -- ED_Count
+			elseif verb == "profile" then
+				svr.print(prdebug.profileReport(svr.vm)) -- PR_Profile_f
 			end
 		end
 

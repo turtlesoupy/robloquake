@@ -13,6 +13,7 @@ local mathlib = require("../common/mathlib")
 local msg = require("../common/msg")
 local modelslib = require("../models/models")
 local vmlib = require("../progs/vm")
+local prdebug = require("../progs/prdebug")
 local defs = require("../progs/defs") -- ev_* type constants only
 local proto = require("../protocol")
 local qd = require("../quakedef")
@@ -425,15 +426,21 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(28, "coredump", function()
-		svr.print("coredump: edict printing not implemented")
+		-- PF_coredump = ED_PrintEdicts
+		svr.print(prdebug.edPrintEdicts(vm))
 	end)
 	def(29, "traceon", function()
+		-- statements print until DONE (prdebug's PR_PrintStatement)
+		prdebug.installTracer(vm)
 		vm.trace = true
 	end)
 	def(30, "traceoff", function()
 		vm.trace = false
 	end)
-	def(31, "eprint", function() end)
+	def(31, "eprint", function()
+		-- PF_eprint = ED_PrintNum(G_EDICTNUM(OFS_PARM0))
+		svr.print(prdebug.edPrintNum(vm, vmlib.globalInt(vm, OFS_PARM0)))
+	end)
 
 	def(32, "walkmove", function()
 		local edict = vmlib.edictNum(vm, vmlib.globalInt(vm, glob.self))

@@ -31,11 +31,11 @@ counterpart, each with its justification.
 
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 279 | 0 | 25 | 111 | 36 |
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 292 | 0 | 12 | 111 | 36 |
 | [nq-client.md](nq-client.md) — WinQuake client/presentation | 141 | 0 | 20 | 78 | 25 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 172 | 1 | 14 | 42 | 7 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 176 | 1 | 11 | 42 | 6 |
 | [qw-client.md](qw-client.md) — QuakeWorld client | 138 | 0 | 38 | 53 | 5 |
-| **Total** | **730** | **1** | **97** | **284** | **73** |
+| **Total** | **747** | **1** | **81** | **284** | **72** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -93,6 +93,26 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-05 (burn-down pass 3: QC introspection + profiler/tracer, both servers)
+- New shared `src/shared/engine/progs/prdebug.luau`: PR_ValueString/
+  PR_UglyValueString/PR_GlobalString(NoContents) with the exact C formats,
+  ED_Print (15-column fields, zero-skip, _x/_y/_z skip), ED_PrintNum/
+  ED_PrintEdicts/ED_Count (field offsets resolved by NAME so NQ and QW
+  progs layouts both work), PR_PrintStatement (full pr_opnames table),
+  PR_StackTrace (real stack walk), PR_Profile_f (per-function statement
+  attribution at the C call/leave sites in vm.luau + the top-10 report
+  that zeroes counters).
+- vm.luau: per-statement trace hook (PF_traceon now actually prints until
+  DONE; pr_trace resets at exec entry like C) + profile counters.
+- PF_coredump/traceon/traceoff/eprint are real in BOTH builtin tables
+  (they were notice stubs; the QW copies had been hand-ruled N/A as
+  stubs — upgraded to VERIFIED now that they do the C thing).
+- Console commands: edicts/edict/edictcount/profile as host-gated NQ
+  commands (host.clientCommand) and QW_HostCmd verbs on the QW server.
+- tests/test_prdebug.luau (47 checks on a booted e1m1) + test_server
+  command-dispatch checks. nq-server 13 rows -> VERIFIED, qw-server 4
+  (incl. the PENDING-free upgrade of PR_StackTrace's single-frame delta).
 
 ### 2026-07-05 (burn-down pass 2: NQ HUD odds + view.c odds, both boots)
 - Shared view.luau grew the offline-tested view.c odds: the pitch-drift

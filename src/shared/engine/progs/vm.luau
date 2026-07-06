@@ -60,6 +60,12 @@ export type VM = {
 	builtinNames: { [number]: string },
 	argc: number,
 	trace: boolean,
+	-- PR_Profile: statements executed / last attribution mark
+	profcount: number,
+	startprofile: number,
+	-- PR_PrintStatement hook while trace is on (installed by prdebug to
+	-- avoid a require cycle)
+	statementPrinter: ((vm: VM, s: number) -> ())?,
 	-- execution state
 	depth: number,
 	stack_s: { number },
@@ -95,6 +101,9 @@ function vmlib.new(pr: progslib.Progs, maxEdicts: number, maxclients: number): V
 		builtinNames = {},
 		argc = 0,
 		trace = false,
+		profcount = 0,
+		startprofile = 0,
+		statementPrinter = nil,
 		depth = 0,
 		stack_s = table.create(MAX_STACK_DEPTH, 0),
 		stack_f = table.create(MAX_STACK_DEPTH, 0),
@@ -317,7 +326,18 @@ end
 -- function calls
 
 -- PR_EnterFunction: returns the new statement counter
+-- PR_Profile bookkeeping: attribute statements run since the last mark
+-- to the function that ran them (C does this at the CALL and LEAVE sites)
+local function profileMark(vm: VM)
+	local xf = vm.progs.functions[vm.xfunction + 1]
+	if xf then
+		(xf :: any).profile = ((xf :: any).profile or 0) + (vm.profcount - vm.startprofile)
+	end
+	vm.startprofile = vm.profcount
+end
+
 local function enterFunction(vm: VM, fnum: number): number
+	profileMark(vm)
 	local f = vm.progs.functions[fnum + 1]
 	local depth = vm.depth
 	vm.stack_s[depth + 1] = vm.xstatement
@@ -350,6 +370,7 @@ end
 
 -- PR_LeaveFunction
 local function leaveFunction(vm: VM): number
+	profileMark(vm)
 	if vm.depth <= 0 then
 		error("prog stack underflow")
 	end
@@ -401,6 +422,15 @@ function vmlib.exec(vm: VM, fnum: number)
 			runError(vm, "runaway loop error")
 		end
 		vm.xstatement = s
+		vm.profcount += 1
+
+		-- pr_trace: PF_traceon sets it mid-run; exec entry resets it like C
+		if vm.trace then
+			local sp = vm.statementPrinter
+			if sp then
+				sp(vm, s)
+			end
+		end
 
 		if op == 0 or op == 43 then -- OP_DONE / OP_RETURN
 			buffer.copy(g, OFS_RETURN * 4, g, a * 4, 12)

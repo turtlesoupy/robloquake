@@ -471,4 +471,24 @@ t.check(math.abs(wmodel.radius - vector.magnitude(corner)) < 0.01, "RadiusFromBo
 svlib.dropClient(svr, client, false)
 t.check(not client.active, "SV_DropClient deactivated the client")
 
+--------------------------------------------------------------------------
+-- pr_edict.c console commands (edicts/edict/edictcount/profile) route
+-- through Host command dispatch to the shared prdebug module
+do
+	local captured: { string } = {}
+	local oldPrint = svr.print
+	svr.print = function(s2: string)
+		table.insert(captured, s2)
+	end
+	host.clientCommand(svr, client, "edictcount")
+	t.check(captured[1] ~= nil and captured[1]:find("num_edicts:") ~= nil, "edictcount command: ED_Count report")
+	table.clear(captured)
+	host.clientCommand(svr, client, "edict 0")
+	t.check(captured[1] ~= nil and captured[1]:find("EDICT 0:") ~= nil, "edict command: ED_PrintEdict_f")
+	table.clear(captured)
+	host.clientCommand(svr, client, "profile")
+	t.check(captured[1] ~= nil, "profile command: PR_Profile_f report")
+	svr.print = oldPrint
+end
+
 t.finish("test_server")
