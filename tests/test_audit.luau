@@ -195,4 +195,180 @@ do
 	t.eq(next(cl.players), nil, "C4 players table cleared until fresh updates")
 end
 
+-- D: QW server fidelity ----------------------------------------------------
+do
+	local qwp = require("../src/shared/engine/qw/qwprotocol")
+	local qwphys = require("../src/shared/engine/qw/qwphys")
+	local qwworld = require("../src/shared/engine/qw/qwworld")
+	local qd = require("../src/shared/engine/quakedef")
+	local qwprogs = buffer.fromstring(fs.readFile("reference/quake-c/qw-qc/qwprogs.dat"))
+	local svr = qwsv.newGame(gamefs, qwprogs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+	local vm = svr.vm
+	local ent = svr.qdefs.ent
+	local glob = svr.qdefs.glob
+
+	-- D4: the signon chunks into <=1450-byte buffers (e1m1 needs several)
+	t.check(#svr.signon_buffers > 1, "D4 signon split into multiple buffers")
+	for _, sg in svr.signon_buffers do
+		t.check(sg.cursize <= 1450, "D4 signon buffer within MAX_DATAGRAM")
+	end
+
+	-- D1: a newmis missile runs ONCE per frame (0.05 newmis move only),
+	-- not again when the main scan reaches its slot
+	local mis = vmlib.alloc(vm)
+	vmlib.edSetFloat(mis, ent.movetype, qd.MOVETYPE_TOSS)
+	vmlib.edSetFloat(mis, ent.solid, qd.SOLID_NOT)
+	vmlib.edSetVector(mis, ent.origin, vector.create(480, -352, 200))
+	vmlib.edSetVector(mis, ent.velocity, vector.zero)
+	buffer.writei32(vm.globals, glob.newmis * 4, mis.num)
+	qwsv.frame(svr, 0.1)
+	local vz = vmlib.edVector(mis, ent.velocity).z
+	t.check(math.abs(vz + 40) < 0.01, `D1 newmis got exactly one 0.05s gravity tick (vz {vz}, want -40)`)
+	-- and the NEXT frame moves it normally
+	qwsv.frame(svr, 0.1)
+	local vz2 = vmlib.edVector(mis, ent.velocity).z
+	t.check(math.abs(vz2 + 120) < 0.01, `D1 next frame runs the missile again (vz {vz2}, want -120)`)
+	vmlib.free(vm, mis)
+
+	-- D3: SV_RunThink loops — a [+0.1] QC anim chain advances several
+	-- frames inside one long server frame (NQ single-shot ran one)
+	local anim = vmlib.alloc(vm)
+	local standFn = svr.progs.functionsByName["player_stand1"]
+	assert(standFn, "player_stand1 in qwprogs")
+	vmlib.edSetInt(anim, ent.think, standFn)
+	vmlib.edSetFloat(anim, ent.nextthink, svr.time + 0.01)
+	local savedFt = svr.frametime
+	svr.frametime = 0.35
+	qwphys.runThink(svr, anim)
+	svr.frametime = savedFt
+	t.check(
+		vmlib.edFloat(anim, ent.nextthink) > svr.time + 0.3,
+		"D3 runThink looped the +0.1 anim chain past the frame window"
+	)
+	vmlib.free(vm, anim)
+
+	-- D2: QW SV_Push pre-skips entities already stuck in something else
+	-- (NQ counted them as blockers — the door would never travel)
+	local useDoor: vmlib.Edict? = nil
+	for i = 1, vm.num_edicts - 1 do
+		local e = vm.edicts[i + 1]
+		if not e.free and vmlib.edString(vm, e, ent.classname) == "door" and vmlib.edInt(e, ent.use) ~= 0 then
+			useDoor = e
+			break
+		end
+	end
+	assert(useDoor, "door with a use function")
+	local doorStart = vmlib.edVector(useDoor, ent.origin)
+	-- junk entity buried in solid near the door, bbox wide enough to
+	-- overlap the door's swept volume
+	local junk = vmlib.alloc(vm)
+	-- STEP + FL_ONGROUND: own physics is a no-op, but push() considers it
+	vmlib.edSetFloat(junk, ent.movetype, qd.MOVETYPE_STEP)
+	vmlib.edSetFloat(junk, ent.flags, qd.FL_ONGROUND)
+	vmlib.edSetFloat(junk, ent.solid, qd.SOLID_BBOX)
+	vmlib.edSetVector(junk, ent.mins, vector.create(-256, -256, -256))
+	vmlib.edSetVector(junk, ent.maxs, vector.create(256, 256, 256))
+	local stuckAt: vector? = nil
+	for dz = 0, 512, 16 do
+		vmlib.edSetVector(junk, ent.origin, doorStart - vector.create(0, 0, dz))
+		qwworld.linkEdict(svr.world, junk, false)
+		if qwworld.testEntityPosition(svr.world, junk) then
+			stuckAt = doorStart - vector.create(0, 0, dz)
+			break
+		end
+	end
+	assert(stuckAt, "found a solid spot for the stuck junk entity")
+	buffer.writef32(vm.globals, glob.time * 4, svr.time)
+	buffer.writei32(vm.globals, glob.self * 4, useDoor.num)
+	buffer.writei32(vm.globals, glob.other * 4, 1)
+	vmlib.exec(vm, vmlib.edInt(useDoor, ent.use))
+	local maxTravel = 0
+	for _ = 1, 40 do
+		qwsv.frame(svr, 0.05)
+		maxTravel = math.max(maxTravel, vector.magnitude(vmlib.edVector(useDoor, ent.origin) - doorStart))
+	end
+	t.check(maxTravel > 30, `D2 door travels despite a wall-stuck overlapper (QW pre-skip; moved {math.floor(maxTravel)})`)
+	t.check(vmlib.edVector(junk, ent.origin) == stuckAt :: vector, "D2 stuck entity left alone")
+	vmlib.free(vm, junk)
+
+	-- D9: QW addGravity ignores the per-entity gravity field
+	local toss = vmlib.alloc(vm)
+	vmlib.edSetFloat(toss, ent.movetype, qd.MOVETYPE_TOSS)
+	vmlib.edSetFloat(toss, ent.solid, qd.SOLID_NOT)
+	vmlib.edSetVector(toss, ent.origin, vector.create(480, -352, 200))
+	local gravdef = svr.progs.fielddefsByName["gravity"]
+	if gravdef then
+		vmlib.edSetFloat(toss, gravdef.ofs, 0.25) -- NQ would fall at quarter g
+	end
+	qwphys.runEntity(svr, toss)
+	local tvz = vmlib.edVector(toss, ent.velocity).z
+	t.check(math.abs(tvz + 800 * svr.frametime) < 0.01, "D9 non-player gravity scale is always 1.0 in QW")
+	vmlib.free(vm, toss)
+
+	-- D6: infokey — static-string reuse (no dynstring growth), ping/ip
+	local B = vm.builtins
+	local keyId = vmlib.newString(vm, "ping")
+	local c1 = qwsv.wireConnect(svr, 1, { name = "ik" }, function(_p: buffer) end)
+	c1.address = "12345"
+	local before = #vm.dynstrings
+	for _ = 1, 50 do
+		buffer.writei32(vm.globals, 4 * 4, 1) -- OFS_PARM0 = edict 1
+		buffer.writei32(vm.globals, 7 * 4, keyId) -- OFS_PARM1
+		B[80](vm)
+	end
+	t.eq(#vm.dynstrings, before, "D6 infokey reuses one static slot (no leak)")
+	t.eq(vmlib.globalString(vm, 1), "9999", "D6 infokey ping (no acked frames = 9999)")
+	buffer.writei32(vm.globals, 4 * 4, 1)
+	buffer.writei32(vm.globals, 7 * 4, vmlib.newString(vm, "ip"))
+	B[80](vm)
+	t.eq(vmlib.globalString(vm, 1), "12345", "D6 infokey ip = transport identity")
+
+	-- D7: setmodel sizes only inline '*' models in QW
+	local sm = vmlib.alloc(vm)
+	vmlib.edSetVector(sm, ent.mins, vector.create(-4, -4, -4))
+	vmlib.edSetVector(sm, ent.maxs, vector.create(4, 4, 4))
+	buffer.writei32(vm.globals, 4 * 4, sm.num)
+	buffer.writei32(vm.globals, 7 * 4, vmlib.newString(vm, "progs/spike.mdl"))
+	B[3](vm)
+	t.check(vmlib.edVector(sm, ent.maxs) == vector.create(4, 4, 4), "D7 alias setmodel leaves bbox alone")
+	buffer.writei32(vm.globals, 7 * 4, vmlib.newString(vm, "*1"))
+	B[3](vm)
+	t.check(vmlib.edVector(sm, ent.maxs) ~= vector.create(4, 4, 4), "D7 inline setmodel takes the brush bounds")
+	vmlib.free(vm, sm)
+
+	-- D8: stuffcmd("disconnect\n") sets the server-side drop flag
+	buffer.writei32(vm.globals, 4 * 4, 1)
+	buffer.writei32(vm.globals, 7 * 4, vmlib.newString(vm, "disconnect\n"))
+	B[21](vm)
+	t.eq((c1 :: any).drop, true, "D8 stuffcmd disconnect flags the drop")
+	local pkt = buffer.create(8)
+	buffer.writeu32(pkt, 0, 1)
+	qwsv.executeClientMessage(svr, c1, pkt)
+	t.eq(c1.active, false, "D8 client dropped at end of message processing")
+
+	-- D5: near-full reliable stream backbufs instead of silently dropping
+	local c2 = qwsv.wireConnect(svr, 2, { name = "bb" }, function(_p: buffer) end)
+	local out = c2.netchan.message
+	out.cursize = out.maxsize - 10 -- almost full
+	local blob = msg.newBuf(64)
+	msg.writeByte(blob, 8) -- svc_print
+	msg.writeByte(blob, 2)
+	msg.writeString(blob, "queued hello")
+	qwsv.reliableCopy(c2, blob.data, blob.cursize)
+	t.eq((c2 :: any).backbufBytes, blob.cursize, "D5 overfull reliable write queued to backbuf")
+	t.eq(out.overflowed, false, "D5 no overflow, nothing lost")
+	-- transmit flushes the stream; the next reply drains the queue
+	c2.send_message = true
+	qwsv.replyToClient(svr, c2) -- sends the near-full stream
+	c2.send_message = true
+	qwsv.replyToClient(svr, c2) -- drains the backbuf into this packet
+	t.eq((c2 :: any).backbufBytes, 0, "D5 backbuf drained once space freed")
+
+	-- D10: spawn seeds the QC gravity/maxspeed fields when the mod has
+	-- them (vanilla qwprogs: gravity absent is fine; Threewave defines it)
+	t.check(svr.qdefs.optfield ~= nil, "D10 optfield table present")
+end
+
 t.finish("test_audit")

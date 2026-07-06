@@ -60,6 +60,8 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 
 	-- the shared static buffer for ftos/vtos results (pr_string_temp)
 	local tempStringId = vmlib.allocString(vm, "")
+	-- PF_infokey's own static buffer (C: `static char ov[256]`)
+	local infokeyStringId = vmlib.allocString(vm, "")
 
 	local B: { [number]: (vm: vmlib.VM) -> () } = {}
 	local names: { [number]: string } = {}
@@ -118,11 +120,14 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		vmlib.edSetInt(e, ent.model, vmlib.globalInt(vm, OFS_PARM1))
 		vmlib.edSetFloat(e, ent.modelindex, index)
 
-		local mod = svr.models[index + 1]
-		if mod then
-			setMinMaxSize(e, mod.mins, mod.maxs)
-		else
-			setMinMaxSize(e, vector.zero, vector.zero)
+		-- QW only sizes/relinks INLINE brush models ('*'); alias and
+		-- sprite models leave the bbox untouched (NQ set it from the
+		-- model — QW deliberately removed that, mods setsize after)
+		if m:sub(1, 1) == "*" then
+			local mod = svr.models[index + 1]
+			if mod then
+				setMinMaxSize(e, mod.mins, mod.maxs)
+			end
 		end
 	end)
 
@@ -358,7 +363,13 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 			error("Parm 0 not a client")
 		end
 		local str = vmlib.globalString(vm, OFS_PARM1)
-		svr.clientCommands(svr, svr.clients[entnum], str)
+		local client = svr.clients[entnum]
+		if str == "disconnect\n" then
+			-- C: don't send the stufftext — drop the client server-side
+			client.drop = true
+			return
+		end
+		svr.clientCommands(svr, client, str)
 	end)
 
 	def(22, "findradius", function()
@@ -738,6 +749,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 
 	def(69, "makestatic", function()
 		local edict = vmlib.globalEdict(vm, OFS_PARM0)
+		svr.checkSignonSpace(svr)
 		local sg = svr.signon
 
 		msg.writeByte(sg, proto.svc_spawnstatic)
@@ -799,6 +811,7 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		end
 
 		-- add an svc_spawnambient command to the level signon packet
+		svr.checkSignonSpace(svr)
 		local sg = svr.signon
 		msg.writeByte(sg, proto.svc_spawnstaticsound)
 		msg.writeCoord(sg, pos.x)
@@ -851,9 +864,20 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 			end
 		elseif e.num >= 1 and e.num <= svr.maxclients then
 			local cl = svr.clients[e.num]
-			value = (cl and cl.userinfo and cl.userinfo[key]) or ""
+			if key == "ip" then
+				-- platform analog of the C remote address: the stable
+				-- transport identity (Roblox UserId), set at connect
+				value = tostring((cl and (cl :: any).address) or "")
+			elseif key == "ping" then
+				value = tostring(svr.calcPing and svr.calcPing(svr, cl) or 0)
+			else
+				value = (cl and cl.userinfo and cl.userinfo[key]) or ""
+			end
 		end
-		vmlib.setGlobalInt(vm, OFS_RETURN, vmlib.newString(vm, value))
+		-- C uses a static ov[256], NOT a fresh zoned string: reuse one
+		-- dynstring slot so per-frame infokey polls don't leak memory
+		vmlib.setDynString(vm, infokeyStringId, value)
+		vmlib.setGlobalInt(vm, OFS_RETURN, infokeyStringId)
 	end)
 
 	def(81, "stof", function()

@@ -67,6 +67,7 @@ export type Client = {
 	sendinfo: boolean, -- at end of frame, send info to all (new connect)
 	send_message: boolean, -- reply owed: one datagram per received packet
 	send: ((packet: buffer) -> ())?, -- transport hook (remote/loopback)
+	address: string?, -- PF_infokey("ip"): transport identity (UserId)
 }
 
 export type ClientFrame = {
@@ -163,7 +164,17 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	svr.realtime = 0 -- wall clock: accrues across pauses/level changes
 	svr.datagram = msg.newBuf(4096)
 	svr.reliable_datagram = msg.newBuf(4096)
-	svr.signon = msg.newBuf(32768)
+	-- signon is a LIST of <=MAX_DATAGRAM buffers like C (sv_init.c):
+	-- SV_PreSpawn_f streams one per round-trip, so baseline-heavy maps
+	-- never have to fit the whole signon in one reliable message
+	svr.signon = msg.newBuf(1450)
+	svr.signon_buffers = { svr.signon }
+	svr.checkSignonSpace = function(s: any)
+		qwsv.checkSignonSpace(s)
+	end
+	svr.calcPing = function(s: any, cl: any): number
+		return qwsv.calcPing(s, cl)
+	end
 	svr.multicast = msg.newBuf(2048)
 	svr.print = function(s: string)
 		print("[qwsv] " .. s)
@@ -295,7 +306,8 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	svr.phsCache = {}
 	msg.clear(svr.datagram)
 	msg.clear(svr.reliable_datagram)
-	msg.clear(svr.signon)
+	svr.signon = msg.newBuf(1450)
+	svr.signon_buffers = { svr.signon }
 	msg.clear(svr.multicast)
 
 	svr.progs = progslib.load(svr.qwprogsBuf, defs.PROGHEADER_CRC_QW)
@@ -436,6 +448,7 @@ function qwsv.createBaseline(svr: any)
 		end
 		svr.baselines[entnum] = base
 
+		qwsv.checkSignonSpace(svr)
 		msg.writeByte(svr.signon, qwp.svc_spawnbaseline)
 		msg.writeShort(svr.signon, entnum)
 		msg.writeByte(svr.signon, base.modelindex)
@@ -521,6 +534,14 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	client.connection_started = svr.time
 	client.last_message = svr.realtime or 0
 	client.send_message = false
+	-- C zeroes the whole client_t on connect: ad-hoc fields must not
+	-- leak from the slot's previous occupant (stale flood mute etc.)
+	local c = client :: any
+	c.backbuf = {}
+	c.backbufBytes = 0
+	c.floodTimes = nil
+	c.lockedTill = nil
+	c.old_frags = nil
 
 	local ed = client.edict
 	buffer.fill(ed.fields, 0, 0, svr.progs.entityfields * 4)
@@ -803,13 +824,16 @@ function qwsv.postRunCmd(svr: any, client: Client)
 		buffer.writef32(g, qdefs.glob.time * 4, svr.time)
 		buffer.writei32(g, qdefs.glob.self * 4, client.edict.num)
 		vmlib.exec(vm, qdefs.func.PlayerPostThink)
-		-- SV_RunNewmis
+		-- SV_RunNewmis (the lastruntime stamp keeps the next SV_Physics
+		-- scan from moving the missile a second time)
 		local newmis = vmlib.globalInt(vm, qdefs.glob.newmis)
 		if newmis ~= 0 then
 			local ed = vm.edicts[newmis + 1]
 			buffer.writei32(g, qdefs.glob.newmis * 4, 0)
+			local saved = svr.frametime
 			svr.frametime = 0.05
-			qwphys.physicsToss(svr, ed) -- SV_RunNewmis uses the toss path
+			qwphys.runEntity(svr, ed)
+			svr.frametime = saved
 		end
 	elseif qdefs.func.SpectatorThink then
 		buffer.writef32(g, qdefs.glob.time * 4, svr.time)
@@ -947,7 +971,19 @@ function qwsv.modellistF(svr: any, client: Client, args: { string })
 	writeList(client, qwp.svc_modellist, svr.model_precache, tonumber(args[3]) or 0)
 end
 
--- SV_PreSpawn_f: signon (baselines + statics), then stuff "cmd spawn"
+-- SV_FlushSignon: seal the current signon buffer and start a fresh one
+-- when it nears the datagram limit (called before each signon write)
+function qwsv.checkSignonSpace(svr: any)
+	local sg: msg.SizeBuf = svr.signon
+	if sg.cursize > sg.maxsize - 512 then
+		local fresh = msg.newBuf(1450)
+		table.insert(svr.signon_buffers, fresh)
+		svr.signon = fresh
+	end
+end
+
+-- SV_PreSpawn_f: one signon buffer (baselines + statics) per request;
+-- the continuation stufftext drives the client to ask for the next
 function qwsv.prespawnF(svr: any, client: Client, args: { string })
 	if client.spawned then
 		svr.print("prespawn not valid -- allready spawned")
@@ -958,15 +994,24 @@ function qwsv.prespawnF(svr: any, client: Client, args: { string })
 		qwsv.newF(svr, client)
 		return
 	end
-	local out = client.netchan.message
-	local pos = out.cursize
-	if pos + svr.signon.cursize > out.maxsize then
-		error("prespawn: signon overflows the reliable stream")
+	local bufIdx = tonumber(args[3]) or 0
+	if bufIdx < 0 or bufIdx >= #svr.signon_buffers then
+		bufIdx = 0
 	end
-	buffer.copy(out.data, pos, svr.signon.data, 0, svr.signon.cursize)
-	out.cursize += svr.signon.cursize
+	local sg: msg.SizeBuf = svr.signon_buffers[bufIdx + 1]
+	local out = client.netchan.message
+	-- SZ_Write of the whole buffer (C: "written to not overflow" — one
+	-- 1450-byte chunk always fits the just-flushed reliable stream)
+	local pos = out.cursize
+	buffer.copy(out.data, pos, sg.data, 0, sg.cursize)
+	out.cursize += sg.cursize
+	bufIdx += 1
 	msg.writeByte(out, qwp.svc_stufftext)
-	msg.writeString(out, `cmd spawn {svr.spawncount} 0\n`)
+	if bufIdx == #svr.signon_buffers then
+		msg.writeString(out, `cmd spawn {svr.spawncount} 0\n`)
+	else
+		msg.writeString(out, `cmd prespawn {svr.spawncount} {bufIdx}\n`)
+	end
 end
 
 -- SV_CalcPing: average of the acked frame round-trips, ms
@@ -1058,6 +1103,15 @@ function qwsv.spawnF(svr: any, client: Client, args: { string })
 	vmlib.edSetInt(ed, ent.netname, vmlib.allocString(svr.vm, client.name))
 	client.entgravity = 1
 	client.maxspeed = cvarlib.value(svr.cvars, "sv_maxspeed")
+	-- C also seeds the QC fields when the mod declares them (QC that
+	-- reads self.gravity before assigning must see 1, not the memset 0)
+	local optfield = svr.qdefs.optfield or {}
+	if optfield.gravity then
+		vmlib.edSetFloat(ed, optfield.gravity, 1)
+	end
+	if optfield.maxspeed then
+		vmlib.edSetFloat(ed, optfield.maxspeed, client.maxspeed)
+	end
 
 	-- force stats to be updated
 	for i = 0, 31 do
@@ -1528,6 +1582,15 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 			return
 		end
 	end
+
+	-- PF_stuffcmd("disconnect\n") sets the drop flag mid-QC; honor it
+	-- once the message batch is done (C sv_main.c)
+	if (client :: any).drop then
+		(client :: any).drop = false
+		if client.active then
+			qwsv.dropClient(svr, client)
+		end
+	end
 end
 
 -- SV_UpdateClientStats: delta update of the stats array over reliable
@@ -1649,6 +1712,54 @@ end
 
 -- one reply for one received packet: the strict 1:1 exchange keeps the
 -- two sequence spaces identical (server frames are keyed by the client
+-- sv_nchan.c backbuf equivalent: reliable-by-contract data that does
+-- not fit the live stream queues per client as whole-message blocks
+-- (a block must never split across packets — each packet parses as a
+-- complete svc stream) and drains as transmits free space. It is never
+-- silently dropped; a client whose queue ALSO overflows gets dropped
+-- at the sweep, like C's MAX_BACK_BUFFERS drop.
+local BACKBUF_CAP = 32768
+function qwsv.reliableCopy(client: Client, data: buffer, len: number)
+	if len == 0 or not client.send then
+		return
+	end
+	local c = client :: any
+	local out = client.netchan.message
+	if (c.backbufBytes or 0) == 0 and out.cursize + len <= out.maxsize then
+		buffer.copy(out.data, out.cursize, data, 0, len)
+		out.cursize += len
+		return
+	end
+	if (c.backbufBytes or 0) + len > BACKBUF_CAP then
+		out.overflowed = true -- drop at the next checkTimeouts sweep
+		return
+	end
+	local block = buffer.create(len)
+	buffer.copy(block, 0, data, 0, len)
+	c.backbuf = c.backbuf or {}
+	table.insert(c.backbuf, block)
+	c.backbufBytes = (c.backbufBytes or 0) + len
+end
+
+local function drainBackbuf(client: Client)
+	local c = client :: any
+	if not c.backbuf or #c.backbuf == 0 then
+		return
+	end
+	local out = client.netchan.message
+	while #c.backbuf > 0 do
+		local block: buffer = c.backbuf[1]
+		local len = buffer.len(block)
+		if out.cursize + len > out.maxsize then
+			break -- whole blocks only
+		end
+		buffer.copy(out.data, out.cursize, block, 0, len)
+		out.cursize += len
+		table.remove(c.backbuf, 1)
+		c.backbufBytes -= len
+	end
+end
+
 -- packet seq; the client acks with the server packet seq — the delta
 -- lookup depends on those being the same number, as in the C netchan)
 function qwsv.replyToClient(svr: any, client: Client)
@@ -1656,6 +1767,7 @@ function qwsv.replyToClient(svr: any, client: Client)
 		return
 	end
 	client.send_message = false
+	drainBackbuf(client) -- queued reliable blocks ride this packet
 	local send = client.send
 	if client.spawned then
 		qwsv.sendClientDatagram(svr, client)
@@ -2064,10 +2176,16 @@ function qwsv.svMulticast(svr: any, origin: vector, to: number)
 			continue
 		end
 
-		local dest = if reliable then client.netchan.message else client.datagram
-		if dest.cursize + svr.multicast.cursize <= dest.maxsize then
-			buffer.copy(dest.data, dest.cursize, svr.multicast.data, 0, svr.multicast.cursize)
-			dest.cursize += svr.multicast.cursize
+		if reliable then
+			-- ClientReliableWrite: queued if the stream is full, never
+			-- silently dropped
+			qwsv.reliableCopy(client, svr.multicast.data, svr.multicast.cursize)
+		else
+			local dest = client.datagram
+			if dest.cursize + svr.multicast.cursize <= dest.maxsize then
+				buffer.copy(dest.data, dest.cursize, svr.multicast.data, 0, svr.multicast.cursize)
+				dest.cursize += svr.multicast.cursize
+			end
 		end
 	end
 
@@ -2237,11 +2355,9 @@ function qwsv.updateToReliableMessages(svr: any)
 			continue
 		end
 		if rd.cursize > 0 and cl.send then
-			local out = cl.netchan.message
-			if out.cursize + rd.cursize <= out.maxsize then
-				buffer.copy(out.data, out.cursize, rd.data, 0, rd.cursize)
-				out.cursize += rd.cursize
-			end
+			-- reliable-by-contract (frags/setinfo/reconnect stufftexts):
+			-- backbuf'd when the window is full, never silently dropped
+			qwsv.reliableCopy(cl, rd.data, rd.cursize)
 		end
 		-- datagrams only go to spawned
 		if dg.cursize > 0 and cl.spawned then

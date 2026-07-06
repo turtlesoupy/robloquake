@@ -193,9 +193,12 @@ return function(ctx: Ctx)
 			return nil
 		end
 		slotByPlayer[player] = slot
-		qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
+		local client = qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
 			ctx.reliable:FireClient(player, packet)
 		end)
+		-- PF_infokey("ip"): stable transport identity in place of a
+		-- remote address (mods use it for ban/identity logic)
+		client.address = tostring(player.UserId)
 		-- avatars mode plumbing: clients map QW player number -> Player by
 		-- slot (wire playernum = slot - 1)
 		player:SetAttribute("RQSlot", slot)

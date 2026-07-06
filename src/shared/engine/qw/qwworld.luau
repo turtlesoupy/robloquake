@@ -256,13 +256,10 @@ function world.hullPointContents(hull: bsp.Hull, num: number, p: vector): number
 	return num
 end
 
--- SV_PointContents
+-- SV_PointContents: QW does NOT collapse CONTENTS_CURRENT_* to WATER
+-- (that collapse is WinQuake-only; QW world.c:489 returns raw contents)
 function world.pointContents(w: World, p: vector): number
-	local cont = world.hullPointContents(w.worldmodel.hulls[1], 0, p)
-	if cont <= qd.CONTENTS_CURRENT_0 and cont >= qd.CONTENTS_CURRENT_DOWN then
-		cont = qd.CONTENTS_WATER
-	end
-	return cont
+	return world.hullPointContents(w.worldmodel.hulls[1], 0, p)
 end
 
 function world.truePointContents(w: World, p: vector): number
