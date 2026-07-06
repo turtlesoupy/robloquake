@@ -406,6 +406,25 @@ local dir = directorlib.attach({
 })
 -- ===== end match director =====
 
+-- M_ScanSaves' data: publish {name, comment} for every save so the
+-- client Load/Save menus can list them (comment = savegame line 2)
+local saveListValue = Instance.new("StringValue")
+saveListValue.Name = "QuakeSaveList"
+saveListValue.Parent = ReplicatedStorage
+local function publishSaveList()
+	local sg = (svr :: any)
+	local list = {}
+	for name, text in (sg.savegames or {}) :: { [string]: string } do
+		local comment = tostring(text):match("^[^\n]*\n([^\n]*)") or name
+		table.insert(list, { name = name, comment = (comment:gsub("_", " ")) })
+	end
+	table.sort(list, function(a, b)
+		return a.name < b.name
+	end)
+	saveListValue.Value = game:GetService("HttpService"):JSONEncode(list)
+end
+publishSaveList()
+
 local diagAccum = 0
 RunService.Heartbeat:Connect(function(dt: number)
 	if not svr.active then
@@ -604,7 +623,9 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 	end
 	-- mirror fresh saves into ServerStorage (Studio place persistence)
+	-- + republish the menu save list
 	if sg.savegameDirty then
+		publishSaveList()
 		local name = sg.savegameDirty
 		sg.savegameDirty = nil
 		local folder = ServerStorage:FindFirstChild("QuakeSaves")

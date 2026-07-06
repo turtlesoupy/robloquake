@@ -856,51 +856,7 @@ local refreshInputMode: () -> () = function() end
 --------------------------------------------------------------------------
 -- keys.c: bindings, and cmd.c: alias/exec/wait
 
-local KEYNAMES: { [Enum.KeyCode]: string } = {
-	[Enum.KeyCode.Space] = "space",
-	[Enum.KeyCode.Return] = "enter",
-	[Enum.KeyCode.KeypadEnter] = "enter",
-	[Enum.KeyCode.Tab] = "tab",
-	[Enum.KeyCode.Backspace] = "backspace",
-	[Enum.KeyCode.Up] = "uparrow",
-	[Enum.KeyCode.Down] = "downarrow",
-	[Enum.KeyCode.Left] = "leftarrow",
-	[Enum.KeyCode.Right] = "rightarrow",
-	[Enum.KeyCode.LeftControl] = "ctrl",
-	[Enum.KeyCode.RightControl] = "ctrl",
-	[Enum.KeyCode.LeftShift] = "shift",
-	[Enum.KeyCode.RightShift] = "shift",
-	[Enum.KeyCode.LeftAlt] = "alt",
-	[Enum.KeyCode.RightAlt] = "alt",
-	[Enum.KeyCode.Insert] = "ins",
-	[Enum.KeyCode.Delete] = "del",
-	[Enum.KeyCode.PageDown] = "pgdn",
-	[Enum.KeyCode.PageUp] = "pgup",
-	[Enum.KeyCode.Home] = "home",
-	[Enum.KeyCode.End] = "end",
-	[Enum.KeyCode.Pause] = "pause",
-	[Enum.KeyCode.Semicolon] = "semicolon",
-	[Enum.KeyCode.Comma] = ",",
-	[Enum.KeyCode.Period] = ".",
-	[Enum.KeyCode.Slash] = "/",
-	[Enum.KeyCode.Backquote] = "`",
-	[Enum.KeyCode.Minus] = "-",
-	[Enum.KeyCode.Equals] = "=",
-	[Enum.KeyCode.LeftBracket] = "[",
-	[Enum.KeyCode.RightBracket] = "]",
-	[Enum.KeyCode.BackSlash] = "\\",
-	[Enum.KeyCode.Quote] = "'",
-}
-for i = 0, 25 do
-	KEYNAMES[(Enum.KeyCode :: any)[string.char(65 + i)]] = string.char(97 + i)
-end
-for i = 0, 9 do
-	local names = { "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine" }
-	KEYNAMES[(Enum.KeyCode :: any)[names[i + 1]]] = tostring(i)
-end
-for i = 1, 12 do
-	KEYNAMES[(Enum.KeyCode :: any)["F" .. i]] = "f" .. i
-end
+local KEYNAMES = require(script.keymap).KEYNAMES -- shared Key_KeynumToString table
 
 local bindings: { [string]: string } = {}
 local aliases: { [string]: string } = {}
@@ -1343,6 +1299,28 @@ end
 	consolelib.dprint(con, s2)
 end
 con.onCommand = execLine
+-- M_ScanSaves: the server publishes {name, comment} save entries
+mnu.getSaves = function()
+	local v = ReplicatedStorage:FindFirstChild("QuakeSaveList")
+	if v and v:IsA("StringValue") and #v.Value > 2 then
+		local ok, list = pcall(function()
+			return game:GetService("HttpService"):JSONDecode((v :: StringValue).Value)
+		end)
+		if ok and typeof(list) == "table" then
+			return list
+		end
+	end
+	return {}
+end
+mnu.onLoad = function(name: string)
+	execCommand(`load {name}`)
+end
+mnu.onSave = function(name: string)
+	execCommand(`save {name}`)
+end
+mnu.onColor = function(top: number, bottom: number)
+	execCommand(`color {top} {bottom}`)
+end
 -- CompleteCommand list (keys.c Tab): local commands + the forwarded host
 -- commands + settable cvar-style names
 con.completions = {
@@ -1891,9 +1869,23 @@ local lastStyleFrame = -1
 local diagAccumulator = 0
 local statics_spawned = false
 
+local turtleCount = 0
+local lastReceivedAt = 0
 RunService.Heartbeat:Connect(function(dt: number)
 	cbufFrame()
 	input.updateTurn(dt)
+
+	-- SCR_DrawTurtle / SCR_DrawNet conditions (ram never: no surface
+	-- cache to thrash)
+	if dt < 0.1 then
+		turtleCount = 0
+	else
+		turtleCount += 1
+	end
+	if #inbound > 0 then
+		lastReceivedAt = os.clock()
+	end
+	hudlib.setIcons(hud, turtleCount > 2, false, c.signon == cllib.SIGNONS and os.clock() - lastReceivedAt > 0.3)
 
 	-- pump inbound messages (demo playback detaches from the live stream)
 	if demoPlaying then

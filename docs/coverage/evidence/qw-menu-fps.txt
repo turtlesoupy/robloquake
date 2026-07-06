@@ -1,0 +1,17 @@
+Capture context: qw-menu-fps.jpg (2026-07-06)
+==============================================
+Engine: QW boot (qw-dm preset), dm3. Battery: bind x +attack /
+bind x (echo) / unbind x / bind zz (invalid-key refusal) — console
+lines in the transcript; show_fps 1; togglemenu.
+
+Shows:
+1. The QW boot driving the shared menu.c port: MAIN plaque, all five
+   items, the animated Quake-icon cursor, Draw_FadeScreen dim.
+   (Single/Multiplayer route per C's QW menu: SP prints the
+   network-only notice; MP opens the color setup page.)
+2. SCR_DrawFPS: "58 FPS" bottom-right (show_fps gate).
+Bind battery (measured): "x" = "+attack" -> unbind -> "x" = "" ->
+"zz" isn't a valid key — Key_Bind_f/Key_Unbind_f/Key_StringToKeynum
+through the shared keymap.
+
+Re-verify: boot qw-dm, exec the bind battery + show_fps 1 + togglemenu.

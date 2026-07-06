@@ -1,0 +1,12 @@
+Capture context: nq-conback-stamp.jpg (2026-07-06)
+===================================================
+Engine: NQ boot (nq-dm preset), dm3, console open.
+
+Shows Draw_CharToConback: "(ROBLOQUAKE) 1.09" stamped into the conback
+PIXELS bottom-right at y=186 exactly like Con_Init's version stamp
+(transparent-0 conchars glyphs composited into the image, not a GUI
+label — scrollback text scrolls over it). The scrollback also shows
+"Saving game to menutest.sav..." from the load-menu battery.
+
+Re-verify: open the console on either boot; the stamp is baked into
+the conback image.

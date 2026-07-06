@@ -32,10 +32,10 @@ counterpart, each with its justification.
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 148 | 0 | 13 | 78 | 25 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 156 | 0 | 0 | 81 | 27 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 153 | 0 | 23 | 54 | 5 |
-| **Total** | **781** | **0** | **36** | **285** | **72** |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 163 | 0 | 5 | 60 | 7 |
+| **Total** | **811** | **0** | **5** | **288** | **76** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -93,6 +93,32 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (burn-down pass 7: menus + binds; nq-client reaches zero)
+- Authentic menu core (the ruled KEEP-OPEN set): the Single Player
+  submenu (ttl_sgl/sp_menu + big cursor), Load/Save menus over the
+  replicated QuakeSaveList (M_ScanSaves against the platform save store,
+  s0..s11 slots, real Host_SavegameComment lines, blinking slot cursor),
+  the Multiplayer color-setup page with the LIVE-translated menuplyr.lmp
+  in an M_DrawTextBox border (closes M_BuildTranslationTable /
+  M_DrawTransPicTranslate / Draw_TransPicTranslate), Draw_FadeScreen
+  behind every page, and Draw_CharToConback ("(ROBLOQUAKE) 1.09" baked
+  into the conback pixels).
+- QW boot: the shared menulib wired in (qwMode: SP = C's network-only
+  stub, MP = the setup page), a full keys.c bind system over the new
+  shared keymap (bind/unbind/unbindall battery live: echo, clear,
+  invalid-key refusal), SCR_DrawFPS ("58 FPS" live), status icons
+  (turtle/ram/net wad pics; conditions per screen.c, ram documented
+  never-fires), Key_ClearStates via the shared input clear.
+- Classifications: CL_NextDemo both boots + Key_WriteBindings +
+  Host_WriteConfiguration + Skin_* + R_MarkLeaves SUBSTITUTED with
+  platform citations; four dead-in-C rows carry FLAGGED N/A proposals
+  (SCR_BringDownConsole, Con_NotifyBox, QW SCR_ModalMessage/
+  DrawNotifyString, QW video menu mirror) awaiting user review.
+- Captures: nq-load-menu, nq-setup-menu, nq-conback-stamp, qw-menu-fps,
+  nq-scr-icons. nq-client: ZERO UNIMPLEMENTED — third manifest done.
+  qw-client is down to 5 rows (the .qwd demo family + flyby search).
+
 
 ### 2026-07-06 (burn-down pass 6: sound utilities + client odds)
 - soundlib grew S_LocalSound (2D atten-0 channel), S_SoundList (bank

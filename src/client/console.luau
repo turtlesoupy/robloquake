@@ -51,10 +51,32 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	gui.Visible = false
 	gui.ZIndex = 20
 
-	-- conback background (Draw_ConsoleBackground)
+	local wadbuf = vfslib.loadFile(fs, "gfx.wad")
+	assert(wadbuf)
+	local w = wadlib.load(wadbuf)
+	local conchars = wadlib.getRaw(w, "conchars")
+
+	-- conback background (Draw_ConsoleBackground) with the version string
+	-- stamped into the pixels bottom-right (Con_Init's Draw_CharToConback)
 	local backbuf = vfslib.loadFile(fs, "gfx/conback.lmp")
 	if backbuf then
 		local pic = wadlib.parseQPic(backbuf)
+		local ver = "(robloquake) 1.09"
+		local destX = pic.width - 11 - 8 * #ver
+		local destY = 186
+		for ci = 1, #ver do
+			local code = ver:byte(ci)
+			local row = code // 16
+			local col = code % 16
+			for y = 0, 7 do
+				for x = 0, 7 do
+					local px = buffer.readu8(conchars, (row * 8 + y) * 128 + col * 8 + x)
+					if px ~= 0 then -- 0 is transparent in conchars
+						buffer.writeu8(pic.pixels, (destY + y) * pic.width + destX + (ci - 1) * 8 + x, px)
+					end
+				end
+			end
+		end
 		local img = textures.createImage(pic.pixels, pic.width, pic.height, pal, false)
 		if img then
 			local back = Instance.new("ImageLabel")
@@ -65,11 +87,6 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 			back.Parent = gui
 		end
 	end
-
-	local wadbuf = vfslib.loadFile(fs, "gfx.wad")
-	assert(wadbuf)
-	local w = wadlib.load(wadbuf)
-	local conchars = wadlib.getRaw(w, "conchars")
 
 	local c = {} :: Console
 	c.gui = gui

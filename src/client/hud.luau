@@ -285,6 +285,39 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		h.notifyRows[i] = confontlib.newRow(rowFrame, NOTIFY_COLS, SCALE)
 	end
 
+	-- SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet: status icons at the
+	-- view top-left (turtle x=vrect.x, ram +32, net +64 like screen.c)
+	local iconsFrame = Instance.new("Frame")
+	iconsFrame.Name = "scricons"
+	iconsFrame.BackgroundTransparency = 1
+	iconsFrame.Position = UDim2.fromOffset(0, inset.Y + 40 * SCALE)
+	iconsFrame.Size = UDim2.fromOffset(96 * SCALE, 16 * SCALE)
+	iconsFrame.Parent = gui
+	local turtleIcon = makeLabel(iconsFrame, 0, 0, 16, 16)
+	setPic(h, turtleIcon, "turtle", w)
+	turtleIcon.Visible = false
+	local ramIcon = makeLabel(iconsFrame, 32, 0, 16, 16)
+	setPic(h, ramIcon, "ram", w)
+	ramIcon.Visible = false
+	local netIcon = makeLabel(iconsFrame, 64, 0, 16, 16)
+	setPic(h, netIcon, "net", w)
+	netIcon.Visible = false
+	;(h :: any).turtleIcon = turtleIcon
+	;(h :: any).ramIcon = ramIcon
+	;(h :: any).netIcon = netIcon
+
+	-- SCR_DrawFPS (QW): bottom-right counter, gated by show_fps
+	local fpsHolder = Instance.new("Frame")
+	fpsHolder.Name = "fps"
+	fpsHolder.BackgroundTransparency = 1
+	fpsHolder.AnchorPoint = Vector2.new(1, 1)
+	fpsHolder.Position = UDim2.new(1, -8, 1, -hud.SBAR_LINES_PX - 8)
+	fpsHolder.Size = UDim2.fromOffset(10 * 8 * SCALE, 8 * SCALE)
+	fpsHolder.Visible = false
+	fpsHolder.Parent = gui
+	;(h :: any).fpsRow = confontlib.newRow(fpsHolder, 10, SCALE)
+	;(h :: any).fpsHolder = fpsHolder
+
 	-- SCR_DrawLoading / SCR_DrawPause: gfx plaques centered above the sbar
 	local function plaque(picName: string): ImageLabel?
 		local buf = vfslib.loadFile(fs, picName)
@@ -634,6 +667,26 @@ function hud.setViewsize(h: Hud, viewsize: number)
 	h.ibarRow.Visible = viewsize < 110
 	local canvas = h.ibarRow.Parent :: Frame
 	canvas.Visible = viewsize < 120
+end
+
+-- SCR_DrawTurtle / SCR_DrawRam / SCR_DrawNet visibility (conditions are
+-- the boot's: turtle = 3 consecutive >0.1s frames, net = no message for
+-- 0.3s, ram = surface-cache thrash — no surface cache exists, so the
+-- boot never raises it (documented))
+function hud.setIcons(h: Hud, turtle: boolean, ram: boolean, net: boolean)
+	((h :: any).turtleIcon :: ImageLabel).Visible = turtle
+	;((h :: any).ramIcon :: ImageLabel).Visible = ram
+	;((h :: any).netIcon :: ImageLabel).Visible = net
+end
+
+-- SCR_DrawFPS: nil hides
+function hud.setFps(h: Hud, fps: number?)
+	local holder = (h :: any).fpsHolder :: Frame
+	holder.Visible = fps ~= nil
+	local font = h.font
+	if fps and font then
+		confontlib.setRow(font, (h :: any).fpsRow, ("%3d FPS"):format(fps))
+	end
 end
 
 function hud.setShowScores(h: Hud, on: boolean)

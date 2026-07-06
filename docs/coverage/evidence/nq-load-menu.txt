@@ -1,0 +1,14 @@
+Capture context: nq-load-menu.jpg (2026-07-06)
+===============================================
+Engine: NQ boot (nq-dm preset), dm3. Battery: exec "save menutest",
+then togglemenu -> Single Player -> Load (real key events through
+menulib.handleKey).
+
+Shows M_Load_Draw: the p_load plaque, slot 1 carrying the real save's
+Host_SavegameComment ("The Abandoned Base  kills: 0/ 0" — underscores
+restored to spaces), "--- UNUSED SLOT ---" for the empty slots, and
+the Draw_FadeScreen dim behind the page. The save list reaches the
+menu through the replicated QuakeSaveList value (M_ScanSaves over the
+platform save store). Enter on a slot loads it ("load menutest").
+
+Re-verify: exec save menutest, togglemenu, Enter, Down, Enter.

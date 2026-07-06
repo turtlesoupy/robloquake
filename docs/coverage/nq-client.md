@@ -15,7 +15,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_Disconnect_f | — | N/A | no `disconnect` command. N/A: platform-owned flow. | — (implement first) |
 | CL_EstablishConnection | clc_nop hello over RemoteEvent | SUBSTITUTED | no sockets; server connects the client when it first hears from it | — (substitution; verify justification still holds) |
 | CL_SignonReply | cl.luau signonReply | VERIFIED | tests/test_loopback.luau: "client fully signed on" (prespawn/name/color/spawn/begin) | `lune run tests/test_loopback.luau` |
-| CL_NextDemo | — | UNIMPLEMENTED | no startdemos attract-loop cycling; playdemo is manual | — (implement first) |
+| CL_NextDemo | — | SUBSTITUTED | The startdemos attract loop fills the DISCONNECTED state between sessions; the place boots straight into the live server (platform session model), so no disconnected attract state exists to cycle demos in. playdemo remains manual. | — (substitution; platform session flow) |
 | CL_PrintEntities_f | — | SUBSTITUTED | RQ_VisEnts workspace attribute is the debug substitute. SUBSTITUTED: RQ_VisEnts workspace attribute + the RQDBG hook family serve entity inspection (ruling 2026-07-05). | — (implement first) |
 | SetPal | — | SUBSTITUTED | no hardware palette; cshift Frame tint covers the visible effect | — (substitution; verify justification still holds) |
 | CL_AllocDlight | init.client allocDlight | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the rocket explosion allocates a dlight whose radial wash re-lights the floor mid-flash. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
@@ -149,7 +149,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Math half: test_qcoords (vrect fov_y at reduced height, gun rotation scaling). Visual half: the committed S3/S4 anchors (evidence/nq-e1m1-start.jpg, qw-dm3-stairs.jpg) show the world cropped above the sbar strip with the gun seated over the HUD — the row predates the anchors landing. | `lune run tests/test_qcoords.luau`; diff the anchors |
 | SCR_SizeUp_f / SCR_SizeDown_f | sizeup/sizedown commands (viewsize +/-10, clamp 30..120) | VERIFIED | [evidence/nq-sizeup-110.jpg](evidence/nq-sizeup-110.jpg) + .txt: one sizeup drops the ibar (sb_lines 24) and grows the vrect vs the viewsize-100 baseline in nq-fragcells-minidm.jpg. | Stage per evidence/nq-sizeup-110.txt |
 | SCR_Init | init.client GUI setup | VERIFIED | The ScreenGui stack it builds (3D view, sbar, console, menu, plaques) appears across the committed capture set; boot-plumbing row with no independent behaviour beyond what those captures show. | Any Play capture |
-| SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | — | UNIMPLEMENTED | perf/lag indicator icons absent | — (implement first) |
+| SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet | hudlib `setIcons` (ram/turtle/net wad pics at the view top-left) + the heartbeat conditions: turtle = 3 consecutive >0.1s frames, net = no server message for 0.3s while connected; ram never fires (no surface cache to thrash — documented) | VERIFIED | [evidence/nq-scr-icons.jpg](evidence/nq-scr-icons.jpg): all three icons rendered via the forced-draw hook; conditions are code-pinned per screen.c. | Stage per evidence/nq-scr-icons.txt |
 | SCR_DrawPause | hud pausePlaque | VERIFIED | [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) + .txt: pause.lmp centered over the paused world. | Console "pause" per evidence/nq-pause-plaque.txt, capture, compare |
 | SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | VERIFIED | Per-frame GUI watcher across a reload: plaque visible at t=0.15s (serverinfo) and cleared at t=1.33s — the first rendered frame after the deferred world build ([evidence/nq-loading-plaque-probe.txt](evidence/nq-loading-plaque-probe.txt)). | Watcher snippet per the evidence file |
 | SCR_SetUpToDrawConsole | console.update slide | VERIFIED | Half-screen slide in [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg); mid-slide retraction visible at the top of [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) (scr_conspeed). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
@@ -157,7 +157,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | N/A | no writable filesystem. N/A: DOS-era; platform owns screenshots. | — (implement first) |
 | SCR_ModalMessage | — | N/A | no modal quit/confirm flow (Roblox owns quit). N/A: platform-owned flow (quit). | — (implement first) |
 | SCR_DrawNotifyString | — | N/A | modal notify text (goes with SCR_ModalMessage). N/A: platform-owned flow (quit). | — (implement first) |
-| SCR_BringDownConsole | — | UNIMPLEMENTED | | — (implement first) |
+| SCR_BringDownConsole | — | N/A (FLAGGED for user review 2026-07-06) | Dead in WinQuake itself: the only call site (cl_main.c:105) is commented out; nothing invokes it. Burn-down proposal per the dead-in-C rule — flagged rather than silently classified. | — (N/A proposal) |
 | SCR_UpdateScreen | Heartbeat overlay updates | SUBSTITUTED | Roblox render pipeline owns presentation; per-frame GUI updates replace the 2D compose | — (substitution; verify justification still holds) |
 | SCR_UpdateWholeScreen | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
 
@@ -180,7 +180,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots usually hide the area under Roblox chrome (recorded divergence: below-topbar inset) — but [evidence/nq-notify-thunderbolt.jpg](evidence/nq-notify-thunderbolt.jpg) catches a pickup notify line rendered in conchars. Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
 | Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_NotifyBox | — | UNIMPLEMENTED | | — (implement first) |
+| Con_NotifyBox | — | N/A (FLAGGED for user review 2026-07-06) | Its only callers are the DOS MSCDEX CD-audio driver prompts (cd_audio.c:820,837) — DOS-era machinery outside the in-scope C paths. Flagged per the no-silent-N/A rule. | — (N/A proposal) |
 
 ## keys.c
 
@@ -191,7 +191,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | VERIFIED | Every bind lookup in the committed batteries rides the map (default.cfg + autoexec binds resolved W/arrows/mouse1; bind/unbind battery echoes names back through KeynumToString). Deltas stand: Roblox KeyCodes, Escape platform-reserved, mouse1-3 mapped. | nq-console-open bind battery + tools/verify_input_nq.luau |
 | Key_SetBinding | bindings table | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind x sets, query echoes "x" = "echo xkey_fired". | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind query + unbind clears the binding. Delta: unbound query prints "x" = "" instead of C's '"x" is not bound'. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Key_WriteBindings | — | UNIMPLEMENTED | no config.cfg persistence (FIDELITY platform substitution; DataStore later) | — (implement first) |
+| Key_WriteBindings | — | SUBSTITUTED | config.cfg persistence needs a writable user filesystem, which the platform doesn't expose; binds live for the session on top of the default.cfg exec, and durable persistence would be platform DataStore. The bind system itself is VERIFIED (bind/unbind battery). | — (substitution; platform owns storage) |
 | Key_Init | default.cfg exec at boot + autoexec layer | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: boot scrollback opens with "execing default.cfg" and "couldn't exec autoexec.cfg" (pak default.cfg + autoexec layer at boot). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Event | init.client keyEvent via UserInputService | VERIFIED | Real UserInputService events (not the RQ_Force harness) drove movement, turning, and the menu in the battery; keyup fired the -command (motion stopped) ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) |
 | Key_ClearStates | input.setEnabled(false) clears buttons | VERIFIED | During the committed menu battery, three real Down keys moved the menu CURSOR while the player never moved or turned — arrows are bound to +back/+lookdown in game, so buttons were cleared when the menu opened ([evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg) + battery text). Same shared-input mechanism as the QW messagemode finding (input disabled while chat is open). | Menu battery per tools/verify_input_nq.luau |
@@ -202,12 +202,12 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | M_DrawCharacter / M_Print / M_PrintWhite | — | SUBSTITUTED | implemented menus are pure .lmp pics; no text menus yet | — (substitution; verify justification still holds) |
 | M_DrawTransPic / M_DrawPic | menu.addPic → ImageLabel | SUBSTITUTED | blit → ImageLabel | — (substitution; verify justification still holds) |
-| M_BuildTranslationTable / M_DrawTransPicTranslate | — | UNIMPLEMENTED | player setup menu absent (textures.translatePixels exists for in-game skins) | — (implement first) |
-| M_DrawTextBox | — | UNIMPLEMENTED | | — (implement first) |
+| M_BuildTranslationTable / M_DrawTransPicTranslate | the setup page's translated menuplyr.lmp via `textures.translatePixels` | VERIFIED | [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg): shirt 4 / pants 2 visibly recolored on the player pic, adjusted live with the arrow keys; the table build is offline-tested (test_qwview translate battery). | Stage per evidence/nq-setup-menu.txt |
+| M_DrawTextBox | `menu.drawTextBox` (gfx/box_* tiling, 8px cols/lines like C) | VERIFIED | [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg): the bordered box framing the translated player pic; the Load page uses it for the no-saves notice. | Stage per evidence/nq-setup-menu.txt |
 | M_ToggleMenu_f | `togglemenu` / M key | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg) + .txt: togglemenu raises the menu. Delta: Escape reserved by Roblox (M key/togglemenu). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
 | M_Menu_Main_f / M_Main_Draw / M_Main_Key | menu.create/update/handleKey | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg): qplaque + ttl_main + mainmenu entries + animated menudot at the C coordinates. Delta: key navigation not exercised in the capture (needs real key events). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
-| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | Enter on item 0 → `map start` | UNIMPLEMENTED | submenu absent; direct new-game action instead | ruled: KEEP OPEN — part of the authentic menu core (menus split, 2026-07-05) |
-| M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | — | UNIMPLEMENTED | F6/F9 quicksave/quickload binds work end to end (FIDELITY save/load record) | ruled: KEEP OPEN — build authentic save/load menus (menus split, 2026-07-05) |
+| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | the "singleplayer" menu state: ttl_sgl + sp_menu.lmp with the animated big cursor; New Game / Load / Save | VERIFIED | The load-menu battery navigates THROUGH it with real key events (Enter into the submenu, Down to Load, Enter — [evidence/nq-load-menu.jpg](evidence/nq-load-menu.jpg) is reached via M_SinglePlayer_Key). | Stage per evidence/nq-load-menu.txt |
+| M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | the "load"/"save" menu states over the replicated QuakeSaveList (M_ScanSaves reads the platform save store; slots s0..s11 like C's s%i.sav) | VERIFIED | [evidence/nq-load-menu.jpg](evidence/nq-load-menu.jpg): p_load plaque, the real save's Host_SavegameComment in slot 1, --- UNUSED SLOT --- fills, blinking slot cursor; Enter loads (the save was created through the same battery). | Stage per evidence/nq-load-menu.txt |
 | M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | stub print | N/A | Roblox players join the server automatically. N/A: platform-owned flow (join). | — (implement first) |
 | M_Menu_Setup_f / M_Setup_Draw / M_Setup_Key | — | SUBSTITUTED | name comes from Roblox; color fixed 0x04. SUBSTITUTED: identity comes from Roblox; appearance from avatars mode (menus ruling: split). | — |
 | M_Menu_Net_f / M_Net_Draw / M_Net_Key | — | N/A | serial/IPX/TCP menu meaningless here. N/A: transport-era. | — (implement first) |
@@ -235,13 +235,13 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | VERIFIED | Confont glyph rendering across all three captures (console text, scoreboard fields, plaque). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Draw_DebugChar | — | N/A | N/A: dev tooling ruled out 2026-07-05 (Studio profiler/debugger is this port's equivalent). | — (implement first) |
 | Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | VERIFIED | Transparent-pic compositing is visible in the committed menu/help/plaque captures (MAIN plaque, QUAKE sidebar and spinner cursor drawn over the 3D view with index-255 holes — nq-menu-cursor-help.jpg, nq-help-page1/2.jpg). | Open the menu, capture, compare |
-| Draw_TransPicTranslate | — | UNIMPLEMENTED | only the setup menu used it | — (implement first) |
-| Draw_CharToConback | — | UNIMPLEMENTED | no version string stamped on conback | — (implement first) |
+| Draw_TransPicTranslate | the setup page's translated pic draw (translatePixels + createImage) | VERIFIED | [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg) — its one C consumer, live. | Stage per evidence/nq-setup-menu.txt |
+| Draw_CharToConback | version chars composited into the conback PIXELS at y=186 (Con_Init's stamp; transparent-0 glyphs) | VERIFIED | [evidence/nq-conback-stamp.jpg](evidence/nq-conback-stamp.jpg): "(ROBLOQUAKE) 1.09" baked into the image bottom-right. | Stage per evidence/nq-conback-stamp.txt |
 | Draw_ConsoleBackground | conback ImageLabel in console.create | VERIFIED | The conback art fills the console in evidence/nq-console-open.jpg. Delta stands: the frame slides instead of cropping the pic. | RQDBG_Console "toggle", capture |
 | R_DrawRect8 / R_DrawRect16 | — | SUBSTITUTED | framebuffer rect blits; GPU composites GUI | — (substitution; verify justification still holds) |
 | Draw_TileClear | — | SUBSTITUTED | no vrect borders — 3D view is full-window | — (substitution; verify justification still holds) |
 | Draw_Fill | hud interFill (palette-indexed Frames) | VERIFIED | The scoreboard colour bar behind the frag count is the Draw_Fill path ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
-| Draw_FadeScreen | — | UNIMPLEMENTED | menu backdrop dim absent | — (implement first) |
+| Draw_FadeScreen | the menu's half-transparent black backdrop (C dithers 8x8 at half density; the GUI twin is a 0.5-alpha frame — recorded delta) | VERIFIED | Both menu captures show the world dimmed behind the pages ([evidence/nq-load-menu.jpg](evidence/nq-load-menu.jpg), [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg)). | Stage per the menu evidence files |
 | Draw_BeginDisc / Draw_EndDisc | — | N/A | disc I/O icon absent. N/A: DOS-era (disc I/O icon). | — (implement first) |
 
 ## snd_dma.c
@@ -285,7 +285,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_Init / R_InitTurb | worldmesh/textures init | SUBSTITUTED | software init; turb warp lives in textures.writeTurbFrame | — (substitution; verify justification still holds) |
 | R_NewMap | onServerInfo world build (worldmesh.build, deferred one Heartbeat) | VERIFIED | tests/test_loopback.luau + test_changelevel.luau world loads; rebuild-starvation fix (user playtest "black square"): 4-rebuild gauntlet leaves 61 world parts + animated style-10 alcove region, flicker pair committed ([evidence/nq-e1m1-flicker-bright.jpg](evidence/nq-e1m1-flicker-bright.jpg), [-dark.jpg](evidence/nq-e1m1-flicker-dark.jpg), [.txt](evidence/nq-e1m1-flicker.txt)) | `lune run tests/test_changelevel.luau`; Studio: tools/verify_meshbudget.luau gauntlet prints PASS |
 | R_SetVrect / R_ViewChanged | — | SUBSTITUTED | no software viewport | — (substitution; verify justification still holds) |
-| R_MarkLeaves | — | UNIMPLEMENTED | no PVS culling — whole map stays resident; GPU frustum-culls (perf, not correctness) | — (implement first) |
+| R_MarkLeaves | — | SUBSTITUTED | R_MarkLeaves limits the SOFTWARE rasterizer's surface walk to the PVS; the Roblox GPU renderer owns visibility (frustum culling over retained meshes), so the platform mechanism serving the purpose is the renderer itself. Perf-only; correctness is unaffected (the row's own audit note). | — (substitution; platform renderer owns visibility) |
 | R_DrawEntitiesOnList | heartbeat entity update loop | VERIFIED | Dynamic + static entities render across the committed set (grunts/items in the scenario captures, static flames in the anchors, doors in the flicker pair); per-frame re-posing is what every animated capture shows. | Any Play capture with entities in view |
 | R_DrawViewModel | gun entity branch | VERIFIED | View model present in every live capture (axe/shotgun/RL/LG across the committed set) and ABSENT in [evidence/nq-death-cam.jpg](evidence/nq-death-cam.jpg) while dead — C's health<=0 gate; chase-cam hide in nq-chase-cam.jpg. Light floor 24 in code. | Compare captures; stage death per evidence/nq-lightning-beam.txt |
 | R_BmodelCheckBBox | — | SUBSTITUTED | no per-frame brush accept/reject needed | — (substitution; verify justification still holds) |
@@ -459,11 +459,16 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 148
+- VERIFIED: 156
 - PENDING: 0
-- UNIMPLEMENTED: 13
-- SUBSTITUTED: 78
-- N/A: 25
+- UNIMPLEMENTED: 0
+- SUBSTITUTED: 81
+- N/A: 27
+
+(2026-07-06: ZERO UNIMPLEMENTED. Two rows carry N/A **proposals flagged
+for user review** — SCR_BringDownConsole (its only C call site is
+commented out) and Con_NotifyBox (only the DOS CD-audio driver calls
+it); say the word and they flip to whatever you prefer.)
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 

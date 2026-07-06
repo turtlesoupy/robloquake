@@ -1,0 +1,15 @@
+Capture context: nq-setup-menu.jpg (2026-07-06)
+================================================
+Engine: NQ boot (nq-dm preset), dm3. Battery: togglemenu ->
+Multiplayer (setup page), Right x4 on Shirt, Down + Right x2 on Pants.
+
+Shows the M_Setup_Draw subset: MULTIPLAYER title + qplaque, the
+menuplyr.lmp pic TRANSLATED live through textures.translatePixels
+(shirt 4 = red row, pants 2 visible on the model) inside an
+M_DrawTextBox border, "Shirt color 4" / "Pants color 2" rows with the
+blinking '>' cursor, "Accept Changes" (sends the color command).
+This is the live composite of M_BuildTranslationTable /
+M_DrawTransPicTranslate / Draw_TransPicTranslate / M_DrawTextBox.
+
+Re-verify: togglemenu, Down, Enter, arrow keys; Accept sends
+"color <top> <bottom>".

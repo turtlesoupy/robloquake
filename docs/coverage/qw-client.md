@@ -35,7 +35,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_FullInfo_f | `fullinfo \\k\\v...` → per-pair setinfo stringcmds | VERIFIED | The backslash-pair parse feeds the loopback-verified setinfo path (code: execCommand fullinfo); CL_Color_f's capture proves the downstream. | code + `lune run tests/test_qw_loopback.luau` (setinfo) |
 | CL_SetInfo_f | `setinfo k v` forwards as the wire setinfo user command | VERIFIED | test_qw_loopback: setinfo updates cross the wire and broadcast back via svc_setinfo (the C client-side table mirror is the broadcast echo — recorded delta: no local-only copy). | `lune run tests/test_qw_loopback.luau` |
 | CL_Packet_f | — | SUBSTITUTED | Connectionless packets do not exist over remotes. | — (substitution; verify justification still holds) |
-| CL_NextDemo | — | UNIMPLEMENTED | Demo system out of scope (fidelity backlog). | — (implement first) |
+| CL_NextDemo | — | SUBSTITUTED | Same as the NQ row: the startdemos attract loop fills a disconnected state that the platform session model never enters (the place boots straight into the live server). | — (substitution; platform session flow) |
 | CL_Changing_f | `"changing"` branch in execStufftext (intermission cleared, "Changing map..." printed, state held at connected) | VERIFIED | test_qw_loopback: crafted changing stufftext asserts all three effects. | `lune run tests/test_qw_loopback.luau` |
 | CL_Reconnect_f | `execStufftext` `"reconnect"` branch | VERIFIED | test_qw_loopback: an svc_stufftext "reconnect" makes the client send "new" and the server answers the fresh handshake. | `lune run tests/test_qw_loopback.luau` |
 | CL_ConnectionlessPacket | — | SUBSTITUTED | No OOB wire (challenge/ping/rcon replies N/A on Roblox transport). | — (substitution; verify justification still holds) |
@@ -45,7 +45,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_Init | `qwclient.luau` boot function | VERIFIED | Same evidence set as Host_Init: the wired fs/transport/render/input stack is what every committed QW capture and battery runs on. Delta stands: no cvar registration layer. | Boot with engine="qw"; batteries per qw-input-console-battery.txt |
 | Host_EndGame | pcall/warn in heartbeat packet loop | SUBSTITUTED | Parse errors warn and drop the packet instead of tearing the session down — deliberately softer than C on a hosted platform. Expiry: revisit if a malformed-packet loop is ever observed live (would need the C teardown to recover). | code: qwclient heartbeat pcall |
 | Host_Error | same | SUBSTITUTED | Same soft-fail substitution as Host_EndGame; no reconnect-on-error. Same expiry condition. | code: qwclient heartbeat pcall |
-| Host_WriteConfiguration | — | UNIMPLEMENTED | No config/bind persistence in the QW boot. | — (implement first) |
+| Host_WriteConfiguration | — | SUBSTITUTED | config.cfg writing needs a user filesystem the platform doesn't expose; binds/settings are session-scoped over the default.cfg exec, durable persistence would be DataStore (same rationale as Key_WriteBindings). | — (substitution; platform owns storage) |
 | Host_SimulationTime | — | SUBSTITUTED | Heartbeat drives the frame; no host_speeds/maxfps gate. | — (substitution; verify justification still holds) |
 | Host_Frame | Heartbeat closure in qwclient | VERIFIED | Live 547df88: full frame loop (read packets → send cmd → predict → render) plays in Studio; loopback `tick()` mirrors the same order. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | simple_crypt / Host_FixupModelNames | — | N/A | id's model-name de-obfuscation; assets are already plain. N/A: DOS-era (asset de-obfuscation; assets plain). | — (implement first) |
@@ -215,10 +215,10 @@ The QW boot drives the shared sbar.c port (`src/client/hud.luau`) through a qwcl
 | SCR_CalcRefdef | qcoords.vrect (both boots) | VERIFIED | Math half: test_qcoords (fov_y from the window minus the sbar strip, gun rotation scaling). Visual half: the committed S4 anchor (qw-dm3-stairs.jpg) shows the crop + gun-over-HUD seating — the row predates the anchor landing. | `lune run tests/test_qcoords.luau`; diff the S4 anchor |
 | SCR_SizeUp_f / SCR_SizeDown_f | `sizeup`/`sizedown` commands (viewsize +/-10, clamp 30..120) | VERIFIED | Same shared viewsize path live-evidenced by [evidence/nq-sizeup-110.jpg](evidence/nq-sizeup-110.jpg) (identical code; the QW boot's viewsize command was already capture-verified in the vs100/vs110 pair). | Stage per evidence/nq-sizeup-110.txt (shared path) |
 | SCR_Init | — | SUBSTITUTED | | — (substitution; verify justification still holds) |
-| SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | — | UNIMPLEMENTED | Debug/status icons; svc_setpause is parsed (`cl.paused` gates prediction) but nothing draws it. | — (implement first) |
+| SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | shared hudlib icons + conditions (turtle/net; ram never — no surface cache), `show_fps` + hud.setFps, pause via hudlib.setPaused (wired since the qw pause battery — the old row note was stale) | VERIFIED | Icons: [evidence/nq-scr-icons.jpg](evidence/nq-scr-icons.jpg) (shared pipeline); FPS: "58 FPS" live on the QW boot in [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg); pause plaque is the NQ-evidenced shared plaque (qwclient calls setPaused). | Stage per the evidence files |
 | SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | `consolelib.update` (Heartbeat) | VERIFIED | Shared console module: the committed qw-console-open.jpg captures the slide/draw live on the QW boot (and the NQ pair covers the same code path). | qw-console-open evidence; RQDBG_Console "toggle" + capture |
 | WritePCXfile / SCR_ScreenShot_f / MipColor / SCR_DrawCharToSnap / SCR_DrawStringToSnap / SCR_RSShot_f | — | SUBSTITUTED | Screenshots/remote-shots are platform features; N/A. | — (substitution; verify justification still holds) |
-| SCR_DrawNotifyString / SCR_ModalMessage | — | UNIMPLEMENTED | | — (implement first) |
+| SCR_DrawNotifyString / SCR_ModalMessage | — | N/A (FLAGGED for user review 2026-07-06) | Dead in QW itself: SCR_ModalMessage has zero callers in the QW client source and scr_notifystring is set by nothing else — the modal y/n flow only exists in NetQuake. Flagged per the no-silent-N/A rule. | — (N/A proposal) |
 | SCR_UpdateScreen / SCR_UpdateWholeScreen | Heartbeat render sequence | SUBSTITUTED | Roblox render pipeline; the C draw-order (3D → sbar → console) has no equivalent yet because the 2D layers are absent. | — (substitution; verify justification still holds) |
 
 ## console.c
@@ -241,9 +241,9 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 | Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | VERIFIED | Committed captures: qw-messagemode.jpg (say: line typed through messageKey live) and qw-console-open.jpg (console battery typed through handleKey/handleText — same shared consolelib as the NQ battery). | qw-messagemode + qw-console-open evidence |
 | CompleteCommand | consolelib Tab handler + `com.completePrefix` | VERIFIED | Live: Tab completed "use" -> "user " on the QW boot ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)); matcher offline-tested (test_com). | `lune run tests/test_com.luau`; battery .txt |
 | CheckForCommand | unknown console lines forward as clc_stringcmd (Cmd_ForwardToServer) instead of becoming implicit `say` | SUBSTITUTED | C uses CheckForCommand so bare console text becomes chat; on this platform player speech MUST route through the filtered TextChatService say path, so implicit console-chat is deliberately not reproduced — bare text forwards to the server like any command. | — (substitution; platform chat filtering) |
-| Key_StringToKeynum / Key_KeynumToString | — | UNIMPLEMENTED | | — (implement first) |
-| Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | — | UNIMPLEMENTED | No bind system in the QW boot (code comment: "QW console/bind integration is journaled follow-up work"). | — (implement first) |
-| Key_ClearStates | — | UNIMPLEMENTED | | — (implement first) |
+| Key_StringToKeynum / Key_KeynumToString | shared `keymap` (quake key names <-> KeyCodes; both boots) | VERIFIED | Live bind battery: "zz" isn't a valid key (StringToKeynum refusal), bind echoes by name ([evidence/qw-menu-fps.txt](evidence/qw-menu-fps.txt)). | Battery per the evidence .txt |
+| Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | the QW bindings table (Key_Init seeds default.cfg-parity binds; keys route bindings through execCommand, +cmd release sends -cmd) | VERIFIED | Live battery: bind x +attack echoed, unbind cleared, invalid key refused ([evidence/qw-menu-fps.txt](evidence/qw-menu-fps.txt)). Key_WriteBindings within the family stays SUBSTITUTED (platform owns storage — see Host_WriteConfiguration). | Battery per the evidence .txt |
+| Key_ClearStates | `input.setEnabled(false)` clears every held button (console/chat/menu open) | VERIFIED | The same shared mechanism live-proven by the messagemode evidence (a forced attack did not fire while typing — qw-messagemode.jpg battery); the menu now routes through the identical refreshInputMode path. | qw-messagemode evidence (shared mechanism) |
 
 ## menu.c
 
@@ -251,23 +251,23 @@ Entire file UNIMPLEMENTED for the QW boot. Roblox platform owns quit/pause; opti
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| M_DrawCharacter / M_Print / M_PrintWhite / M_DrawTransPic / M_DrawPic / M_BuildTranslationTable / M_DrawTransPicTranslate / M_DrawTextBox / M_DrawSlider / M_DrawCheckbox | — | UNIMPLEMENTED | Menu drawing primitives. | — (implement first) |
-| M_ToggleMenu_f / M_Init / M_Draw / M_Keydown | — | UNIMPLEMENTED | | — (implement first) |
-| M_Menu_Main_f / M_Main_Draw / M_Main_Key | — | UNIMPLEMENTED | | — (implement first) |
-| M_Menu_Options_f / M_AdjustSliders / M_Options_Draw / M_Options_Key | — | UNIMPLEMENTED | | — (implement first) |
-| M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | UNIMPLEMENTED | | — (implement first) |
-| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | UNIMPLEMENTED | Video modes are platform-owned anyway. | — (implement first) |
-| M_Menu_Help_f / M_Help_Draw / M_Help_Key | — | UNIMPLEMENTED | | — (implement first) |
+| M_DrawCharacter / M_Print / M_PrintWhite / M_DrawTransPic / M_DrawPic / M_BuildTranslationTable / M_DrawTransPicTranslate / M_DrawTextBox / M_DrawSlider / M_DrawCheckbox | the shared menulib primitives (pics, confont text, drawTextBox, translated player pic); sliders/checkboxes belong to the substituted options menu | VERIFIED | The QW boot now drives the same menulib as NQ ([evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg)); the primitive set is live-evidenced by the NQ menu captures (setup page shows the translate + textbox: [evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg)). | Stage per the menu evidence files |
+| M_ToggleMenu_f / M_Init / M_Draw / M_Keydown | menulib toggle/create/update/handleKey wired into the QW boot (M key + togglemenu; menu consumes keys; input cleared while open) | VERIFIED | [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg): the menu live on the QW boot with the animated cursor and fade. | Stage per evidence/qw-menu-fps.txt |
+| M_Menu_Main_f / M_Main_Draw / M_Main_Key | shared menulib main menu | VERIFIED | [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg): MAIN plaque + all five items + menudot cursor on the QW boot. | Stage per evidence/qw-menu-fps.txt |
+| M_Menu_Options_f / M_AdjustSliders / M_Options_Draw / M_Options_Key | — | SUBSTITUTED | Same ruling as the NQ options rows (menus split 2026-07-05): console commands (sensitivity/fov/crosshair/viewsize/show_fps) + the director admin menu cover option setting. | — (substitution; NQ menus ruling) |
+| M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | SUBSTITUTED | Same ruling as the NQ keys-menu row: the bind/unbind/unbindall console commands (now live on the QW boot too) cover key configuration. | — (substitution; NQ menus ruling) |
+| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | N/A (FLAGGED for user review 2026-07-06) | Mirrors the NQ row's hand ruling (video modes are DOS-era / platform-owned); flagged because this QW twin was not in the original hand pass. | — (N/A proposal, NQ-mirror) |
+| M_Menu_Help_f / M_Help_Draw / M_Help_Key | shared menulib help pages | VERIFIED | The identical shared code is live-evidenced by the NQ help captures (nq-help-page1/2.jpg); the QW boot reaches it through the same handleKey (menu live in [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg)). | NQ help evidence (shared path) |
 | M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | — | SUBSTITUTED | Roblox leave-game UI. | — (substitution; verify justification still holds) |
-| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key / M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | — | UNIMPLEMENTED | Even in C these are "use the console" stubs for QW. | — (implement first) |
+| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key / M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | qwMode menulib: Single Player prints the network-only notice (C's QW stub), Multiplayer opens the color setup page | VERIFIED | Menu live on the QW boot ([evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg)); the setup page is the NQ-evidenced shared state ([evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg)) and CL_Color_f's capture proves the QW color path end-to-end. | Stage per the evidence files |
 
 ## skin.c
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| Skin_Find / Skin_Cache | — | UNIMPLEMENTED | No custom .pcx skins; players render base player.mdl skinnum. Colormap translation journaled open. | — (implement first) |
+| Skin_Find / Skin_Cache | — | SUBSTITUTED | Custom .pcx skins arrive by per-player file download in C; the platform ships a fixed asset bundle with no client file downloads (the same substitution as CL_Download_f/Skin_NextDownload). The base player.mdl skin + the VERIFIED colormap translation serve the identity purpose. | — (substitution; no client downloads) |
 | Skin_NextDownload | `execStufftext` `"skins"` branch → `begin N` | VERIFIED | Loopback: "handshake completed: server spawned the client" requires the skins→begin step. Substitution note in code: "no skin downloads over remotes: report ready immediately". | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| Skin_Skins_f / Skin_AllSkins_f | — | UNIMPLEMENTED | Console commands. | — (implement first) |
+| Skin_Skins_f / Skin_AllSkins_f | — | SUBSTITUTED | These reload/re-download the .pcx skin set — meaningless without the skin download mechanism (see Skin_Find). | — (substitution; no client downloads) |
 
 ## snd_dma.c
 
@@ -355,7 +355,7 @@ The QW boot's 2D overlay runs on the shared modules (`render/textures.luau`, `re
 | W_CleanupName / W_LoadWadFile / W_GetLumpName / W_GetLumpNum / SwapPic | shared wad module (both boots via hudlib) | VERIFIED | Stale row: the QW boot's sbar/HUD pics come from gfx.wad through the same shared wad module (every committed QW sbar capture shows them); the module itself is test-covered. | `lune run tests/test_wad.luau`; any QW sbar capture |
 | Draw_Init / Draw_Character / Draw_String / Draw_Alt_String / Draw_Pic / Draw_SubPic / Draw_TransPic / Draw_TransPicTranslate / Draw_ConsoleBackground / Draw_Fill | shared confont rows + hudlib pics/fills + consolelib conback (TransPicTranslate via `textures.translatePixels`) | VERIFIED | The committed QW capture set renders through every one of them: conchars strings + alt (bronze) text and the conback ([evidence/qw-console-open.jpg](evidence/qw-console-open.jpg)), wad pics/subpics + palette fills across the sbar/scoreboard captures, translated pixels tested in test_qwview. | qw-console-open + scoreboard evidence procedures; `lune run tests/test_wad.luau` |
 | Draw_TileClear | opaque `sbarStrip` frame (hudlib) | SUBSTITUTED | TileClear's job in the sbar path is erasing the world behind the bar area; the port parks an opaque full-width strip there instead (viewsize-driven), so there is never anything to clear. | code: hud.luau sbarStrip; viewsize captures |
-| Draw_FadeScreen | — | UNIMPLEMENTED | Menu backdrop dim; lands with the QW menu.c work. | — (implement with menu.c) |
+| Draw_FadeScreen | the shared menu fade backdrop | VERIFIED | Live behind the QW menu in [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg) (0.5-alpha frame vs C's 8x8 dither — recorded delta). | Stage per evidence/qw-menu-fps.txt |
 | Draw_Pixel / Draw_Crosshair | the conchars '+' at the window centre + the `crosshair` cvar command (NQ block ported) | VERIFIED | [evidence/qw-color-crosshair.jpg](evidence/qw-color-crosshair.jpg): the '+' visible mid-screen on the QW boot. Same window-centre anchoring delta as the NQ crosshair row (projection centre). | Stage per evidence/qw-color-crosshair.txt |
 | Draw_DebugChar / Draw_CharToConback / R_DrawRect8 / R_DrawRect16 / Draw_BeginDisc / Draw_EndDisc | — | SUBSTITUTED | Software-framebuffer plumbing (disc = disk-access icon); no framebuffer exists. | — (substitution; verify justification still holds) |
 
@@ -410,11 +410,11 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 153 |
+| VERIFIED | 163 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 23 |
-| SUBSTITUTED | 54 |
-| N/A | 5 |
+| UNIMPLEMENTED | 5 |
+| SUBSTITUTED | 60 |
+| N/A | 7 |
 | **Total rows** | **235** |
 
 Counts are the mechanical status-column count (2026-07-05 presentation pass;

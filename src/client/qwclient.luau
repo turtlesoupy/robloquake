@@ -35,7 +35,9 @@ local textures = require(script.Parent.render.textures)
 local worldmesh = require(script.Parent.render.worldmesh)
 local consolelib = require(script.Parent.console)
 local hudlib = require(script.Parent.hud)
+local menulib = require(script.Parent.menu)
 local input = require(script.Parent.input)
+local keymap = require(script.Parent.keymap)
 local soundlib = require(script.Parent.sound)
 local viewmodellib = require(script.Parent.render.viewmodel)
 
@@ -116,6 +118,7 @@ return function()
 	-- V_DriftPitch state (QW has no idealpitch wire — centers to 0)
 	local pitchDrift = viewlib.newPitchDrift()
 	local lastDriftPitch: number? = nil
+	local showFps = false -- SCR_DrawFPS gate (show_fps command)
 
 	local cshiftGui = Instance.new("ScreenGui")
 	cshiftGui.Name = "QuakeCshift"
@@ -138,6 +141,17 @@ return function()
 	overlayGui.ResetOnSpawn = false
 	overlayGui.Parent = player:WaitForChild("PlayerGui")
 	local con = consolelib.create(fs, pal, overlayGui)
+	local mnu = menulib.create(fs, pal, overlayGui)
+	mnu.qwMode = true
+	mnu.onBeep = function(name: string)
+		soundlib.localSound(sndsys, name)
+	end
+	mnu.print = function(s2: string)
+		consolelib.print(con, s2)
+	end
+	mnu.onQuit = function()
+		consolelib.print(con, "use the Roblox menu to leave the experience")
+	end
 
 	-- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair
 	-- cvar (same window-centre anchoring rationale as the NQ boot)
@@ -878,8 +892,9 @@ return function()
 
 	local directorUiOpen = false
 	local function refreshInputMode()
-		-- while the console or chat line is up the player stops moving
-		input.setEnabled(not (con.open or chatOpen or directorUiOpen))
+		-- while the console, chat line or menu is up the player stops
+		-- moving (Key_ClearStates lives in input.setEnabled(false))
+		input.setEnabled(not (con.open or chatOpen or directorUiOpen or menulib.isOpen(mnu)))
 		if directorUiOpen then
 			input.freeMouse() -- the admin menu is clickable UI
 		end
@@ -900,6 +915,30 @@ return function()
 		end,
 	})
 	-- ===== end match director UI =====
+
+	-- keys.c bind system (Key_SetBinding/Key_Bind_f family): quake key
+	-- names from the shared keymap; Key_Init seeds default.cfg-parity
+	-- bindings. +/- button commands route through input.setButton.
+	local BUTTON_CMDS = {
+		forward = true, back = true, moveleft = true, moveright = true,
+		left = true, right = true, lookup = true, lookdown = true,
+		jump = true, attack = true, speed = true, strafe = true,
+		klook = true,
+	}
+	local bindings: { [string]: string } = {
+		w = "+forward", uparrow = "+forward",
+		s = "+back", downarrow = "+back",
+		a = "+moveleft", d = "+moveright",
+		leftarrow = "+left", rightarrow = "+right",
+		pgup = "+lookup", pgdn = "+lookdown",
+		space = "+jump", ctrl = "+attack", shift = "+speed",
+		tab = "+showscores", t = "messagemode",
+	}
+	for i = 1, 8 do
+		bindings[tostring(i)] = `impulse {i}`
+	end
+	local showScoresDown = false
+	local lastPingRequest = 0
 
 	-- Cmd_ExecuteString subset: the client commands the QW boot handles
 	-- locally; everything else is forwarded verbatim (Cmd_ForwardToServer:
@@ -926,10 +965,20 @@ return function()
 			consolelib.print(con, "use the Roblox menu to leave the experience")
 		elseif cmd == "+showscores" or cmd == "-showscores" then
 			-- Sbar_ShowScores / Sbar_DontShowScores (TAB binds these)
-			hudlib.setShowScores(hud, cmd == "+showscores")
+			showScoresDown = cmd == "+showscores"
+			hudlib.setShowScores(hud, showScoresDown)
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
 			-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores
 			hudlib.setShowTeamScores(hud, cmd == "+showteamscores")
+		elseif cmd == "show_fps" then
+			-- SCR_DrawFPS gate
+			showFps = (tonumber(args) or 0) ~= 0
+			if not showFps then
+				hudlib.setFps(hud, nil)
+			end
+		elseif cmd == "togglemenu" then
+			menulib.toggle(mnu)
+			refreshInputMode()
 		elseif cmd == "crosshair" then
 			local v = tonumber(args)
 			if v then
@@ -1023,6 +1072,34 @@ return function()
 					consolelib.print(con, "User not in server.")
 				end
 			end
+		elseif (cmd:sub(1, 1) == "+" or cmd:sub(1, 1) == "-") and BUTTON_CMDS[cmd:sub(2)] then
+			-- KeyDown/KeyUp wrappers: +forward/-forward etc.
+			input.setButton(cmd:sub(2), cmd:sub(1, 1) == "+")
+		elseif cmd == "bind" then
+			-- Key_Bind_f
+			local t = {}
+			for tok in line:gmatch("%S+") do
+				table.insert(t, tok)
+			end
+			local key = (t[2] or ""):lower()
+			if key == "" then
+				consolelib.print(con, "bind <key> [command] : attach a command to a key")
+			elseif not keymap.CODES[key] then
+				consolelib.print(con, `"{key}" isn't a valid key`)
+			elseif #t == 2 then
+				consolelib.print(con, `"{key}" = "{bindings[key] or ""}"`)
+			else
+				bindings[key] = table.concat(t, " ", 3):gsub('^"(.*)"$', "%1")
+			end
+		elseif cmd == "unbind" then
+			-- Key_Unbind_f
+			local key = (args :: string):lower():match("%S+")
+			if key then
+				bindings[key] = nil
+			end
+		elseif cmd == "unbindall" then
+			-- Key_Unbindall_f
+			table.clear(bindings)
 		elseif cmd == "centerview" then
 			-- V_StartPitchDrift: glide back to level, not a snap
 			viewlib.startPitchDrift(pitchDrift, cl.time)
@@ -1063,6 +1140,9 @@ return function()
 		end
 	end
 	con.onCommand = execCommand
+	mnu.onColor = function(top: number, bottom: number)
+		execCommand(`color {top} {bottom}`)
+	end
 	-- CompleteCommand list (keys.c Tab): local + forwarded commands
 	con.completions = {
 		"bf", "centerview", "clear", "disconnect", "fov", "impulse", "kill",
@@ -1169,43 +1249,20 @@ return function()
 		end
 		return ""
 	end
-	local keyButtons: { [Enum.KeyCode]: string } = {
-		[Enum.KeyCode.W] = "forward",
-		[Enum.KeyCode.Up] = "forward",
-		[Enum.KeyCode.S] = "back",
-		[Enum.KeyCode.Down] = "back",
-		[Enum.KeyCode.A] = "moveleft",
-		[Enum.KeyCode.D] = "moveright",
-		-- default.cfg NQ parity: arrow keys turn (CL_AdjustAngles in the
-		-- shared input.updateTurn; PageUp/PageDown look)
-		[Enum.KeyCode.Left] = "left",
-		[Enum.KeyCode.Right] = "right",
-		[Enum.KeyCode.PageUp] = "lookup",
-		[Enum.KeyCode.PageDown] = "lookdown",
-		[Enum.KeyCode.Space] = "jump",
-		[Enum.KeyCode.LeftControl] = "attack",
-		[Enum.KeyCode.LeftShift] = "speed",
-	}
-	local showScoresDown = false
-	local lastPingRequest = 0
 	local function onKey(io: InputObject, down: boolean)
 		if io.UserInputType == Enum.UserInputType.MouseButton1 then
 			input.setButton("attack", down)
 			return
 		end
-		if io.KeyCode == Enum.KeyCode.Tab then
-			-- +showscores (Roblox also opens its playerlist; documented)
-			if down ~= showScoresDown then
-				showScoresDown = down
-				hudlib.setShowScores(hud, down)
-			end
+		local keyname = keymap.keyName(io.KeyCode)
+		local b = keyname and bindings[keyname]
+		if not b then
 			return
 		end
-		local name = keyButtons[io.KeyCode]
-		if name then
-			input.setButton(name, down)
-		elseif down and io.KeyCode.Value >= Enum.KeyCode.One.Value and io.KeyCode.Value <= Enum.KeyCode.Eight.Value then
-			input.setImpulse(io.KeyCode.Value - Enum.KeyCode.Zero.Value)
+		if down then
+			execCommand(b)
+		elseif b:sub(1, 1) == "+" then
+			execCommand("-" .. b:sub(2))
 		end
 	end
 	UserInputService.InputBegan:Connect(function(io, processed)
@@ -1229,8 +1286,14 @@ return function()
 				messageKey(key)
 				return
 			end
-			if key == Enum.KeyCode.T then
-				execCommand("messagemode") -- default.cfg "bind t messagemode"
+			if menulib.isOpen(mnu) then
+				menulib.handleKey(mnu, io)
+				refreshInputMode()
+				return
+			end
+			if key == Enum.KeyCode.M then
+				menulib.toggle(mnu) -- M_ToggleMenu_f (Escape is platform-reserved)
+				refreshInputMode()
 				return
 			end
 		elseif con.open or chatOpen then
@@ -1246,11 +1309,33 @@ return function()
 
 	local sndDrained = 0
 	local accum = 0
+	local turtleCount = 0
+	local lastReceivedAt = 0
+	local fpsFrames, fpsStart = 0, 0
 	RunService.Heartbeat:Connect(function(dt: number)
 		cl.realtime += dt
 
+		-- SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS conditions
+		if dt < 0.1 then
+			turtleCount = 0
+		else
+			turtleCount += 1
+		end
+		if #inbound > 0 then
+			lastReceivedAt = os.clock()
+		end
+		hudlib.setIcons(hud, turtleCount > 2, false, cl.state == "active" and os.clock() - lastReceivedAt > 0.3)
+		if showFps then
+			fpsFrames += 1
+			if cl.realtime - fpsStart >= 1 then
+				hudlib.setFps(hud, math.floor(fpsFrames / (cl.realtime - fpsStart) + 0.5))
+				fpsFrames, fpsStart = 0, cl.realtime
+			end
+		end
+
 		-- SCR_DrawConsole / Con_DrawNotify: console slide + the chat line
 		consolelib.update(con, cl.realtime)
+		menulib.update(mnu, cl.realtime)
 		chatHolder.Visible = chatOpen
 		if chatOpen then
 			local ccursor = if math.floor(cl.realtime * 4) % 2 == 0 then string.char(11) else " "

@@ -1,0 +1,12 @@
+Capture context: nq-scr-icons.jpg (2026-07-06)
+===============================================
+Engine: NQ boot (nq-dm preset), dm3. The three SCR status icons
+(turtle / ram / net — the real gfx.wad lumps through the shared hud
+pic pipeline) forced visible via cloned labels (the heartbeat resets
+the live ones every frame, which is itself the condition logic
+working: turtle needs 3 consecutive >0.1s frames, net a 0.3s message
+stall, ram a surface-cache thrash that cannot occur — no surface
+cache exists).
+
+Re-verify: clone PlayerGui.QuakeHud.scricons children visible, capture;
+or stall the frame clock >0.1s x3 for a live turtle.
