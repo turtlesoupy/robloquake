@@ -1707,6 +1707,10 @@ for _, l in {
 	"bind e +moveup",
 	"bind c +movedown",
 	"bind m togglemenu",
+	-- scoreboard lives on N (next to M's menu): Tab toggles the Roblox
+	-- player list at CoreScript priority and can't be unbound
+	"unbind tab",
+	"bind n +showscores",
 } do
 	execLine(l)
 end

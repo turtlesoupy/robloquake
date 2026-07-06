@@ -1087,7 +1087,9 @@ return function()
 		leftarrow = "+left", rightarrow = "+right",
 		pgup = "+lookup", pgdn = "+lookdown",
 		space = "+jump", ctrl = "+attack", shift = "+speed",
-		tab = "+showscores", t = "messagemode",
+		-- scoreboard lives on N (next to M's menu): Tab toggles the
+		-- Roblox player list at CoreScript priority and can't be unbound
+		n = "+showscores", t = "messagemode",
 	}
 	for i = 1, 8 do
 		bindings[tostring(i)] = `impulse {i}`
@@ -1119,7 +1121,7 @@ return function()
 			-- CL_Quit_f / CL_Disconnect_f: N/A on this platform
 			consolelib.print(con, "use the Roblox menu to leave the experience")
 		elseif cmd == "+showscores" or cmd == "-showscores" then
-			-- Sbar_ShowScores / Sbar_DontShowScores (TAB binds these)
+			-- Sbar_ShowScores / Sbar_DontShowScores (N binds these)
 			showScoresDown = cmd == "+showscores"
 			hudlib.setShowScores(hud, showScoresDown)
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
