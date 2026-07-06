@@ -756,6 +756,7 @@ return function()
 			-- the death band keep the owner's avatar — colormap carries the
 			-- owner's slot, exactly like the NQ boot
 			local corpsePlayer: Player? = nil
+			local corpseColors: number? = nil
 			if
 				avatarsOn()
 				and es.modelindex == cl.playerindex
@@ -764,10 +765,18 @@ return function()
 				and es.colormap <= qwp.MAX_CLIENTS
 			then
 				corpsePlayer = avatarLayer.playerForSlot(es.colormap)
+				-- corpses keep the owner's shirt/pants re-skin (colormap is
+				-- the 1-based owner slot; cl.players is 0-based)
+				local info = cl.players[es.colormap - 1]
+				if info then
+					local top = tonumber(info.userinfo.topcolor) or 0
+					local bottom = tonumber(info.userinfo.bottomcolor) or 0
+					corpseColors = top * 16 + bottom
+				end
 			end
 			if
 				corpsePlayer
-				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, nil, true)
+				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, corpseColors, true)
 			then
 				seenAvatars[1000 + es.number] = true
 			else

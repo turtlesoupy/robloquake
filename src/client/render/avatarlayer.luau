@@ -115,6 +115,7 @@ export type Layer = {
 	destroySlot: (slot: number) -> (),
 	isDeathFrame: (frame: number) -> boolean,
 	pantsColor: (colors: number) -> Color3,
+	shirtColor: (colors: number) -> Color3,
 	tagMuzzle: (re: entrender.RenderEnt, modelName: string?, origin: vector) -> (),
 	blendOrigin: (re: entrender.RenderEnt, origin: vector) -> vector,
 	pointInWater: (p: vector) -> boolean,
@@ -125,6 +126,7 @@ function avatarlayer.new(deps: Deps): Layer
 	local weapons: { [number]: AvatarWeapon } = {}
 	local prevFrame: { [number]: number } = {} -- pain-band edge detection
 	local pantsCache: { [number]: Color3 } = {}
+	local shirtCache: { [number]: Color3 } = {}
 
 	local layer = {} :: Layer
 
@@ -141,18 +143,31 @@ function avatarlayer.new(deps: Deps): Layer
 		return frame >= DEATH_FIRST and frame <= DEATH_LAST
 	end
 
-	-- representative pants-row palette color (CL_NewTranslation's bottom
-	-- range: forward rows ascend, rows >= 128 are reversed)
+	-- representative palette color for a translation row start
+	-- (CL_NewTranslation ranges: forward rows ascend, rows >= 128 reversed)
+	local function rowColor(row: number): Color3
+		local pal = deps.palette
+		local idx = row + (if row < 128 then 11 else 4)
+		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
+	end
+
 	function layer.pantsColor(colors: number): Color3
 		local cached = pantsCache[colors]
 		if cached then
 			return cached
 		end
-		local pal = deps.palette
-		local bottom = bit32.lshift(bit32.band(colors, 15), 4)
-		local idx = bottom + (if bottom < 128 then 11 else 4)
-		local c3 = Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
+		local c3 = rowColor(bit32.lshift(bit32.band(colors, 15), 4))
 		pantsCache[colors] = c3
+		return c3
+	end
+
+	function layer.shirtColor(colors: number): Color3
+		local cached = shirtCache[colors]
+		if cached then
+			return cached
+		end
+		local c3 = rowColor(bit32.band(colors, 0xf0))
+		shirtCache[colors] = c3
 		return c3
 	end
 
@@ -374,9 +389,14 @@ function avatarlayer.new(deps: Deps): Layer
 			end
 		end
 		prevFrame[slot] = frame
-		-- quake shirt/pants: steady pants-color tint (the teamplay
-		-- signal); default colors (0) stay untinted
-		avatarrender.setTeamColor(ae, if colors and colors ~= 0 then layer.pantsColor(colors) else nil)
+		-- quake shirt/pants: re-skin the rig's body regions in the
+		-- translation colors (the identity/teamplay signal); default
+		-- colors (0) keep the avatar's real look
+		if colors and colors ~= 0 then
+			avatarrender.setTeamColors(ae, layer.shirtColor(colors), layer.pantsColor(colors))
+		else
+			avatarrender.setTeamColors(ae, nil, nil)
+		end
 		avatarrender.setLight(ae, deps.entityLight(origin))
 		local swim = forceSwim == true or layer.pointInWater(origin)
 		avatarrender.update(ae, origin, angles, deps.time(), dead, swim, velocity)

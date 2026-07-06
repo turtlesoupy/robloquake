@@ -458,7 +458,11 @@ local function updateAvatarDummy()
 		end
 	end
 	local colAttr = workspace:GetAttribute("RQDBG_AvatarDummyColors")
-	avatarrender.setTeamColor(ae, if typeof(colAttr) == "number" and colAttr ~= 0 then avatarLayer.pantsColor(colAttr) else nil)
+	if typeof(colAttr) == "number" and colAttr ~= 0 then
+		avatarrender.setTeamColors(ae, avatarLayer.shirtColor(colAttr), avatarLayer.pantsColor(colAttr))
+	else
+		avatarrender.setTeamColors(ae, nil, nil)
+	end
 	avatarrender.setLight(ae, entityLight(origin))
 	avatarrender.update(ae, origin, vector.create(0, yawDeg, 0), c.time, dead, swim, vel)
 	if dead then

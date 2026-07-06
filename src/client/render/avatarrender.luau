@@ -47,6 +47,25 @@ local PAIN_FLASH_TIME = 0.22
 
 type MoveState = "idle" | "run" | "jump" | "fall" | "swim" | "swimidle"
 
+type Region = "shirt" | "pants"
+-- a clothing layer's tintable color (classic clothing Color3,
+-- SurfaceAppearance Color) with its original value for restore
+type TintTarget = { inst: Instance, prop: string, color0: Color3 }
+
+-- accessory types that dress the shirt/pants regions (layered clothing);
+-- hats/hair/faces are identity, not clothing, and are never tinted
+local ACCESSORY_REGION: { [Enum.AccessoryType]: Region } = {
+	[Enum.AccessoryType.TShirt] = "shirt",
+	[Enum.AccessoryType.Shirt] = "shirt",
+	[Enum.AccessoryType.Jacket] = "shirt",
+	[Enum.AccessoryType.Sweater] = "shirt",
+	[Enum.AccessoryType.Pants] = "pants",
+	[Enum.AccessoryType.Shorts] = "pants",
+	[Enum.AccessoryType.DressSkirt] = "pants",
+	[Enum.AccessoryType.LeftShoe] = "pants",
+	[Enum.AccessoryType.RightShoe] = "pants",
+}
+
 export type AvatarEnt = {
 	userId: number,
 	model: Model?,
@@ -68,8 +87,12 @@ export type AvatarEnt = {
 	deathT0: number,
 	painUntil: number,
 	highlight: Highlight?,
-	teamColor: Color3?,
+	shirtColor: Color3?,
+	pantsColor: Color3?,
 	baseColors: { [BasePart]: Color3 },
+	partRegion: { [BasePart]: Region },
+	shirtTints: { TintTarget },
+	pantsTints: { TintTarget },
 	lightFactor: number,
 }
 
@@ -95,8 +118,12 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		deathT0 = 0,
 		painUntil = 0,
 		highlight = nil,
-		teamColor = nil,
+		shirtColor = nil,
+		pantsColor = nil,
 		baseColors = {},
+		partRegion = {},
+		shirtTints = {},
+		pantsTints = {},
 		lightFactor = -1,
 	}
 	task.spawn(function()
@@ -147,6 +174,54 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 				ae.baseColors[d] = d.Color
 			end
 		end
+		-- quake shirt/pants tint targets. Body parts are direct children
+		-- of the rig; regions mirror the alias translation ranges:
+		-- shirt = torso + arms, pants = legs + feet
+		for _, d in rig:GetChildren() do
+			if d:IsA("BasePart") and d ~= root then
+				local n = d.Name
+				if string.find(n, "Leg") or string.find(n, "Foot") then
+					ae.partRegion[d] = "pants"
+				elseif string.find(n, "Torso") or string.find(n, "Arm") or string.find(n, "Hand") then
+					ae.partRegion[d] = "shirt"
+				end
+			end
+		end
+		-- clothing accessory parts tint with their region too (a jacket
+		-- over a red shirt reads red); hats/hair keep their own colors
+		for _, a in rig:GetChildren() do
+			if a:IsA("Accessory") then
+				local region = ACCESSORY_REGION[a.AccessoryType]
+				if region then
+					for _, p in a:GetDescendants() do
+						if p:IsA("BasePart") then
+							ae.partRegion[p] = region
+						end
+					end
+				end
+			end
+		end
+		-- wearables stay ON and take the tint through their color
+		-- properties: classic clothing multiplies Color3 into its texture,
+		-- SurfaceAppearance multiplies Color into its ColorMap
+		for _, d in rig:GetDescendants() do
+			local region: Region? = nil
+			local prop: string? = nil
+			if d:IsA("Shirt") or d:IsA("ShirtGraphic") then
+				region, prop = "shirt", "Color3"
+			elseif d:IsA("Pants") then
+				region, prop = "pants", "Color3"
+			elseif d:IsA("SurfaceAppearance") then
+				local p = d.Parent
+				if p and p:IsA("BasePart") then
+					region, prop = ae.partRegion[p], "Color"
+				end
+			end
+			if region and prop then
+				local list = if region == "shirt" then ae.shirtTints else ae.pantsTints
+				table.insert(list, { inst = d, prop = prop, color0 = (d :: any)[prop] })
+			end
+		end
 		ae.model = rig
 		ae.humanoid = humanoid
 		ae.rootPart = root
@@ -165,10 +240,26 @@ function avatarrender.flashPain(ae: AvatarEnt, time: number)
 	ae.painUntil = time + PAIN_FLASH_TIME
 end
 
--- persistent tint in the player's Quake pants color (the teamplay
--- signal the alias skin translation carries); nil clears it
-function avatarrender.setTeamColor(ae: AvatarEnt, color: Color3?)
-	ae.teamColor = color
+local function applyTints(targets: { TintTarget }, tint: Color3?)
+	for _, t in targets do
+		(t.inst :: any)[t.prop] = tint or t.color0
+	end
+end
+
+-- persistent re-skin in the player's Quake shirt/pants colors (the
+-- identity/teamplay signal the alias skin translation carries); nil
+-- clears a region back to the avatar's real look. Body parts are
+-- painted solid (via setLight's repaint); wearables stay on and take
+-- the tint through their clothing color properties.
+function avatarrender.setTeamColors(ae: AvatarEnt, shirt: Color3?, pants: Color3?)
+	if ae.shirtColor == shirt and ae.pantsColor == pants then
+		return
+	end
+	ae.shirtColor = shirt
+	ae.pantsColor = pants
+	applyTints(ae.shirtTints, shirt)
+	applyTints(ae.pantsTints, pants)
+	ae.lightFactor = -1 -- force the next setLight to repaint part colors
 end
 
 -- R_AliasSetupLighting for rigs: same lightmap-sample scalar the alias
@@ -183,7 +274,9 @@ function avatarrender.setLight(ae: AvatarEnt, light: number)
 	end
 	ae.lightFactor = l
 	for part, c0 in ae.baseColors do
-		part.Color = Color3.new(c0.R * l, c0.G * l, c0.B * l)
+		local region = ae.partRegion[part]
+		local c = if region == "shirt" then ae.shirtColor or c0 elseif region == "pants" then ae.pantsColor or c0 else c0
+		part.Color = Color3.new(c.R * l, c.G * l, c.B * l)
 	end
 end
 
@@ -347,11 +440,11 @@ function avatarrender.update(
 		end
 	end
 
-	-- one Highlight per rig (Roblox caps enabled highlights at 31):
-	-- pain flash takes priority, then the steady team tint
+	-- one Highlight per rig (Roblox caps enabled highlights at 31), for
+	-- the pain flash; shirt/pants colors are painted into the parts
 	local flashing = ae.painUntil > time and not ae.dead
 	local highlight = ae.highlight
-	if flashing or ae.teamColor then
+	if flashing then
 		if not highlight then
 			highlight = Instance.new("Highlight")
 			highlight.DepthMode = Enum.HighlightDepthMode.Occluded
@@ -360,13 +453,8 @@ function avatarrender.update(
 			highlight.Parent = model
 			ae.highlight = highlight
 		end
-		if flashing then
-			highlight.FillColor = Color3.fromRGB(210, 25, 25)
-			highlight.FillTransparency = 0.35 + 0.65 * (1 - (ae.painUntil - time) / PAIN_FLASH_TIME)
-		else
-			highlight.FillColor = ae.teamColor :: Color3
-			highlight.FillTransparency = 0.7
-		end
+		highlight.FillColor = Color3.fromRGB(210, 25, 25)
+		highlight.FillTransparency = 0.35 + 0.65 * (1 - (ae.painUntil - time) / PAIN_FLASH_TIME)
 		highlight.Enabled = true
 	elseif highlight and highlight.Enabled then
 		highlight.Enabled = false
@@ -413,6 +501,9 @@ function avatarrender.destroy(ae: AvatarEnt)
 	ae.toolTrack = nil
 	ae.highlight = nil
 	ae.baseColors = {}
+	ae.partRegion = {}
+	ae.shirtTints = {}
+	ae.pantsTints = {}
 end
 
 return avatarrender
