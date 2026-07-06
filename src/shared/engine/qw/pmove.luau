@@ -946,5 +946,7 @@ end
 -- exported for CL_NudgePosition (cl_pred.c uses PM_HullPointContents on
 -- the world's player hull directly)
 pmove.hullPointContents = hullPointContents
+-- exported for Cam_DoTrace (cl_cam.c fakes a player move for the flyby)
+pmove.playerTrace = playerTrace
 
 return pmove

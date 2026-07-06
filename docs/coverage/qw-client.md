@@ -128,28 +128,28 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 
 ## cl_cam.c (spectator/chase camera)
 
-Autocam essentials live in qwclient.luau (`camLock`/`camUnlock`/`camCheckHighTarget`/`camTrack`): always-on cl_hightrack target pick, `ptrack <num>` stringcmds, chase-locked view through the tracked player's predicted origin + viewangles, BUTTON_JUMP cycling, clc_tmove ride-along. The flyby-position search (InitFlyby family) is not ported — the view locks straight on like cl_chasecam 1.
+Autocam essentials live in qwcl.luau (`camLock`/`camUnlock`/`camCheckHighTarget`/`camTrack`): always-on cl_hightrack target pick, `ptrack <num>` stringcmds, chase-locked view through the tracked player's predicted origin + viewangles, BUTTON_JUMP cycling, clc_tmove ride-along. The flyby-position search (InitFlyby family) is ported and offline-tested; the default view remains the cl_chasecam-1 lock.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| vectoangles / vlen (statics) | — | UNIMPLEMENTED | Only needed by the unported flyby search. | — (implement first) |
+| vectoangles / vlen (statics) | `qwcl.camVectoangles` / `camVlen` | VERIFIED | test_qw_cam: the C int truncation (yaw 45 exact), straight-up/down pitch 90/270, negative-yaw +360 wrap, vlen. | `lune run tests/test_qw_cam.luau` |
 | Cam_DrawViewModel / Cam_DrawPlayer | qwcl.camTrackedState gate + qwclient render branch | VERIFIED | The gating state function (spectator+locked+fresh playerstate) is offline-tested through the three-client spectator loopback (test_qw_cam); the render consumers are two code-pinned lines (skip tracked model in relink, draw the gun with the target's weaponframe). | `lune run tests/test_qw_cam.luau` |
 | Cam_Unlock / Cam_Lock | qwcl.camUnlock / qwcl.camLock (shared) | VERIFIED | test_qw_cam over the real wire: ptrack <n> reaches the server (spec_track set 1-based), bare ptrack clears it; locks immediately (chasecam semantics, no flyby — recorded delta). | `lune run tests/test_qw_cam.luau` |
-| Cam_DoTrace / Cam_TryFlyby / Cam_IsVisible / InitFlyby | — | UNIMPLEMENTED | Flyby camera-position search skipped; the port is chase-lock only. | — (implement first) |
+| Cam_DoTrace / Cam_TryFlyby / Cam_IsVisible / InitFlyby | `qwcl.initFlyby` family (player-hull traces via pmove.playerTrace, the 12 direction combos, the 32..800 usable band, checkvis pass) | VERIFIED | test_qw_cam: InitFlyby finds a camera spot around the live tracked player on the booted map, the spot passes Cam_IsVisible and sits in the 32..800 band, and the search locks the camera. | `lune run tests/test_qw_cam.luau` |
 | Cam_CheckHighTarget | qwcl.camCheckHighTarget (shared) | VERIFIED | test_qw_cam: with two players and a spectator, the frag leader is picked (bravo at 5 frags over the wire-synced scoreboard); spectators and empty slots skipped. | `lune run tests/test_qw_cam.luau` |
 | Cam_Track / adjustang / Cam_SetView / Cam_FinishMove | qwcl.camTrack (shared) | VERIFIED | test_qw_cam: hightrack pick while unlocked, BUTTON_JUMP edge cycling (held jump doesn't pogo; release+press cycles), kicked-target retarget to the survivor, clc_tmove written when >16 units off. Deltas stand: hightrack recheck only while unlocked; adjustang/Cam_SetView are #if 0 in the C. | `lune run tests/test_qw_cam.luau` |
 | Cam_Reset / CL_InitCam | — | SUBSTITUTED | cl_hightrack/cl_chasecam cvars fixed on; state is per-boot locals. | — (substitution; verify justification still holds) |
 
 ## cl_demo.c (demo record/playback)
 
-All demo functionality is out of scope for the milestone (fidelity backlog lists demo playback). One substitution: the read path.
+The .qwd pipeline is ported and offline-tested (test_qw_demo): record synthesizes the C signon from current state, the byte format round-trips, playback replays into a fresh client. One substitution: the packet-source dispatch.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| CL_StopPlayback / CL_WriteDemoCmd / CL_WriteDemoMessage / CL_GetDemoMessage | — | UNIMPLEMENTED | No .qwd file I/O. | — (implement first) |
+| CL_StopPlayback / CL_WriteDemoCmd / CL_WriteDemoMessage / CL_GetDemoMessage | the qwcl demo core: dem_cmd/dem_read/dem_set blocks, the .qwd byte layout (24-byte usercmd struct + viewangles), `demoStep` mirroring the C playback effects (dem_set seeds sequences, dem_cmd fills the frame ring + advances outgoing, dem_read parses) | VERIFIED | test_qw_demo: a live loopback run records, the .qwd byte stream round-trips block-exact, and a BRAND-NEW client replays it — world loads from the recorded signon, the player slot is taken, and the recorded run's motion replays (>100 units). | `lune run tests/test_qw_demo.luau` |
 | CL_GetMessage | `qwcl.processPacket` | SUBSTITUTED | The demo-vs-net dispatch collapses to the remote packet queue. | — (substitution; verify justification still holds) |
-| CL_Stop_f / CL_Record_f / CL_ReRecord_f / CL_PlayDemo_f | — | UNIMPLEMENTED | | — (implement first) |
-| CL_WriteRecordDemoMessage / CL_WriteSetDemoMessage | — | UNIMPLEMENTED | | — (implement first) |
+| CL_Stop_f / CL_Record_f / CL_ReRecord_f / CL_PlayDemo_f | record/rerecord/stop/playdemo(+stopdemo) commands over an in-memory .qwd store (no user filesystem — the NQ boot's demo-store policy) | VERIFIED | test_qw_demo drives recordStart/recordStop/serialize/parse/playback end to end; the boot commands are thin wrappers over those exact functions (code). | `lune run tests/test_qw_demo.luau` |
+| CL_WriteRecordDemoMessage / CL_WriteSetDemoMessage | `recordStart` synthesizes the signon from current state exactly like C (serverdata+fullserverinfo, complete sound/model lists, baselines+statics, lightstyles/players/stats) in ascending fake-sequence dem_read blocks, then dem_set with the live sequences. Delta: lists ride one block each (no MAX_MSGLEN/2 chunking — no UDP framing to respect). | VERIFIED | test_qw_demo: dem_set closes the 5-block synthesized signon; the fresh playback client boots entirely from those blocks. | `lune run tests/test_qw_demo.luau` |
 | CL_FinishTimeDemo / CL_TimeDemo_f | — | N/A | N/A: as the NQ timedemo rows. | — (implement first) |
 
 ## cl_tent.c
@@ -410,9 +410,9 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 163 |
+| VERIFIED | 168 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 5 |
+| UNIMPLEMENTED | 0 |
 | SUBSTITUTED | 60 |
 | N/A | 7 |
 | **Total rows** | **235** |
@@ -420,11 +420,9 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 Counts are the mechanical status-column count (2026-07-05 presentation pass;
 the previous 53-UNIMPLEMENTED total under-counted by one vs the same method).
 
-Remaining gaps (burn-down queue):
-1. **cl_cam.c flyby search** — spectator autocam is chase-lock only (InitFlyby/Cam_TryFlyby camera positioning not ported).
-2. **menu.c / keys.c binds / demo file I/O** — no QW menus, bind system, or .qwd record/playback.
-3. **Console command odds** — version/users/userinfo editing, tab completion (ruled IMPLEMENT set).
-4. **Sbar_DrawFrags** — the in-sbar 4-cell frag row (shared with the NQ HUD odds cluster).
-Also noteworthy: S_UpdateAmbientSounds is unwired in the QW boot (no water/sky ambients).
+This manifest is DONE (2026-07-06): zero UNIMPLEMENTED, zero PENDING.
+Two rows carry N/A proposals FLAGGED for user review (SCR_ModalMessage/
+DrawNotifyString — zero callers in the QW client source — and the video
+menu mirror of the NQ hand ruling).
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 10 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

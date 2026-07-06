@@ -34,18 +34,19 @@ counterpart, each with its justification.
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
 | [nq-client.md](nq-client.md) — WinQuake client/presentation | 156 | 0 | 0 | 81 | 27 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 163 | 0 | 5 | 60 | 7 |
-| **Total** | **811** | **0** | **5** | **288** | **76** |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 168 | 0 | 0 | 60 | 7 |
+| **Total** | **816** | **0** | **0** | **294** | **76** |
 
-Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
-presentation pass); these are column-exact status-cell counts per content
-row — the naive `grep -oE '\| (VERIFIED|...) '` over-counts by matching
-totals tables and reason cells, so count the status COLUMN only. The
-2026-07-05 presentation pass also corrected two stale per-file totals to
-the mechanical column count (qw-server UNIMPLEMENTED was 14, not 7 — the
-broken-wiring and ruled-IMPLEMENT debug rows; qw-client had one more
-UNIMPLEMENTED row than its table claimed). PENDING reached ZERO on
-2026-07-06 (the serverinfo runtime-mutability partial landed).
+**BURN-DOWN COMPLETE 2026-07-06: zero UNIMPLEMENTED and zero PENDING
+across all four manifests** — every row is VERIFIED (re-runnable
+evidence), SUBSTITUTED (platform justification cited), or N/A. Four rows
+carry N/A *proposals flagged for user review* (they were dead code in
+the C itself but were not part of the original hand pass):
+nq-client SCR_BringDownConsole + Con_NotifyBox, qw-client
+SCR_ModalMessage/SCR_DrawNotifyString + the M_Menu_Video mirror.
+Counts are column-exact status-cell counts per content row — count the
+status COLUMN only (the naive grep over-counts totals tables and reason
+cells).
 
 Notes on reading the numbers: dead-in-C code (QUAKE2/#if 0/PF_Fixme slots)
 now sits in N/A; the SUBSTITUTED columns are dominated by the software
@@ -93,6 +94,25 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (burn-down pass 8: qw-client reaches zero — ALL FOUR MANIFESTS DONE)
+- The flyby search lands (cl_cam.c complete): camVectoangles/camVlen with
+  the C int truncation, Cam_DoTrace over pmove.playerTrace, Cam_TryFlyby's
+  800-unit casts with the 32..800 usable band, InitFlyby's 12-direction
+  sweep locking desired_position — offline-tested against the live booted
+  map (test_qw_cam, 31 checks).
+- The .qwd demo pipeline lands (cl_demo.c complete): CL_Record_f
+  synthesizes the signon from current client state exactly like C
+  (serverdata/lists/baselines/statics/players/stats in fake-sequence
+  dem_read blocks + dem_set), CL_WriteDemoCmd/WriteDemoMessage capture the
+  live session, the .qwd byte layout round-trips block-exact, and
+  CL_GetDemoMessage's playback boots a brand-new client purely from the
+  recording (world loads, the run replays >100 units) — test_qw_demo,
+  15 checks. Boot commands: record/rerecord/stop/playdemo/stopdemo over
+  an in-memory store.
+- FINAL STATE: 816 VERIFIED / 294 SUBSTITUTED / 76 N/A / 0 UNIMPLEMENTED /
+  0 PENDING (from 115 UNIMPLEMENTED + 1 PENDING at the burn-down start).
+
 
 ### 2026-07-06 (burn-down pass 7: menus + binds; nq-client reaches zero)
 - Authentic menu core (the ruled KEEP-OPEN set): the Single Player

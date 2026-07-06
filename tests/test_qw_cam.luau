@@ -160,4 +160,33 @@ do
 	t.eq(S.cl.centerprints[#S.cl.centerprints], "the end", "finale text rides centerprints")
 end
 
+--------------------------------------------------------------------------
+-- the flyby search (vectoangles/vlen statics, Cam_DoTrace/Cam_TryFlyby/
+-- Cam_IsVisible/InitFlyby): find a camera spot around the tracked player
+do
+	-- vectoangles: the C int truncation + wraps
+	local va = qwcl.camVectoangles(vector.create(0, 0, 5))
+	t.check(va.x == 90 and va.y == 0, "cam vectoangles: straight up -> pitch 90")
+	va = qwcl.camVectoangles(vector.create(0, 0, -5))
+	t.eq(va.x, 270, "cam vectoangles: straight down -> pitch 270")
+	va = qwcl.camVectoangles(vector.create(1, 1, 0))
+	t.eq(va.y, 45, "cam vectoangles: yaw 45 (int-truncated)")
+	va = qwcl.camVectoangles(vector.create(-1, -1, 0))
+	t.eq(va.y, 225, "cam vectoangles: negative yaw wraps +360")
+	t.check(math.abs(qwcl.camVlen(vector.create(3, 4, 0)) - 5) < 1e-6, "cam vlen")
+
+	-- InitFlyby around the live tracked player on dm3
+	local tracked = S.cl.frames[bit32.band(S.cl.parsecount, 63)].playerstate[S.cl.cam.spec_track]
+	t.check(tracked ~= nil, "flyby fixture: tracked playerstate present")
+	local playerOrg = tracked.origin
+	local selfOrg = S.cl.simorg
+	local ok = qwcl.initFlyby(S.cl, selfOrg, playerOrg, tracked.viewangles, false)
+	t.check(ok, "InitFlyby: found a camera spot (checkvis false)")
+	local spot = S.cl.cam.desired_position
+	local dist = qwcl.camVlen(spot - playerOrg)
+	t.check(dist >= 32 and dist <= 800, "InitFlyby: spot within the 32..800 band")
+	t.check(qwcl.camIsVisible(S.cl, playerOrg, spot), "Cam_IsVisible: the found spot sees the player")
+	t.check(S.cl.cam.locked, "InitFlyby: locks the camera")
+end
+
 t.finish("test_qw_cam")

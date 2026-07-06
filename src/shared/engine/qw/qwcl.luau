@@ -5,6 +5,7 @@
 -- prediction through the shared pmove. Rendering-agnostic: the Roblox
 -- layer consumes cl.simorg/simangles, frames, and the event lists.
 
+local mathlib = require("../common/mathlib")
 local modelslib = require("../models/models")
 local msg = require("../common/msg")
 local pmovelib = require("./pmove")
@@ -169,6 +170,116 @@ qwcl.sendStringCmd = sendStringCmd
 -- CAM_TRACK=1; BUTTON_JUMP cycles targets with an edge gate.
 local CAM_NONE, CAM_TRACK = 0, 1
 local BUTTON_JUMP = 2
+
+-- cl_cam.c statics: vlen / vectoangles (int-truncated like the C)
+local function camVlen(v: vector): number
+	return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+end
+
+local function camVectoangles(vec: vector): vector
+	local yaw, pitch
+	if vec.y == 0 and vec.x == 0 then
+		yaw = 0
+		pitch = if vec.z > 0 then 90 else 270
+	else
+		yaw = math.floor(math.atan2(vec.y, vec.x) * 180 / math.pi)
+		if yaw < 0 then
+			yaw += 360
+		end
+		local fwd = math.sqrt(vec.x * vec.x + vec.y * vec.y)
+		pitch = math.floor(math.atan2(vec.z, fwd) * 180 / math.pi)
+		if pitch < 0 then
+			pitch += 360
+		end
+	end
+	return vector.create(pitch, yaw, 0)
+end
+qwcl.camVlen = camVlen
+qwcl.camVectoangles = camVectoangles
+
+-- Cam_DoTrace: a player-hull trace against the flyby physents
+local function camDoTrace(cl: any, from: vector, to: vector)
+	local pm = {
+		origin = from,
+		velocity = vector.zero,
+		angles = vector.zero,
+		physents = cl.predictPhysents or { { model = cl.worldmodel, origin = vector.zero } },
+	}
+	return pmovelib.playerTrace(pm :: any, from, to)
+end
+
+-- Cam_IsVisible
+local function camIsVisible(cl: any, playerOrg: vector, vec: vector): boolean
+	local trace = camDoTrace(cl, playerOrg, vec)
+	if trace.fraction ~= 1 or trace.inwater then
+		return false
+	end
+	return camVlen(playerOrg - vec) >= 16
+end
+qwcl.camIsVisible = camIsVisible
+
+-- Cam_TryFlyby: cast 800 units along dir from the player; returns the
+-- endpos + its self-distance, or nil when the spot is unusable
+local function camTryFlyby(cl: any, selfOrg: vector, playerOrg: vector, dir: vector, checkvis: boolean): (number, vector?)
+	local len = camVlen(dir)
+	if len == 0 then
+		return 9999, nil
+	end
+	dir = dir / len
+	local endp = playerOrg + dir * 800
+	local trace = camDoTrace(cl, playerOrg, endp)
+	if trace.inwater then
+		return 9999, nil
+	end
+	local spot = trace.endpos
+	len = camVlen(spot - playerOrg)
+	if len < 32 or len > 800 then
+		return 9999, nil
+	end
+	if checkvis then
+		len = camVlen(spot - selfOrg)
+		trace = camDoTrace(cl, selfOrg, spot)
+		if trace.fraction ~= 1 or trace.inwater then
+			return 9999, nil
+		end
+	end
+	return len, spot
+end
+
+-- InitFlyby: try the 12 direction combos from the player's view basis,
+-- keep the closest usable spot as cam.desired_position
+function qwcl.initFlyby(cl: any, selfOrg: vector, playerOrg: vector, playerAngles: vector, checkvis: boolean): boolean
+	local forward, right, up = mathlib.angleVectors(vector.create(0, playerAngles.y, playerAngles.z))
+	local dirs = {
+		forward + up + right,
+		forward + up - right,
+		forward + right,
+		forward - right,
+		forward + up,
+		forward - up,
+		up + right - forward,
+		up - right - forward,
+		-forward,
+		forward,
+		-right,
+		right,
+	}
+	local max = 1000
+	local best: vector? = nil
+	for _, dir in dirs do
+		local f, spot = camTryFlyby(cl, selfOrg, playerOrg, dir, checkvis)
+		if f < max then
+			max = f
+			best = spot
+		end
+	end
+	if max >= 1000 or not best then
+		return false
+	end
+	cl.cam.locked = true
+	cl.cam.desired_position = best
+	return true
+end
 
 -- Cam_Unlock
 function qwcl.camUnlock(cl: any)
@@ -884,7 +995,284 @@ function qwcl.parseServerMessage(cl: any, r: msg.Reader)
 end
 
 -- process one wire packet from the server
+--------------------------------------------------------------------------
+-- cl_demo.c: .qwd record/playback. Block stream layout matches the C
+-- file format: [float time][byte type], with dem_cmd carrying the
+-- 24-byte usercmd struct (msec + pad, angles, moves, buttons, impulse)
+-- plus the vec3 viewangles, dem_read a length-prefixed server message,
+-- dem_set the two netchan sequences.
+local DEM_CMD, DEM_READ, DEM_SET = 0, 1, 2
+
+-- CL_Record_f: synthesize the signon from CURRENT client state exactly
+-- like C (serverdata, sound/model lists, statics, baselines, player
+-- info, lightstyles, stats), each in a dem_read block with a fake
+-- ascending netchan header, then CL_WriteSetDemoMessage with the live
+-- sequences. Delta: the lists ride one block each (no MAX_MSGLEN/2
+-- chunking — the recorded stream has no UDP framing to respect).
+function qwcl.recordStart(cl: any)
+	cl.demoBlocks = {}
+	cl.recording = true
+	local seq = 0
+	local function recBlock(sb: msg.SizeBuf)
+		seq += 1
+		local pkt = buffer.create(8 + sb.cursize)
+		buffer.writeu32(pkt, 0, seq)
+		buffer.writeu32(pkt, 4, seq)
+		buffer.copy(pkt, 8, sb.data, 0, sb.cursize)
+		table.insert(cl.demoBlocks, { time = cl.realtime, type = DEM_READ, data = pkt })
+	end
+
+	-- serverdata + fullserverinfo
+	local sb = msg.newBuf(2048)
+	msg.writeByte(sb, qwp.svc_serverdata)
+	msg.writeLong(sb, qwp.PROTOCOL_VERSION)
+	msg.writeLong(sb, cl.servercount)
+	msg.writeString(sb, cl.gamedir or "qw")
+	msg.writeByte(sb, if cl.spectator then bit32.bor(cl.playernum, 128) else cl.playernum)
+	msg.writeString(sb, cl.levelname or "")
+	local mv = cl.movevars
+	msg.writeFloat(sb, mv.gravity)
+	msg.writeFloat(sb, mv.stopspeed)
+	msg.writeFloat(sb, mv.maxspeed)
+	msg.writeFloat(sb, mv.spectatormaxspeed)
+	msg.writeFloat(sb, mv.accelerate)
+	msg.writeFloat(sb, mv.airaccelerate)
+	msg.writeFloat(sb, mv.wateraccelerate)
+	msg.writeFloat(sb, mv.friction)
+	msg.writeFloat(sb, mv.waterfriction)
+	msg.writeFloat(sb, mv.entgravity or 1)
+	local info = {}
+	for k, v in cl.serverinfo or {} do
+		table.insert(info, `\\{k}\\{v}`)
+	end
+	msg.writeByte(sb, qwp.svc_stufftext)
+	msg.writeString(sb, `fullserverinfo "{table.concat(info)}"\n`)
+	recBlock(sb)
+
+	-- sound + model lists (complete, one block each)
+	local function listBlock(svc: number, names: { string })
+		local lb = msg.newBuf(8192)
+		msg.writeByte(lb, svc)
+		msg.writeByte(lb, 0)
+		local i = 1 -- cl.sound_name/model_name index precache slot 1 at [1]
+		while names[i] do
+			msg.writeString(lb, names[i])
+			i += 1
+		end
+		msg.writeByte(lb, 0) -- terminator
+		msg.writeByte(lb, 0) -- next = 0: list complete
+		recBlock(lb)
+	end
+	listBlock(qwp.svc_soundlist, cl.sound_name)
+	listBlock(qwp.svc_modellist, cl.model_name)
+
+	-- baselines + statics + static sounds
+	sb = msg.newBuf(16384)
+	for num, base in cl.baselines do
+		msg.writeByte(sb, qwp.svc_spawnbaseline)
+		msg.writeShort(sb, num)
+		msg.writeByte(sb, base.modelindex)
+		msg.writeByte(sb, base.frame)
+		msg.writeByte(sb, base.colormap or 0)
+		msg.writeByte(sb, base.skinnum)
+		msg.writeCoord(sb, base.origin.x)
+		msg.writeAngleQW(sb, base.angles.x)
+		msg.writeCoord(sb, base.origin.y)
+		msg.writeAngleQW(sb, base.angles.y)
+		msg.writeCoord(sb, base.origin.z)
+		msg.writeAngleQW(sb, base.angles.z)
+	end
+	for _, es in cl.static_entities do
+		msg.writeByte(sb, qwp.svc_spawnstatic)
+		msg.writeByte(sb, es.modelindex)
+		msg.writeByte(sb, es.frame)
+		msg.writeByte(sb, es.colormap or 0)
+		msg.writeByte(sb, es.skinnum or 0)
+		msg.writeCoord(sb, es.origin.x)
+		msg.writeAngle(sb, es.angles.x)
+		msg.writeCoord(sb, es.origin.y)
+		msg.writeAngle(sb, es.angles.y)
+		msg.writeCoord(sb, es.origin.z)
+		msg.writeAngle(sb, es.angles.z)
+	end
+	for _, ss in cl.static_sounds do
+		msg.writeByte(sb, qwp.svc_spawnstaticsound)
+		msg.writeCoord(sb, ss.pos.x)
+		msg.writeCoord(sb, ss.pos.y)
+		msg.writeCoord(sb, ss.pos.z)
+		msg.writeByte(sb, ss.num)
+		msg.writeByte(sb, ss.vol)
+		msg.writeByte(sb, ss.atten * 64)
+	end
+	recBlock(sb)
+
+	-- lightstyles + player info + stats
+	sb = msg.newBuf(8192)
+	for style, map in cl.lightstyles do
+		msg.writeByte(sb, qwp.svc_lightstyle)
+		msg.writeByte(sb, style)
+		msg.writeString(sb, map)
+	end
+	for i = 0, 31 do
+		local pi = cl.players[i]
+		if pi and pi.name ~= "" then
+			msg.writeByte(sb, qwp.svc_updatefrags)
+			msg.writeByte(sb, i)
+			msg.writeShort(sb, pi.frags or 0)
+			msg.writeByte(sb, qwp.svc_updateuserinfo)
+			msg.writeByte(sb, i)
+			msg.writeLong(sb, pi.userid or 0)
+			local ui = {}
+			for k, v in pi.userinfo or {} do
+				table.insert(ui, `\\{k}\\{v}`)
+			end
+			msg.writeString(sb, table.concat(ui))
+		end
+	end
+	for stat, v in cl.stats do
+		if v ~= 0 then
+			msg.writeByte(sb, qwp.svc_updatestatlong)
+			msg.writeByte(sb, stat)
+			msg.writeLong(sb, v)
+		end
+	end
+	recBlock(sb)
+
+	-- CL_WriteSetDemoMessage: live sequences follow the synthesized signon
+	table.insert(cl.demoBlocks, { time = cl.realtime, type = DEM_SET, outseq = cl.netchan.outgoing_sequence, inseq = cl.netchan.incoming_sequence })
+end
+
+-- CL_Stop_f
+function qwcl.recordStop(cl: any): { any }?
+	if not cl.recording then
+		return nil
+	end
+	cl.recording = false
+	local blocks = cl.demoBlocks
+	cl.demoBlocks = nil
+	return blocks
+end
+
+-- CL_WriteDemoCmd
+function qwcl.writeDemoCmd(cl: any, cmd: any, angles: vector)
+	table.insert(cl.demoBlocks, { time = cl.realtime, type = DEM_CMD, cmd = cmd, angles = angles })
+end
+
+-- CL_WriteDemoMessage
+function qwcl.writeDemoMessage(cl: any, packet: buffer)
+	table.insert(cl.demoBlocks, { time = cl.realtime, type = DEM_READ, data = packet })
+end
+
+-- the .qwd byte stream (fwrite layout; usercmd padded to 24 bytes like
+-- the 32-bit C struct)
+function qwcl.demoSerialize(blocks: { any }): buffer
+	local size = 0
+	for _, b in blocks do
+		size += 5 + (if b.type == DEM_CMD then 24 + 12 elseif b.type == DEM_READ then 4 + buffer.len(b.data) else 8)
+	end
+	local out = buffer.create(size)
+	local o = 0
+	for _, b in blocks do
+		buffer.writef32(out, o, b.time)
+		buffer.writeu8(out, o + 4, b.type)
+		o += 5
+		if b.type == DEM_CMD then
+			buffer.writeu8(out, o, b.cmd.msec or 0)
+			buffer.writef32(out, o + 4, b.cmd.angles.x)
+			buffer.writef32(out, o + 8, b.cmd.angles.y)
+			buffer.writef32(out, o + 12, b.cmd.angles.z)
+			buffer.writei16(out, o + 16, b.cmd.forwardmove)
+			buffer.writei16(out, o + 18, b.cmd.sidemove)
+			buffer.writei16(out, o + 20, b.cmd.upmove)
+			buffer.writeu8(out, o + 22, b.cmd.buttons)
+			buffer.writeu8(out, o + 23, b.cmd.impulse)
+			buffer.writef32(out, o + 24, b.angles.x)
+			buffer.writef32(out, o + 28, b.angles.y)
+			buffer.writef32(out, o + 32, b.angles.z)
+			o += 36
+		elseif b.type == DEM_READ then
+			buffer.writei32(out, o, buffer.len(b.data))
+			buffer.copy(out, o + 4, b.data, 0, buffer.len(b.data))
+			o += 4 + buffer.len(b.data)
+		else
+			buffer.writei32(out, o, b.outseq)
+			buffer.writei32(out, o + 4, b.inseq)
+			o += 8
+		end
+	end
+	return out
+end
+
+-- CL_GetDemoMessage's reader half: the byte stream back into blocks
+function qwcl.demoParse(buf: buffer): { any }
+	local blocks = {}
+	local o = 0
+	local n = buffer.len(buf)
+	while o + 5 <= n do
+		local time = buffer.readf32(buf, o)
+		local btype = buffer.readu8(buf, o + 4)
+		o += 5
+		if btype == DEM_CMD then
+			local cmd = {
+				msec = buffer.readu8(buf, o),
+				angles = vector.create(buffer.readf32(buf, o + 4), buffer.readf32(buf, o + 8), buffer.readf32(buf, o + 12)),
+				forwardmove = buffer.readi16(buf, o + 16),
+				sidemove = buffer.readi16(buf, o + 18),
+				upmove = buffer.readi16(buf, o + 20),
+				buttons = buffer.readu8(buf, o + 22),
+				impulse = buffer.readu8(buf, o + 23),
+			}
+			local ang = vector.create(buffer.readf32(buf, o + 24), buffer.readf32(buf, o + 28), buffer.readf32(buf, o + 32))
+			o += 36
+			table.insert(blocks, { time = time, type = DEM_CMD, cmd = cmd, angles = ang })
+		elseif btype == DEM_READ then
+			local len = buffer.readi32(buf, o)
+			local data = buffer.create(len)
+			buffer.copy(data, 0, buf, o + 4, len)
+			o += 4 + len
+			table.insert(blocks, { time = time, type = DEM_READ, data = data })
+		elseif btype == DEM_SET then
+			table.insert(blocks, { time = time, type = DEM_SET, outseq = buffer.readi32(buf, o), inseq = buffer.readi32(buf, o + 4) })
+			o += 8
+		else
+			error(`corrupt demo: unknown block type {btype}`)
+		end
+	end
+	return blocks
+end
+
+-- CL_GetDemoMessage's playback half: consume every block due at
+-- `demotime`, mirroring the C effects (dem_set seeds the netchan
+-- sequences, dem_cmd fills the frame ring + advances outgoing, dem_read
+-- parses as a server message). Returns the next block index.
+function qwcl.demoStep(cl: any, blocks: { any }, idx: number, demotime: number): number
+	while idx <= #blocks and blocks[idx].time <= demotime do
+		local b = blocks[idx]
+		if b.type == DEM_SET then
+			cl.netchan.outgoing_sequence = b.outseq
+			cl.netchan.incoming_sequence = b.inseq
+		elseif b.type == DEM_CMD then
+			local fi = bit32.band(cl.netchan.outgoing_sequence, qwp.UPDATE_MASK)
+			local frame = cl.frames[fi]
+			frame.cmd = b.cmd
+			frame.senttime = b.time
+			frame.receivedtime = -1
+			cl.viewangles = b.angles
+			cl.netchan.outgoing_sequence += 1
+		else
+			-- the recorded packet still carries the netchan header;
+			-- process it exactly like a live packet
+			qwcl.processPacket(cl, b.data)
+		end
+		idx += 1
+	end
+	return idx
+end
+
 function qwcl.processPacket(cl: any, packet: buffer)
+	if cl.recording then
+		qwcl.writeDemoMessage(cl, packet) -- CL_WriteDemoMessage
+	end
 	local r = qwnetchan.process(cl.netchan, packet)
 	if not r then
 		return -- stale packet
@@ -937,6 +1325,10 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	frame.cmd = cmd
 	frame.senttime = cl.realtime
 	frame.receivedtime = -1
+
+	if cl.recording then
+		qwcl.writeDemoCmd(cl, cmd, cmd.angles) -- CL_WriteDemoCmd
+	end
 
 	-- don't send too soon after connecting: the first two moves flush
 	-- stale pre-spawn input state (C: cl.movemessages <= 2)

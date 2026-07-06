@@ -119,6 +119,13 @@ return function()
 	local pitchDrift = viewlib.newPitchDrift()
 	local lastDriftPitch: number? = nil
 	local showFps = false -- SCR_DrawFPS gate (show_fps command)
+	-- cl_demo.c: in-memory .qwd store (no user filesystem; same policy
+	-- as the NQ boot's demo store)
+	local demos: { [string]: buffer } = {}
+	local demoRecordName: string? = nil
+	local demoBlocks: { any }? = nil
+	local demoIdx = 1
+	local demoTime = 0
 
 	local cshiftGui = Instance.new("ScreenGui")
 	cshiftGui.Name = "QuakeCshift"
@@ -970,6 +977,46 @@ return function()
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
 			-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores
 			hudlib.setShowTeamScores(hud, cmd == "+showteamscores")
+		elseif cmd == "record" or cmd == "rerecord" then
+			-- CL_Record_f / CL_ReRecord_f (rerecord drops the current take)
+			local name = (args :: string):match("[%w_%-]+")
+			if not name then
+				consolelib.print(con, "record <demoname>")
+			elseif cl.recording and cmd == "record" then
+				consolelib.print(con, "Already recording.")
+			elseif cl.state ~= "active" then
+				consolelib.print(con, "You must be connected to record.")
+			else
+				demoRecordName = name
+				qwcl.recordStart(cl)
+				consolelib.print(con, `recording to {name}.qwd.`)
+			end
+		elseif cmd == "stop" then
+			-- CL_Stop_f
+			local blocks = qwcl.recordStop(cl)
+			if blocks and demoRecordName then
+				demos[demoRecordName] = qwcl.demoSerialize(blocks)
+				consolelib.print(con, "Completed demo")
+			else
+				consolelib.print(con, "Not recording a demo.")
+			end
+		elseif cmd == "playdemo" then
+			-- CL_PlayDemo_f: replay a recorded .qwd (live packets are
+			-- ignored while playing, like C's disconnect)
+			local name = (args :: string):match("[%w_%-]+")
+			local qwd = name and demos[name]
+			if not qwd then
+				consolelib.print(con, `couldn't open {tostring(name)}.qwd`)
+			else
+				demoBlocks = qwcl.demoParse(qwd)
+				demoIdx = 1
+				demoTime = (demoBlocks :: { any })[1].time
+				consolelib.print(con, `Playing demo from {name}.qwd.`)
+			end
+		elseif cmd == "stopdemo" then
+			demoBlocks = nil
+			consolelib.print(con, "demo stopped; reconnecting")
+			qwcl.sendStringCmd(cl, "new") -- rejoin the live stream
 		elseif cmd == "show_fps" then
 			-- SCR_DrawFPS gate
 			showFps = (tonumber(args) or 0) ~= 0
@@ -1148,7 +1195,8 @@ return function()
 		"bf", "centerview", "clear", "disconnect", "fov", "impulse", "kill",
 		"messagemode", "messagemode2", "pause", "pings", "quit", "say",
 		"play", "playvol", "soundlist", "sizedown", "sizeup", "color",
-		"crosshair", "fullinfo",
+		"crosshair", "fullinfo", "record", "rerecord", "stop", "playdemo",
+		"stopdemo", "show_fps", "togglemenu",
 		"say_team", "serverinfo", "setinfo", "toggleconsole", "user",
 		"users", "v_cshift", "version", "viewsize",
 		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
@@ -1342,7 +1390,22 @@ return function()
 			confontlib.setRow(con.font, chatRow, "say: " .. chatBuffer .. ccursor)
 		end
 
-		-- inbound packets
+		-- inbound packets (dropped while a demo plays — CL_GetDemoMessage
+		-- replaces the net stream)
+		if demoBlocks then
+			table.clear(inbound)
+			demoTime += dt
+			local ok, err = pcall(function()
+				demoIdx = qwcl.demoStep(cl, demoBlocks :: { any }, demoIdx, demoTime)
+			end)
+			if not ok then
+				warn("[qwcl] demo: " .. tostring(err))
+				demoBlocks = nil
+			elseif demoIdx > #(demoBlocks :: { any }) then
+				demoBlocks = nil
+				consolelib.print(con, "demo completed; use stopdemo to rejoin")
+			end
+		end
 		for _, packet in inbound do
 			local ok, err = pcall(qwcl.processPacket, cl, packet)
 			if not ok then
@@ -1457,7 +1520,7 @@ return function()
 			msec = 100 -- CL_FinishMove's hitch substitution
 			accum = 0
 		end
-		if msec >= 1 and cl.state ~= "connected" then
+		if msec >= 1 and cl.state ~= "connected" and not demoBlocks then
 			accum -= msec / 1000
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)
