@@ -82,14 +82,18 @@ modepresets.PRESETS = {
 		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5",
 		votetime = 30,
 	},
-	-- Rocket Arena (QW): manages its own rotation via localinfo — no
-	-- maplist, so the director stays out of its way
+	-- Rocket Arena (QW): manages its own rotation via localinfo (the mod's
+	-- rotate.cfg, applied at qwserver boot) — no maplist, so the director
+	-- stays out of its way. Startmap must be IN the rotate.cfg cycle;
+	-- limits per raserver.txt's recommended command line
 	arena = {
 		engine = "qw",
 		game = "id1",
 		gamedir = "arena",
 		deathmatch = 1,
-		startmap = "dm3",
+		fraglimit = 15,
+		timelimit = 20,
+		startmap = "crandome",
 	},
 	instagib = {
 		engine = "nq",

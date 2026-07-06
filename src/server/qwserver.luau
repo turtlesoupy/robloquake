@@ -75,6 +75,19 @@ return function(ctx: Ctx)
 		end
 	end
 
+	-- Rocket Arena-style rotation: the mod ships rotate.cfg ("localinfo
+	-- <map> <nextmap>" lines) that real servers +exec at boot; apply the
+	-- pairs so the progs' PF_infokey rotation lookup sees the chain
+	local rotateCfg = vfs.loadFile(ctx.fsys, "rotate.cfg")
+	if rotateCfg then
+		local n = 0
+		for k, v in buffer.tostring(rotateCfg):gmatch("localinfo%s+(%S+)%s+(%S+)") do
+			svr.localinfo[k] = v
+			n += 1
+		end
+		print(`[robloquake] rotate.cfg: {n} localinfo rotation entries applied`)
+	end
+
 	qwsv.spawnServer(svr, ctx.startMap)
 	assert(svr.active, "QW server failed to spawn")
 	_G.RQ_SERVER = svr -- studio debugging access
