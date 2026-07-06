@@ -35,6 +35,15 @@ local TOOL_HOLD = 507768375
 -- (3 studs at SCALE 1/8) below the entity origin
 local FEET_BELOW_ORIGIN = 24 * qcoords.SCALE
 
+-- rigs are normalized to the 56qu player height: the hitbox is the same
+-- for everyone, so short/tall avatar body scales must not misrepresent
+-- it. The server publishes rigs at NATIVE avatar scale (an external
+-- ScaleTo there races the humanoid's async description re-application,
+-- with no solver in ReplicatedStorage to reconcile — that detached
+-- hair/hats); the one ScaleTo happens HERE on the clone, in workspace,
+-- where the solver keeps joints and accessories coherent through it.
+local QUAKE_PLAYER_HEIGHT = 56 * qcoords.SCALE
+
 -- movement thresholds, quake units/s (measured, smoothed)
 local RUN_SPEED = 40
 local JUMP_VSPEED = 120 -- jump launch is +270
@@ -143,9 +152,26 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		end
 		humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 		humanoid.EvaluateStateMachine = false
+		humanoid.AutomaticScalingEnabled = false -- our ScaleTo below is final
 		local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
 		rig:PivotTo(CFrame.new(0, -100000, 0))
 		rig.Parent = parent
+
+		-- normalize to the Quake player height (foot sole to head top),
+		-- measured after the solver has seated the freshly cloned assembly
+		local mhead = rig:FindFirstChild("Head")
+		local mfoot = rig:FindFirstChild("LeftFoot") or rig:FindFirstChild("RightFoot")
+		if mhead and mhead:IsA("BasePart") and mfoot and mfoot:IsA("BasePart") then
+			local deadline = os.clock() + 3
+			while os.clock() < deadline do
+				task.wait()
+				local h = (mhead.Position.Y + mhead.Size.Y / 2) - (mfoot.Position.Y - mfoot.Size.Y / 2)
+				if h > 1 then
+					rig:ScaleTo(rig:GetScale() * QUAKE_PLAYER_HEIGHT / h)
+					break
+				end
+			end
+		end
 
 		local function loadTrack(attr: string, fallback: number): AnimationTrack?
 			local id = rigTemplate:GetAttribute(attr)
