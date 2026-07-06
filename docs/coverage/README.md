@@ -77,6 +77,13 @@ Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
 it enters here in the same commit.
 
+## Release audit burn-down (2026-07-06)
+
+[audit-2026-07-06.md](audit-2026-07-06.md) — findings from the six-track
+pre-release audit (movement fidelity, server physics, Lua-vs-C semantics,
+protocol, QuakeC VM, performance), burned down under the same evidence
+rules as the function manifests.
+
 ## Scenarios
 
 Interaction coverage the per-function grid cannot express (proven by the
