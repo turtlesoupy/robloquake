@@ -68,18 +68,9 @@ function sv_user.setIdealPitch(svr: svlib.Server, player: vmlib.Edict)
 		z[i + 1] = top.z + tr.fraction * (bottom.z - top.z)
 	end
 
-	local dir = 0
-	local steps = 0
-	for j = 2, MAX_FORWARD do
-		local step = z[j] - z[j - 1]
-		if step > -ON_EPSILON and step < ON_EPSILON then
-			continue
-		end
-		if dir ~= 0 and (step - dir > ON_EPSILON or step - dir < -ON_EPSILON) then
-			return -- mixed changes
-		end
-		steps += 1
-		dir = step
+	local dir, steps = sv_user.idealPitchSteps(z)
+	if steps == -1 then
+		return -- mixed changes
 	end
 
 	if dir == 0 then
@@ -90,6 +81,26 @@ function sv_user.setIdealPitch(svr: svlib.Server, player: vmlib.Edict)
 		return
 	end
 	vmlib.edSetFloat(player, ent.idealpitch, -dir * cvarlib.value(svr.cvars, "sv_idealpitchscale"))
+end
+
+-- the SV_SetIdealPitch step scan; C declares step/dir as int, so each
+-- z-delta truncates toward zero before the epsilon/mixed-change tests.
+-- Returns dir, steps; steps == -1 signals the mixed-changes bailout.
+function sv_user.idealPitchSteps(z: { number }): (number, number)
+	local dir = 0
+	local steps = 0
+	for j = 2, #z do
+		local step = mathlib.trunc(z[j] - z[j - 1])
+		if step > -ON_EPSILON and step < ON_EPSILON then
+			continue
+		end
+		if dir ~= 0 and (step - dir > ON_EPSILON or step - dir < -ON_EPSILON) then
+			return dir, -1 -- mixed changes
+		end
+		steps += 1
+		dir = step
+	end
+	return dir, steps
 end
 
 -- SV_UserFriction

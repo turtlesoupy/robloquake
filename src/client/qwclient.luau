@@ -1316,6 +1316,14 @@ return function()
 				currentFov = v
 				applyFov()
 			end
+		elseif cmd == "pushlatency" then
+			-- cl_pred.c cvar; CL_PredictMove clamps positive values to 0
+			local v = tonumber(args)
+			if v then
+				cl.pushlatency = v
+			else
+				consolelib.print(con, `"pushlatency" is "{cl.pushlatency}"`)
+			end
 		elseif cmd == "viewsize" then
 			-- screen.c: 100 full HUD, 110 status row only, 120 none
 			local v = tonumber(args)

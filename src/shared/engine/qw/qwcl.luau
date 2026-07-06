@@ -88,6 +88,7 @@ function qwcl.new(fsys: vfslib.Vfs): any
 	cl.realtime = 0
 	cl.time = 0
 	cl.latency = 0
+	cl.pushlatency = -999 -- cl_pred.c cvar default; <=0 predicts to realtime
 
 	cl.servercount = 0
 	cl.gamedir = "qw"
@@ -1289,7 +1290,8 @@ end
 
 -- CL_FinishMove's MakeChar: moves travel as signed chars of 4-unit steps
 local function makeChar(i: number): number
-	i = bit32.band(i // 1, bit32.bnot(3)) -- &~3 on the int
+	-- C's float->int argument conversion truncates toward zero
+	i = bit32.band(mathlib.trunc(i), bit32.bnot(3)) -- &~3 on the int
 	if i >= 0x80000000 then
 		i -= 0x100000000 -- undo bit32's unsigned view for negatives
 	end
@@ -1487,10 +1489,13 @@ end
 
 -- CL_PredictMove
 function qwcl.predictMove(cl: any)
+	if cl.pushlatency > 0 then
+		cl.pushlatency = 0
+	end
 	if cl.paused then
 		return
 	end
-	cl.time = cl.realtime - cl.latency
+	cl.time = cl.realtime - cl.latency - cl.pushlatency * 0.001
 	if cl.time > cl.realtime then
 		cl.time = cl.realtime
 	end
