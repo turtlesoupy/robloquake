@@ -1587,7 +1587,14 @@ return function()
 		for _, packet in inbound do
 			local ok, err = pcall(qwcl.processPacket, cl, packet)
 			if not ok then
-				warn("[qwcl] " .. tostring(err))
+				-- Host_EndGame: a parse error leaves half-applied frame
+				-- state (netchan already advanced) — fail loudly and
+				-- disconnect instead of playing against corrupt deltas
+				warn("[qwcl] Host_EndGame: " .. tostring(err))
+				cl.disconnected_reason = tostring(err)
+				cl.state = "disconnected"
+				consolelib.print(con, `Host_EndGame: {tostring(err)}`)
+				break
 			end
 		end
 		table.clear(inbound)

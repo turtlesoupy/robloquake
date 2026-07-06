@@ -183,12 +183,14 @@ local function camVectoangles(vec: vector): vector
 		yaw = 0
 		pitch = if vec.z > 0 then 90 else 270
 	else
-		yaw = math.floor(math.atan2(vec.y, vec.x) * 180 / math.pi)
+		-- C: (int) casts truncate toward zero (floor biased negative
+		-- angles a degree low before the +360 wrap)
+		yaw = mathlib.trunc(math.atan2(vec.y, vec.x) * 180 / math.pi)
 		if yaw < 0 then
 			yaw += 360
 		end
 		local fwd = math.sqrt(vec.x * vec.x + vec.y * vec.y)
-		pitch = math.floor(math.atan2(vec.z, fwd) * 180 / math.pi)
+		pitch = mathlib.trunc(math.atan2(vec.z, fwd) * 180 / math.pi)
 		if pitch < 0 then
 			pitch += 360
 		end
@@ -1285,12 +1287,14 @@ function qwcl.demoStep(cl: any, blocks: { any }, idx: number, demotime: number):
 end
 
 function qwcl.processPacket(cl: any, packet: buffer)
-	if cl.recording then
-		qwcl.writeDemoMessage(cl, packet) -- CL_WriteDemoMessage
-	end
 	local r = qwnetchan.process(cl.netchan, packet)
 	if not r then
 		return -- stale packet
+	end
+	-- CL_ReadPackets records only ACCEPTED packets (after Netchan_Process)
+	-- — a recorded stale packet would double-apply at playback
+	if cl.recording then
+		qwcl.writeDemoMessage(cl, packet) -- CL_WriteDemoMessage
 	end
 	qwcl.parseServerMessage(cl, r)
 	-- during the handshake, reply immediately with any queued cmds
@@ -1327,13 +1331,21 @@ end
 function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	local chan = cl.netchan
 
-	-- CL_FinishMove: chop moves and quantize angles BEFORE storing, so
-	-- the predicted cmd equals the wire cmd
-	cmd = table.clone(cmd)
-	cmd.forwardmove = makeChar(cmd.forwardmove)
-	cmd.sidemove = makeChar(cmd.sidemove)
-	cmd.upmove = makeChar(cmd.upmove)
-	cmd.angles = vector.create(quantAngle(cmd.angles.x), quantAngle(cmd.angles.y), quantAngle(cmd.angles.z))
+	-- CL_FinishMove dumps the first two moves per level (they may hold
+	-- stale inputs from the last level) — but CL_SendCmd still sends
+	-- the packet, keeping the netchan lockstep flowing
+	cl.movemessages = (cl.movemessages or 0) + 1
+	if cl.movemessages <= 2 then
+		cmd = qwents.nullCmd()
+	else
+		-- CL_FinishMove: chop moves and quantize angles BEFORE storing,
+		-- so the predicted cmd equals the wire cmd
+		cmd = table.clone(cmd)
+		cmd.forwardmove = makeChar(cmd.forwardmove)
+		cmd.sidemove = makeChar(cmd.sidemove)
+		cmd.upmove = makeChar(cmd.upmove)
+		cmd.angles = vector.create(quantAngle(cmd.angles.x), quantAngle(cmd.angles.y), quantAngle(cmd.angles.z))
+	end
 
 	-- save this command off for prediction
 	local i = bit32.band(chan.outgoing_sequence, UPDATE_MASK)
@@ -1344,13 +1356,6 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 
 	if cl.recording then
 		qwcl.writeDemoCmd(cl, cmd, cmd.angles) -- CL_WriteDemoCmd
-	end
-
-	-- don't send too soon after connecting: the first two moves flush
-	-- stale pre-spawn input state (C: cl.movemessages <= 2)
-	cl.movemessages = (cl.movemessages or 0) + 1
-	if cl.movemessages <= 2 then
-		return
 	end
 
 	local buf = msg.newBuf(128)
@@ -1366,11 +1371,13 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	qwents.writeDeltaUsercmd(buf, oldest, oldcmd)
 	qwents.writeDeltaUsercmd(buf, oldcmd, cmd)
 
-	-- request delta compression of entities
+	-- request delta compression of entities (never while recording: a
+	-- played-back demo cannot reconstruct the frames ring's
+	-- delta_sequence bookkeeping — cl_input.c:459)
 	if chan.outgoing_sequence - cl.validsequence >= UPDATE_BACKUP - 1 then
 		cl.validsequence = 0
 	end
-	if cl.validsequence ~= 0 and cl.state == "active" then
+	if cl.validsequence ~= 0 and cl.state == "active" and not cl.recording then
 		frame.delta_sequence = cl.validsequence
 		msg.writeByte(buf, qwp.clc_delta)
 		msg.writeByte(buf, bit32.band(cl.validsequence, 255))

@@ -63,7 +63,9 @@ function qwnetchan.process(chan: Netchan, packet: buffer): msg.Reader?
 	if seq <= chan.incoming_sequence and chan.incoming_sequence > 0 then
 		return nil -- out of order / duplicated packet, discard
 	end
-	chan.drop_count = seq - (chan.incoming_sequence + 1)
+	-- clamped at source: the first accepted packet (seq 0) would
+	-- otherwise read as net_drop -1 (C's first real packet is seq >= 1)
+	chan.drop_count = math.max(seq - (chan.incoming_sequence + 1), 0)
 	chan.incoming_sequence = seq
 	chan.incoming_acknowledged = ack
 	local payload = buffer.create(buffer.len(packet) - 8)

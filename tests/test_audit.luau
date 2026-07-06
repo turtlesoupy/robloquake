@@ -371,4 +371,101 @@ do
 	t.check(svr.qdefs.optfield ~= nil, "D10 optfield table present")
 end
 
+-- E: client protocol --------------------------------------------------------
+do
+	local qwents = require("../src/shared/engine/qw/qwents")
+	local qwnetchan = require("../src/shared/engine/qw/qwnetchan")
+
+	-- E1: no clc_delta request while recording
+	local cl = qwcl.new(gamefs)
+	cl.state = "active"
+	cl.movemessages = 5
+	cl.send = function(_p: buffer) end
+	local function sendOne(): number
+		local seq = cl.netchan.outgoing_sequence
+		qwcl.sendCmd(cl, {
+			msec = 16,
+			angles = vector.zero,
+			forwardmove = 0,
+			sidemove = 0,
+			upmove = 0,
+			buttons = 0,
+			impulse = 0,
+		})
+		return cl.frames[bit32.band(seq, 15)].delta_sequence
+	end
+	cl.validsequence = 1
+	cl.recording = true
+	cl.demoBlocks = {}
+	t.eq(sendOne(), -1, "E1 recording suppresses the clc_delta request")
+	cl.recording = false
+	cl.validsequence = cl.netchan.outgoing_sequence
+	t.eq(sendOne(), cl.validsequence, "E1 delta requested again once not recording")
+
+	-- E2: demo captures only ACCEPTED packets (post-Netchan_Process)
+	cl.recording = true
+	cl.demoBlocks = {}
+	local pkt = buffer.create(8)
+	buffer.writeu32(pkt, 0, cl.netchan.incoming_sequence + 1)
+	qwcl.processPacket(cl, pkt)
+	t.eq(#cl.demoBlocks, 1, "E2 accepted packet recorded")
+	local stale = buffer.create(8)
+	buffer.writeu32(stale, 0, cl.netchan.incoming_sequence) -- duplicate
+	qwcl.processPacket(cl, stale)
+	t.eq(#cl.demoBlocks, 1, "E2 stale packet NOT recorded")
+	cl.recording = false
+
+	-- E5: the first two moves are dumped but still transmitted
+	local cl2 = qwcl.new(gamefs)
+	cl2.state = "active"
+	local sends = 0
+	cl2.send = function(_p: buffer)
+		sends += 1
+	end
+	local function move(fwd: number): number
+		local seq = cl2.netchan.outgoing_sequence
+		qwcl.sendCmd(cl2, {
+			msec = 16,
+			angles = vector.zero,
+			forwardmove = fwd,
+			sidemove = 0,
+			upmove = 0,
+			buttons = 1,
+			impulse = 3,
+		})
+		return cl2.frames[bit32.band(seq, 15)].cmd.forwardmove
+	end
+	t.eq(move(100), 0, "E5 first move dumped (stale input flushed)")
+	t.eq(move(100), 0, "E5 second move dumped")
+	t.eq(sends, 2, "E5 dumped moves still transmit (netchan lockstep)")
+	t.eq(move(100), 100, "E5 third move goes through")
+
+	-- E4: packet-entities cap refuses before writing slot 64
+	local function copyPacket(n: number): boolean
+		local from = {}
+		for i = 1, n do
+			from[i] = qwents.nullState(i)
+		end
+		local b = msg.newBuf(4)
+		msg.writeShort(b, 0) -- "copy the rest" terminator
+		return (pcall(qwents.parsePacketEntities, msg.reader(b.data), from, function(num: number)
+			return qwents.nullState(num)
+		end))
+	end
+	t.eq(copyPacket(64), true, "E4 64 entities accepted")
+	t.eq(copyPacket(65), false, "E4 65th entity refused like C")
+
+	-- E6: spectator-cam vectoangles truncates toward zero
+	local rad = -30.7 * math.pi / 180
+	local ang = qwcl.camVectoangles(vector.create(math.cos(rad), math.sin(rad), 0))
+	t.eq(ang.y, 330, "E6 negative yaw truncates then wraps (floor said 329)")
+
+	-- E7: first-packet net_drop clamped to 0 (was -1)
+	local chan = qwnetchan.new()
+	local first = buffer.create(8)
+	buffer.writeu32(first, 0, 0)
+	qwnetchan.process(chan, first)
+	t.eq(chan.drop_count, 0, "E7 first packet drop_count 0")
+end
+
 t.finish("test_audit")

@@ -22,7 +22,12 @@ local sc = qwsv.wireConnect(svr, 1, { name = "director" }, function(packet: buff
 	table.insert(queue, packet)
 end)
 qwcl.connect(cl, function(packet: buffer)
+	-- reply per packet like the Studio boot's onInbound: the lockstep
+	-- (server outgoing seq == server incoming seq) requires exactly one
+	-- reply per client packet, and CL_SendCmd transmits even the two
+	-- dumped moves after a serverdata
 	qwsv.executeClientMessage(svr, sc, packet)
+	qwsv.replyToClient(svr, sc)
 end)
 
 local function pump()
