@@ -36,6 +36,8 @@ export type Console = {
 	completions: { string },
 	-- Con_DPrintf gate: the developer cvar
 	developer: number,
+	-- Con_NotifyBox: true while a boxed warning waits for its keypress
+	awaitingKey: boolean,
 	blinkTime: number,
 	slide: number,
 	lastTime: number,
@@ -104,6 +106,7 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	c.inputText = ""
 	c.completions = {}
 	c.developer = 0
+	c.awaitingKey = false
 	c.history = {}
 	c.historyPos = 0
 	c.open = false
@@ -144,6 +147,20 @@ function console.safePrint(c: Console, text: string)
 	console.print(c, text)
 end
 
+-- Con_NotifyBox: a boxed startup warning ("during startup for sound /
+-- cd warnings") that raises the console and holds until a keypress
+function console.notifyBox(c: Console, text: string)
+	local bar = "\29" .. string.rep("\30", 36) .. "\31"
+	console.print(c, "\n\n" .. bar)
+	console.print(c, text)
+	console.print(c, "Press a key.")
+	console.print(c, bar)
+	c.awaitingKey = true
+	if not c.open then
+		console.toggle(c)
+	end
+end
+
 function console.toggle(c: Console)
 	c.open = not c.open
 	-- visibility follows the slide animation in update (scr_conspeed)
@@ -155,6 +172,14 @@ end
 function console.handleKey(c: Console, input: InputObject): boolean
 	if not c.open then
 		return false
+	end
+	-- Con_NotifyBox's key_count wait: any key dismisses the box and
+	-- hands focus back to the game (key_dest = key_game)
+	if c.awaitingKey then
+		c.awaitingKey = false
+		console.print(c, "")
+		console.toggle(c)
+		return true
 	end
 	local key = input.KeyCode
 

@@ -141,6 +141,11 @@ cshiftFrame.ZIndex = 1
 cshiftFrame.Parent = overlayGui
 
 local con = consolelib.create(fs, pal, overlayGui)
+-- Con_NotifyBox's C purpose ("during startup for sound / cd warnings"):
+-- a silent boot warns in a boxed press-a-key console notice
+if not snd.enabled then
+	consolelib.notifyBox(con, "No soundbank built - running silent.\nSee tools/build_soundbank.py.")
+end
 local mnu = menulib.create(fs, pal, overlayGui)
 mnu.onBeep = function(name: string)
 	soundlib.localSound(snd, name) -- S_LocalSound menu beeps
@@ -1701,6 +1706,11 @@ dbgConsole.OnInvoke = function(action: string, arg: string?)
 	elseif action == "key" then
 		consoleKey((Enum.KeyCode :: any)[arg])
 		return con.inputText
+	elseif action == "notifybox" then
+		-- verification hook: raise a Con_NotifyBox on demand
+		consolelib.notifyBox(con, arg or "test box")
+		refreshInputMode()
+		return tostring(con.awaitingKey)
 	elseif action == "text" then
 		return con.inputText
 	elseif action == "lastkey" then

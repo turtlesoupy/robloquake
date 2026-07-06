@@ -32,21 +32,21 @@ counterpart, each with its justification.
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 156 | 0 | 0 | 81 | 27 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 157 | 0 | 0 | 81 | 26 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
 | [qw-client.md](qw-client.md) — QuakeWorld client | 168 | 0 | 0 | 60 | 7 |
-| **Total** | **816** | **0** | **0** | **294** | **76** |
+| **Total** | **817** | **0** | **0** | **294** | **75** |
 
 **BURN-DOWN COMPLETE 2026-07-06: zero UNIMPLEMENTED and zero PENDING
 across all four manifests** — every row is VERIFIED (re-runnable
-evidence), SUBSTITUTED (platform justification cited), or N/A. Four rows
-carry N/A *proposals flagged for user review* (they were dead code in
-the C itself but were not part of the original hand pass):
-nq-client SCR_BringDownConsole + Con_NotifyBox, qw-client
-SCR_ModalMessage/SCR_DrawNotifyString + the M_Menu_Video mirror.
-Counts are column-exact status-cell counts per content row — count the
-status COLUMN only (the naive grep over-counts totals tables and reason
-cells).
+evidence), SUBSTITUTED (platform justification cited), or N/A. The
+four N/A proposals raised during the burn-down were reviewed by the
+user: Con_NotifyBox was ruled PORT-IT (now VERIFIED with the
+missing-soundbank boot warning as its consumer) and the other three
+(SCR_BringDownConsole, QW SCR_ModalMessage/DrawNotifyString, the QW
+video-menu NQ-mirror) were ratified as N/A. Counts are column-exact
+status-cell counts per content row — count the status COLUMN only (the
+naive grep over-counts totals tables and reason cells).
 
 Notes on reading the numbers: dead-in-C code (QUAKE2/#if 0/PF_Fixme slots)
 now sits in N/A; the SUBSTITUTED columns are dominated by the software

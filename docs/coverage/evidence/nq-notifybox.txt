@@ -1,0 +1,17 @@
+Capture context: nq-notifybox.jpg (2026-07-06)
+===============================================
+Engine: NQ boot (nq-dm preset), dm3, console raised by
+consolelib.notifyBox (driven via the RQDBG_Console "notifybox"
+verification hook — the real consumer is the missing-soundbank boot
+warning, which this place can't trigger without breaking its bank).
+
+Shows Con_NotifyBox: the 0x1D/0x1E/0x1F separator bars boxing the
+warning text ("No soundbank built - running silent. / See
+tools/build_soundbank.py.") with "Press a key.", the console raised to
+capture keys (key_dest = key_console). Measured in the same battery:
+one keypress (Space via the RQDBG "key" action) dismissed the box and
+closed the console (key_dest = key_game) — isopen false after.
+
+Re-verify: RQDBG_Console "notifybox" -> capture -> "key" Space ->
+"isopen" returns false. The boot path fires when sound.new reports no
+soundbank (sys.enabled false).

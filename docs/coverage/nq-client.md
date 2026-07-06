@@ -157,7 +157,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | N/A | no writable filesystem. N/A: DOS-era; platform owns screenshots. | — (implement first) |
 | SCR_ModalMessage | — | N/A | no modal quit/confirm flow (Roblox owns quit). N/A: platform-owned flow (quit). | — (implement first) |
 | SCR_DrawNotifyString | — | N/A | modal notify text (goes with SCR_ModalMessage). N/A: platform-owned flow (quit). | — (implement first) |
-| SCR_BringDownConsole | — | N/A (FLAGGED for user review 2026-07-06) | Dead in WinQuake itself: the only call site (cl_main.c:105) is commented out; nothing invokes it. Burn-down proposal per the dead-in-C rule — flagged rather than silently classified. | — (N/A proposal) |
+| SCR_BringDownConsole | — | N/A | Dead in WinQuake itself: the only call site (cl_main.c:105) is commented out; nothing invokes it. N/A: dead-in-C. User-ratified 2026-07-06. | — (N/A) |
 | SCR_UpdateScreen | Heartbeat overlay updates | SUBSTITUTED | Roblox render pipeline owns presentation; per-frame GUI updates replace the 2D compose | — (substitution; verify justification still holds) |
 | SCR_UpdateWholeScreen | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
 
@@ -180,7 +180,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots usually hide the area under Roblox chrome (recorded divergence: below-topbar inset) — but [evidence/nq-notify-thunderbolt.jpg](evidence/nq-notify-thunderbolt.jpg) catches a pickup notify line rendered in conchars. Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
 | Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_NotifyBox | — | N/A (FLAGGED for user review 2026-07-06) | Its only callers are the DOS MSCDEX CD-audio driver prompts (cd_audio.c:820,837) — DOS-era machinery outside the in-scope C paths. Flagged per the no-silent-N/A rule. | — (N/A proposal) |
+| Con_NotifyBox | `consolelib.notifyBox` (boxed press-a-key warning; the console raises like key_dest = key_console, any key dismisses) with a real consumer: the missing-soundbank boot warning (C's own "during startup for sound / cd warnings" purpose) | VERIFIED | [evidence/nq-notifybox.jpg](evidence/nq-notifybox.jpg) + .txt: the boxed warning live, and the measured key dismissal (console closed after one keypress). User ruled: port this one (2026-07-06). | Stage per evidence/nq-notifybox.txt |
 
 ## keys.c
 
@@ -459,16 +459,15 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 156
+- VERIFIED: 157
 - PENDING: 0
 - UNIMPLEMENTED: 0
 - SUBSTITUTED: 81
-- N/A: 27
+- N/A: 26
 
-(2026-07-06: ZERO UNIMPLEMENTED. Two rows carry N/A **proposals flagged
-for user review** — SCR_BringDownConsole (its only C call site is
-commented out) and Con_NotifyBox (only the DOS CD-audio driver calls
-it); say the word and they flip to whatever you prefer.)
+(2026-07-06: ZERO UNIMPLEMENTED. The flag pass is resolved: the user
+ruled Con_NotifyBox ported (now VERIFIED with the missing-soundbank
+consumer) and ratified SCR_BringDownConsole as N/A.)
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 

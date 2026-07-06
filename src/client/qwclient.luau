@@ -148,6 +148,9 @@ return function()
 	overlayGui.ResetOnSpawn = false
 	overlayGui.Parent = player:WaitForChild("PlayerGui")
 	local con = consolelib.create(fs, pal, overlayGui)
+	if not sndsys.enabled then
+		consolelib.notifyBox(con, "No soundbank built - running silent.\nSee tools/build_soundbank.py.")
+	end
 	local mnu = menulib.create(fs, pal, overlayGui)
 	mnu.qwMode = true
 	mnu.onBeep = function(name: string)

@@ -218,7 +218,7 @@ The QW boot drives the shared sbar.c port (`src/client/hud.luau`) through a qwcl
 | SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet / SCR_DrawFPS / SCR_DrawPause | shared hudlib icons + conditions (turtle/net; ram never — no surface cache), `show_fps` + hud.setFps, pause via hudlib.setPaused (wired since the qw pause battery — the old row note was stale) | VERIFIED | Icons: [evidence/nq-scr-icons.jpg](evidence/nq-scr-icons.jpg) (shared pipeline); FPS: "58 FPS" live on the QW boot in [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg); pause plaque is the NQ-evidenced shared plaque (qwclient calls setPaused). | Stage per the evidence files |
 | SCR_SetUpToDrawConsole / SCR_DrawConsole / SCR_BringDownConsole | `consolelib.update` (Heartbeat) | VERIFIED | Shared console module: the committed qw-console-open.jpg captures the slide/draw live on the QW boot (and the NQ pair covers the same code path). | qw-console-open evidence; RQDBG_Console "toggle" + capture |
 | WritePCXfile / SCR_ScreenShot_f / MipColor / SCR_DrawCharToSnap / SCR_DrawStringToSnap / SCR_RSShot_f | — | SUBSTITUTED | Screenshots/remote-shots are platform features; N/A. | — (substitution; verify justification still holds) |
-| SCR_DrawNotifyString / SCR_ModalMessage | — | N/A (FLAGGED for user review 2026-07-06) | Dead in QW itself: SCR_ModalMessage has zero callers in the QW client source and scr_notifystring is set by nothing else — the modal y/n flow only exists in NetQuake. Flagged per the no-silent-N/A rule. | — (N/A proposal) |
+| SCR_DrawNotifyString / SCR_ModalMessage | — | N/A | Dead in QW itself: SCR_ModalMessage has zero callers in the QW client source and scr_notifystring is set by nothing else — the modal y/n flow only exists in NetQuake. N/A: dead-in-C. User-ratified 2026-07-06. | — (N/A) |
 | SCR_UpdateScreen / SCR_UpdateWholeScreen | Heartbeat render sequence | SUBSTITUTED | Roblox render pipeline; the C draw-order (3D → sbar → console) has no equivalent yet because the 2D layers are absent. | — (substitution; verify justification still holds) |
 
 ## console.c
@@ -256,7 +256,7 @@ Entire file UNIMPLEMENTED for the QW boot. Roblox platform owns quit/pause; opti
 | M_Menu_Main_f / M_Main_Draw / M_Main_Key | shared menulib main menu | VERIFIED | [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg): MAIN plaque + all five items + menudot cursor on the QW boot. | Stage per evidence/qw-menu-fps.txt |
 | M_Menu_Options_f / M_AdjustSliders / M_Options_Draw / M_Options_Key | — | SUBSTITUTED | Same ruling as the NQ options rows (menus split 2026-07-05): console commands (sensitivity/fov/crosshair/viewsize/show_fps) + the director admin menu cover option setting. | — (substitution; NQ menus ruling) |
 | M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | SUBSTITUTED | Same ruling as the NQ keys-menu row: the bind/unbind/unbindall console commands (now live on the QW boot too) cover key configuration. | — (substitution; NQ menus ruling) |
-| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | N/A (FLAGGED for user review 2026-07-06) | Mirrors the NQ row's hand ruling (video modes are DOS-era / platform-owned); flagged because this QW twin was not in the original hand pass. | — (N/A proposal, NQ-mirror) |
+| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | N/A | Thin trampolines into the DOS/Win vid drivers' mode list (VID_MenuDraw/Key); no display modes exist to enumerate on the platform. N/A: DOS-era, mirroring the NQ hand ruling. User-ratified 2026-07-06. | — (N/A) |
 | M_Menu_Help_f / M_Help_Draw / M_Help_Key | shared menulib help pages | VERIFIED | The identical shared code is live-evidenced by the NQ help captures (nq-help-page1/2.jpg); the QW boot reaches it through the same handleKey (menu live in [evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg)). | NQ help evidence (shared path) |
 | M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | — | SUBSTITUTED | Roblox leave-game UI. | — (substitution; verify justification still holds) |
 | M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key / M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | qwMode menulib: Single Player prints the network-only notice (C's QW stub), Multiplayer opens the color setup page | VERIFIED | Menu live on the QW boot ([evidence/qw-menu-fps.jpg](evidence/qw-menu-fps.jpg)); the setup page is the NQ-evidenced shared state ([evidence/nq-setup-menu.jpg](evidence/nq-setup-menu.jpg)) and CL_Color_f's capture proves the QW color path end-to-end. | Stage per the evidence files |
@@ -421,8 +421,7 @@ Counts are the mechanical status-column count (2026-07-05 presentation pass;
 the previous 53-UNIMPLEMENTED total under-counted by one vs the same method).
 
 This manifest is DONE (2026-07-06): zero UNIMPLEMENTED, zero PENDING.
-Two rows carry N/A proposals FLAGGED for user review (SCR_ModalMessage/
-DrawNotifyString — zero callers in the QW client source — and the video
-menu mirror of the NQ hand ruling).
+The N/A flag pass is resolved — the user ratified SCR_ModalMessage/
+DrawNotifyString (dead in QW) and the video-menu NQ-mirror as N/A.
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 10 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.
