@@ -249,19 +249,19 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | S_Init / S_Startup / S_Shutdown / S_SoundInfo_f | sound.new | SUBSTITUTED | no DMA/PCM buffer; soundbank asset + PlaybackRegion slices (FIDELITY audio substitution) | — (substitution; verify justification still holds) |
-| S_AmbientOff / S_AmbientOn | — | UNIMPLEMENTED | ambients always on | — (implement first) |
+| S_AmbientOff / S_AmbientOn | `sound.setAmbientsEnabled` (the snd_ambient gate) + the `snd_ambient` command | VERIFIED | Live: water ambient 0.30 -> 0.00 -> 0.30 across snd_ambient 0/1 at the dm3 water channel ([evidence/sound-utilities-battery.txt](evidence/sound-utilities-battery.txt)). Note: WinQuake itself never calls these (dead exports); the gate is kept reachable. | Battery per the evidence .txt |
 | S_FindName / S_TouchSound / S_PrecacheSound | soundmap regions (offline tools/build_soundbank.py) | SUBSTITUTED | per-sample time slices replace sfx_t cache | — (substitution; verify justification still holds) |
 | SND_PickChannel | channels[entnum*8+channel] map | VERIFIED | Named-channel probe: the SAME persistent Sound object on ent 1 / chan 1 renamed in place guncock -> sgun1 across a weapon switch — the C entity-channel override ([evidence/nq-finale-overlay.txt](evidence/nq-finale-overlay.txt)). Delta stands: CHAN_AUTO never steals. | Probe per the evidence file |
 | SND_Spatialize | Roblox RollOffMode.Linear, max = 1000/atten scaled | SUBSTITUTED | FIDELITY: Roblox rolloff approximating the linear curve; no stereo pan math | — (substitution; verify justification still holds) |
 | S_StartSound | sound.start | VERIFIED | Numeric census (procedure in evidence/nq-main-menu.txt): a forced shotgun burst raises the playing-Sound instance count; wire delivery separately proven by the loopback sound checks. | Census chunk per evidence/nq-main-menu.txt |
-| S_StopSound | sound.stop exists but is never called | UNIMPLEMENTED | svc_stopsound is parsed and discarded in cl.luau — looped entity sounds can't be stopped | — (implement first) |
+| S_StopSound | svc_stopsound → `c.onStopSound` → `sound.stop` (init.client wires it) | VERIFIED | test_loopback: crafted svc_stopsound routes ent 5 / chan 3 through the hook (the earlier parse-and-discard note was stale — the hook landed 2026-07-04, now asserted). | `lune run tests/test_loopback.luau` |
 | S_StopAllSounds | sound.clear on serverinfo | VERIFIED | Object-lifecycle probe across a map reload: the old ambient channel Sound is destroyed (Parent nil) and a fresh instance spawns for the new level ([evidence/nq-sound-ambient-probe.txt](evidence/nq-sound-ambient-probe.txt)); raw IsPlaying censuses are confounded by the warm pool (gotcha recorded). | Probe per the evidence file |
 | S_ClearBuffer | — | SUBSTITUTED | no mix buffer | — (substitution; verify justification still holds) |
 | S_StaticSound | sound.static (looped, vol/255, atten/64) | VERIFIED | Numeric census: 16 looping ambient Sounds playing at the e1m1 vantage (statics started from the signon); event delivery proven by test_loopback "ambient sounds spawned". | Census chunk per evidence/nq-main-menu.txt; `lune run tests/test_loopback.luau` |
 | S_UpdateAmbientSounds | sound.updateAmbients | VERIFIED | Live three-location series matches offline leaf dumps exactly: {255,255} leafs -> both channels 0.300 (= 0.3 * 255/255), the {0,255} slipgate hall -> water1 fades to 0.000 within the 100/s window while wind2 holds ([evidence/nq-sound-ambient-probe.txt](evidence/nq-sound-ambient-probe.txt)). | Probe per the evidence file |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Roblox engine mixes and paints | — (substitution; verify justification still holds) |
-| S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities | ruled: IMPLEMENT (2026-07-05) |
-| S_LocalSound | — | UNIMPLEMENTED | menu/console beeps absent | ruled: IMPLEMENT (2026-07-05) |
+| S_Play / S_PlayVol / S_SoundList | `play`/`playvol`/`soundlist` commands (C's .wav suffixing; bank regions replace file sizes in the listing) | VERIFIED | Live battery: play started a local channel, soundlist reported 221 bank regions ([evidence/sound-utilities-battery.txt](evidence/sound-utilities-battery.txt)). | Battery per the evidence .txt |
+| S_LocalSound | `sound.localSound` (2D, atten 0): menu1/menu2 beeps through `menu.onBeep`, talk.wav on chat receive | VERIFIED | Live battery: togglemenu raised the playing count 42->43 (menu1.wav) ([evidence/sound-utilities-battery.txt](evidence/sound-utilities-battery.txt)); the play command drives the same localSound path. | Battery per the evidence .txt |
 | S_ClearPrecache / S_BeginPrecaching / S_EndPrecaching | — | SUBSTITUTED | no-ops around the bank model | — (substitution; verify justification still holds) |
 
 ## snd_mem.c
@@ -355,7 +355,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_InitParticles | particles.new pool | SUBSTITUTED | Pool is 1024 round-robin (oldest slot stolen) vs C's 2048 free-list that truncates effects when exhausted; pooled neon Parts are a platform substitution. Expiry: raise the pool / adopt free-list truncation if particle-heavy scenes visibly steal live particles. | code: particlesim.new/alloc; spawner behaviour under load exercised by test_particles2 |
 | R_DarkFieldParticles | — | N/A | dead code in WinQuake (QUAKE2 #ifdef) — justified omission. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | R_EntityParticles | particles.entityParticles (renders the verified particlesim core) | VERIFIED | test_particles2: 162 anorm particles, color 0x6f, die +0.01, orgs on the 64±16 shell (real anorms.h table). | `lune run tests/test_particles2.luau` |
-| R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) | — (implement first) |
+| R_ClearParticles | `particlesim.clear` + `particles.clear` (onServerInfo map-change teardown) | VERIFIED | test_particles2: clear kills every live particle and resets the pool cursor; wired into both boots' map-change teardown (code). | `lune run tests/test_particles2.luau` |
 | R_ReadPointFile_f | — | N/A | dev leak-hunting tool. N/A: needs compile-time .pts files that never exist here. | — (implement first) |
 | R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | VERIFIED | test_particles2 wire-parse battery: org coords, dir chars * 1/16, color byte, plain count pass-through, and the 255→1024 rocket-explosion escape. FIDELITY FIX 2026-07-04: the escape was MISSING (255 spawned 255 slowgrav sparks instead of a 1024-particle explosion); now applied in cl.luau exactly where C does it. | `lune run tests/test_particles2.luau` |
 | R_ParticleExplosion | particles.explosion | VERIFIED | test_particles2 explosion battery: 1024 particles, 512/512 pt_explode/pt_explode2 on i&1, color ramp1[0]=0x6f, die +5, ramp rand&3, org ±16, vel ±256. Noted delta: C interleaves org/vel rand() draws per axis, port draws org's three then vel's three (same distribution). | `lune run tests/test_particles2.luau` |
@@ -459,9 +459,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 143
+- VERIFIED: 148
 - PENDING: 0
-- UNIMPLEMENTED: 18
+- UNIMPLEMENTED: 13
 - SUBSTITUTED: 78
 - N/A: 25
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

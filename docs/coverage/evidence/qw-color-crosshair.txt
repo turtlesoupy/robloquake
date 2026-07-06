@@ -1,0 +1,17 @@
+Capture context: qw-color-crosshair.jpg (2026-07-06)
+=====================================================
+Engine: QW boot (qw-dm preset), dm3, id1. Battery: exec "color 4 12"
+(CL_Color_f -> setinfo topcolor/bottomcolor over the wire; the server
+broadcasts svc_setinfo back), then "+showscores".
+
+Shows:
+1. CL_Color_f round-tripped: the shirt/pants fills are yellow(4) over
+   red(12) in THREE surfaces at once — the RANKINGS row, the in-sbar
+   frag cell, and the mini deathmatch overlay.
+2. SCR_DrawCrosshair on the QW boot: the conchars '+' at the window
+   centre (crosshair cvar command; same anchoring rationale as the NQ
+   crosshair evidence).
+Also measured this battery (transcript): "play misc/talk" started a
+local channel (43 playing), "soundlist" reported 221 bank regions.
+
+Re-verify: boot qw-dm, exec color 4 12 / +showscores, capture.

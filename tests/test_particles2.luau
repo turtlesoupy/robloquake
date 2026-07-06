@@ -436,4 +436,26 @@ t.eq(got[1].color, 73, "svc_particle color byte")
 t.eq(got[1].count, 30, "svc_particle plain count passes through")
 t.eq(got[2].count, 1024, "svc_particle count 255 -> 1024 rocket-explosion escape (R_ParseParticleEffect)")
 
+--------------------------------------------------------------------------
+-- R_ClearParticles: everything dies, the pool cursor resets
+do
+	local sys = sim.new()
+	sim.explosion(sys, vector.zero, 0)
+	local liveBefore = 0
+	for _, pt in sys.pool do
+		if pt.alive then
+			liveBefore += 1
+		end
+	end
+	t.check(liveBefore > 0, "clear fixture: explosion spawned live particles")
+	sim.clear(sys)
+	local liveAfter = 0
+	for _, pt in sys.pool do
+		if pt.alive then
+			liveAfter += 1
+		end
+	end
+	t.check(liveAfter == 0 and sys.nextIdx == 1, "R_ClearParticles: all dead, cursor reset")
+end
+
 t.finish("test_particles2")

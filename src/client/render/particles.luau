@@ -120,4 +120,15 @@ function particles.update(sys: System, time: number, frametime: number)
 	end
 end
 
+-- R_ClearParticles (map change): headless clear + hide the shown parts
+function particles.clear(sys: System)
+	particlesim.clear(sys.sim)
+	for i, part in sys.parts do
+		if sys.shown[i] then
+			sys.shown[i] = false
+			part.Transparency = 1
+		end
+	end
+end
+
 return particles

@@ -31,6 +31,8 @@ export type Menu = {
 	-- item actions wired by the client
 	onNewGame: () -> (),
 	onQuit: () -> (),
+	-- S_LocalSound hook (menu1/menu2 beeps); the boot wires soundlib
+	onBeep: (name: string) -> (),
 	print: (s: string) -> (),
 }
 
@@ -78,6 +80,7 @@ function menu.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): M
 	m.helpIndex = 0
 	m.onNewGame = function() end
 	m.onQuit = function() end
+	m.onBeep = function(_n: string) end
 	m.print = print
 
 	-- M_Main_Draw: qplaque at (16,4), title centered at y=4, menu at (72,32)
@@ -135,6 +138,7 @@ local function showHelp(m: Menu)
 end
 
 function menu.toggle(m: Menu)
+	m.onBeep("misc/menu1.wav") -- M_ToggleMenu_f's S_LocalSound
 	if m.state == "none" then
 		m.state = "main"
 		m.cursor = 0
@@ -181,10 +185,13 @@ function menu.handleKey(m: Menu, input: InputObject): boolean
 	if key == Enum.KeyCode.M or key == Enum.KeyCode.Backspace then
 		menu.toggle(m)
 	elseif key == Enum.KeyCode.Up then
+		m.onBeep("misc/menu1.wav")
 		m.cursor = (m.cursor + MAIN_ITEMS - 1) % MAIN_ITEMS
 	elseif key == Enum.KeyCode.Down then
+		m.onBeep("misc/menu1.wav")
 		m.cursor = (m.cursor + 1) % MAIN_ITEMS
 	elseif key == Enum.KeyCode.Return or key == Enum.KeyCode.KeypadEnter then
+		m.onBeep("misc/menu2.wav")
 		if m.cursor == 0 then
 			-- Single Player: new game
 			menu.toggle(m)

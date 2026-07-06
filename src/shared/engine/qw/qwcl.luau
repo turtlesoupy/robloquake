@@ -676,6 +676,12 @@ local function execStufftext(cl: any)
 		elseif line:match("^fullserverinfo ") then
 			local info = line:match('^fullserverinfo%s+"(.*)"$') or ""
 			cl.serverinfo = parseUserinfoString(info)
+		elseif line == "changing" then
+			-- CL_Changing_f: hold everything until the reconnect —
+			-- intermission cleared, connection kept
+			cl.intermission = 0
+			table.insert(cl.prints, { level = 2, text = "\nChanging map...\n" })
+			cl.state = "connected"
 		elseif line == "reconnect" then
 			sendStringCmd(cl, "new")
 		else
@@ -684,6 +690,30 @@ local function execStufftext(cl: any)
 	end
 	cl.rawStufftext = (cl.rawStufftext or "") .. (if #rest > 0 then table.concat(rest, "\n") .. "\n" else "")
 	cl.stufftext = tail
+end
+
+-- CL_NudgePosition: if the interpolated origin sits inside the world
+-- hull, jitter it by eighths until it frees (post-predict unstick;
+-- distinct from pmove's per-trace NudgePosition)
+function qwcl.nudgePosition(cl: any)
+	local wm = cl.worldmodel
+	if not wm then
+		return
+	end
+	local hull = wm.hulls[2] -- hull 1, the player hull (cl.worldmodel is the bsp.Model)
+	if pmovelib.hullPointContents(hull, hull.firstclipnode, cl.simorg) == -1 then
+		return -- CONTENTS_EMPTY
+	end
+	local base = cl.simorg
+	for x = -1, 1 do
+		for y = -1, 1 do
+			cl.simorg = vector.create(base.x + x / 8, base.y + y / 8, base.z)
+			if pmovelib.hullPointContents(hull, hull.firstclipnode, cl.simorg) == -1 then
+				return
+			end
+		end
+	end
+	cl.dprint("CL_NudgePosition: stuck")
 end
 
 -- CL_ParseServerMessage
@@ -1140,6 +1170,7 @@ function qwcl.predictMove(cl: any)
 	local fs = from.playerstate[cl.playernum]
 	cl.simorg = fs.origin + f * (toState.origin - fs.origin)
 	cl.simvel = fs.velocity + f * (toState.velocity - fs.velocity)
+	qwcl.nudgePosition(cl)
 end
 
 return qwcl

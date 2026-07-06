@@ -456,6 +456,15 @@ end
 --------------------------------------------------------------------------
 -- per-frame simulation (R_DrawParticles physics)
 
+-- R_ClearParticles: kill every particle (map change). C rebuilds the
+-- free list; the pool port just marks everything dead.
+function particlesim.clear(sys: System)
+	for _, pt in sys.pool do
+		pt.alive = false
+	end
+	sys.nextIdx = 1
+end
+
 function particlesim.update(sys: System, time: number, frametime: number)
 	local time3 = frametime * 15
 	local time2 = frametime * 10

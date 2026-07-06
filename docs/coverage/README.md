@@ -32,10 +32,10 @@ counterpart, each with its justification.
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 143 | 0 | 18 | 78 | 25 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 148 | 0 | 13 | 78 | 25 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 142 | 0 | 34 | 54 | 5 |
-| **Total** | **765** | **0** | **52** | **285** | **72** |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 153 | 0 | 23 | 54 | 5 |
+| **Total** | **781** | **0** | **36** | **285** | **72** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -93,6 +93,27 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (burn-down pass 6: sound utilities + client odds)
+- soundlib grew S_LocalSound (2D atten-0 channel), S_SoundList (bank
+  regions replace file sizes), and the snd_ambient gate (S_AmbientOff/On
+  — dead exports in WinQuake itself, kept reachable via the command).
+  play/playvol/soundlist commands on BOTH boots; menu1/menu2 beeps via
+  menu.onBeep; talk.wav on chat receive (NQ) / PRINT_CHAT prints (QW).
+  Live measured: play/beep raise the playing-channel count, 221-region
+  soundlist, water ambient 0.30->0->0.30 across snd_ambient 0/1.
+- R_ClearParticles (particlesim.clear, test-covered) wired into both
+  map-change teardowns; NQ svc_stopsound hook asserted offline (stale
+  parse-and-discard note corrected).
+- QW client: CL_Color_f ("color 4 12" round-trip visible in three
+  scoreboard surfaces at once — qw-color-crosshair.jpg), CL_FullInfo_f/
+  CL_SetInfo_f, CL_Changing_f (crafted-tested), CL_NudgePosition (real
+  wall-boundary nudge test + C stuck dprint), SCR_SizeUp/Down, the
+  crosshair (+ command), S_UpdateAmbientSounds wired from the view leaf.
+- angledelta/CalcGunAngle closed by IDENTITY: the shipped C's lag terms
+  are provably zero (yaw = angledelta(yaw - yaw)), so the port's direct
+  view-angle gun is exact.
+
 
 ### 2026-07-06 (burn-down pass 5: nq-server reaches zero; console tooling both boots)
 - Host_Status_f/Host_Ping_f/Host_Kick_f land as C-format report builders

@@ -133,4 +133,23 @@ for _, s in sounds do
 end
 t.check(sawShotgun, "shotgun sound event received")
 
+--------------------------------------------------------------------------
+-- S_StopSound: a crafted svc_stopsound routes entity/channel through the
+-- onStopSound hook (the boot wires it to sound.stop)
+do
+	local proto = require("../src/shared/engine/protocol")
+	local msg = require("../src/shared/engine/common/msg")
+	local stopped: { number } = {}
+	c.onStopSound = function(_c2, entnum: number, channel: number)
+		stopped = { entnum, channel }
+	end
+	local sb = msg.newBuf(16)
+	msg.writeByte(sb, proto.svc_stopsound)
+	msg.writeShort(sb, 5 * 8 + 3) -- entity 5, channel 3
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	cllib.parseServerMessage(c, pkt)
+	t.check(stopped[1] == 5 and stopped[2] == 3, "svc_stopsound: ent 5 chan 3 through onStopSound (S_StopSound)")
+end
+
 t.finish("test_loopback")

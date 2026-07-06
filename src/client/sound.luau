@@ -222,6 +222,9 @@ end
 local AMBIENT_SAMPLES = { "ambience/water1.wav", "ambience/wind2.wav" }
 
 function sound.updateAmbients(sys: System, leafAmbient: { number }?, dt: number)
+	if (sys :: any).ambientsOff then
+		leafAmbient = nil -- S_AmbientOff: ambients fade to silence
+	end
 	if not sys.enabled then
 		return
 	end
@@ -259,6 +262,40 @@ function sound.updateAmbients(sys: System, leafAmbient: { number }?, dt: number)
 			a.sound.Volume = a.vol / 255
 		end
 	end
+end
+
+-- S_LocalSound: 2D UI sound (menu beeps, talk.wav) — no spatialization,
+-- full volume, no entity/channel override
+function sound.localSound(sys: System, sample: string, vol: number?): boolean
+	local r = regionFor(sys, sample)
+	if not r then
+		return false
+	end
+	sound.start(sys, -9999, 0, sample, vector.zero, vol or 1, 0) -- atten 0 = everywhere
+	return true
+end
+
+-- S_SoundList: every sample in the soundmap with its bank region length
+-- (the byte size of the C report has no counterpart — regions replace
+-- files); returns the text so consoles/tests can consume it
+function sound.soundList(sys: System): string
+	local names = {}
+	for name in sys.regions do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local out = {}
+	for _, name in names do
+		local r = sys.regions[name]
+		table.insert(out, ("%6.2fs %s\n"):format((r :: any).l or 0, name))
+	end
+	table.insert(out, `{#names} sounds\n`)
+	return table.concat(out)
+end
+
+-- S_AmbientOff / S_AmbientOn (snd_ambient gate read by updateAmbients)
+function sound.setAmbientsEnabled(sys: System, on: boolean)
+	(sys :: any).ambientsOff = not on
 end
 
 function sound.clear(sys: System)

@@ -139,6 +139,19 @@ return function()
 	overlayGui.Parent = player:WaitForChild("PlayerGui")
 	local con = consolelib.create(fs, pal, overlayGui)
 
+	-- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair
+	-- cvar (same window-centre anchoring rationale as the NQ boot)
+	local crosshairLabel = Instance.new("ImageLabel")
+	crosshairLabel.Name = "crosshair"
+	crosshairLabel.BackgroundTransparency = 1
+	crosshairLabel.ResampleMode = Enum.ResamplerMode.Pixelated
+	crosshairLabel.Size = UDim2.fromOffset(8 * 2, 8 * 2)
+	crosshairLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	crosshairLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+	crosshairLabel.ZIndex = 0
+	confontlib.apply(con.font, crosshairLabel, string.byte("+"))
+	crosshairLabel.Parent = overlayGui
+
 	-- Chat compliance (see the NQ boot's twin): say/say_team submit to
 	-- TextChatService for filtering; filtered text rides cl.prints as
 	-- PRINT_CHAT so it renders like a wire chat line. The server refuses
@@ -917,6 +930,57 @@ return function()
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
 			-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores
 			hudlib.setShowTeamScores(hud, cmd == "+showteamscores")
+		elseif cmd == "crosshair" then
+			local v = tonumber(args)
+			if v then
+				crosshairLabel.Visible = v ~= 0
+			end
+			consolelib.print(con, `"crosshair" is "{if crosshairLabel.Visible then 1 else 0}"`)
+		elseif cmd == "play" or cmd == "playvol" then
+			-- S_Play / S_PlayVol (C appends .wav when the name has no dot)
+			local toks = {}
+			for tok in (args :: string):gmatch("%S+") do
+				table.insert(toks, tok)
+			end
+			local i = 1
+			while i <= #toks do
+				local name = toks[i]
+				if not name:find("%.") then
+					name ..= ".wav"
+				end
+				local vol = 1
+				if cmd == "playvol" then
+					vol = tonumber(toks[i + 1]) or 1
+					i += 2
+				else
+					i += 1
+				end
+				if not soundlib.localSound(sndsys, name, vol) then
+					consolelib.print(con, `couldn't load {name}`)
+				end
+			end
+		elseif cmd == "soundlist" then
+			-- S_SoundList (bank regions replace file sizes)
+			consolelib.print(con, soundlib.soundList(sndsys))
+		elseif cmd == "sizeup" or cmd == "sizedown" then
+			-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
+			currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
+			hudlib.setViewsize(hud, currentViewsize)
+			applyFov()
+		elseif cmd == "color" then
+			-- CL_Color_f: "color <top> [bottom]" -> topcolor/bottomcolor
+			-- setinfo (the server broadcasts the change back)
+			local a1, a2 = (args :: string):match("^(%d+)%s*(%d*)$")
+			local top = math.min(tonumber(a1) or 0, 13)
+			local bottom = math.min(tonumber(a2 or "") or top, 13)
+			qwcl.sendStringCmd(cl, `setinfo topcolor {top}`)
+			qwcl.sendStringCmd(cl, `setinfo bottomcolor {bottom}`)
+		elseif cmd == "fullinfo" then
+			-- CL_FullInfo_f: backslash-delimited pairs -> setinfos
+			local info = (args :: string):gsub('^"(.*)"$', "%1")
+			for k, v in info:gmatch("\\([^\\]+)\\([^\\]*)") do
+				qwcl.sendStringCmd(cl, `setinfo {k} {v}`)
+			end
 		elseif cmd == "version" then
 			-- CL_Version_f (exe date replaced by the port identity)
 			consolelib.print(con, "Version 2.40\nrobloquake QuakeWorld port")
@@ -1003,6 +1067,8 @@ return function()
 	con.completions = {
 		"bf", "centerview", "clear", "disconnect", "fov", "impulse", "kill",
 		"messagemode", "messagemode2", "pause", "pings", "quit", "say",
+		"play", "playvol", "soundlist", "sizedown", "sizeup", "color",
+		"crosshair", "fullinfo",
 		"say_team", "serverinfo", "setinfo", "toggleconsole", "user",
 		"users", "v_cshift", "version", "viewsize",
 		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
@@ -1236,6 +1302,7 @@ return function()
 				entrender.destroy(re)
 			end
 			table.clear(staticRes)
+			particleslib.clear(psys) -- R_ClearParticles on the map change
 			-- CL_ClearTEnts: beams + explosions zeroed on level start; the
 			-- pooled beam render instances are port-side and released too
 			qwview.clearTEnts(beams, explosions)
@@ -1338,10 +1405,14 @@ return function()
 		-- the V_UpdatePalette drops, then V_CalcBlend onto the frame
 		do
 			local contents = -1
+			local leafAmbient: { number }? = nil
 			if cl.worldmodel then
 				local leaf = bsplib.pointInLeaf(cl.simorg + vector.create(0, 0, 22), cl.worldmodel)
 				contents = leaf.contents
+				leafAmbient = leaf.ambient
 			end
+			-- S_UpdateAmbientSounds: water/sky ambience from the view leaf
+			soundlib.updateAmbients(sndsys, leafAmbient, dt)
 			qwview.setContentsColor(blend, contents)
 			qwview.calcPowerupCshift(blend, cl.stats[qwp.STAT_ITEMS] or 0)
 			qwview.dropShifts(blend, dt)
@@ -1542,6 +1613,9 @@ return function()
 		while #cl.prints > 0 do
 			local p = table.remove(cl.prints, 1)
 			if p then
+				if p.level == qwp.PRINT_CHAT then
+					soundlib.localSound(sndsys, "misc/talk.wav") -- S_LocalSound
+				end
 				hudlib.print(hud, p.text, cl.time)
 				consolelib.print(con, p.text)
 				print("[qw] " .. p.text:gsub("\n$", ""))

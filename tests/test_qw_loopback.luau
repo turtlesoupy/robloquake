@@ -577,4 +577,64 @@ end
 t.check(qwsv.kick(svr, sclient.userid), "kick found the userid")
 t.check(not sclient.active, "kicked client dropped")
 
+--------------------------------------------------------------------------
+-- CL_Changing_f: the "changing" stufftext holds the connection with
+-- intermission cleared and the C message printed
+do
+	local sb = msg.newBuf(32)
+	msg.writeByte(sb, qwp.svc_stufftext)
+	msg.writeString(sb, "changing\n")
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	cl.intermission = 1
+	local oldState = cl.state
+	qwcl.parseServerMessage(cl, msg.reader(pkt))
+	t.eq(cl.intermission, 0, "CL_Changing_f: intermission cleared")
+	t.eq(cl.state, "connected", "CL_Changing_f: connection held at connected")
+	t.check(cl.prints[#cl.prints] and cl.prints[#cl.prints].text:find("Changing map") ~= nil, "CL_Changing_f: the C message printed")
+	cl.state = oldState
+end
+
+-- CL_NudgePosition: empty spots untouched; a spot fractionally inside a
+-- wall nudges free by eighths; deep solid reports stuck like C
+do
+	local pmovelib = require("../src/shared/engine/qw/pmove")
+	local hull = cl.worldmodel.hulls[2]
+	local free = cl.simorg
+	qwcl.nudgePosition(cl)
+	t.check(cl.simorg == free, "nudgePosition: empty origin untouched")
+
+	-- walk +x in eighths until the player hull goes solid: that boundary
+	-- point nudges back out
+	local probe = free
+	local found = false
+	for i = 1, 4096 do
+		probe += vector.create(1 / 8, 0, 0)
+		if pmovelib.hullPointContents(hull, hull.firstclipnode, probe) ~= -1 then
+			found = true
+			break
+		end
+	end
+	t.check(found, "nudgePosition fixture: found a wall boundary east of spawn")
+	cl.simorg = probe
+	qwcl.nudgePosition(cl)
+	t.check(pmovelib.hullPointContents(hull, hull.firstclipnode, cl.simorg) == -1, "nudgePosition: boundary spot nudged free")
+
+	-- deep solid: stuck, with the C dprint
+	local dprints = {}
+	local oldDprint = cl.dprint
+	cl.dprint = function(s2: string)
+		table.insert(dprints, s2)
+	end
+	cl.simorg = probe + vector.create(64, 0, 0)
+	if pmovelib.hullPointContents(hull, hull.firstclipnode, cl.simorg) ~= -1 then
+		qwcl.nudgePosition(cl)
+		t.check(dprints[1] == "CL_NudgePosition: stuck", "nudgePosition: deep solid reports stuck")
+	else
+		t.check(true, "nudgePosition: deep probe landed empty (map-dependent) — stuck path skipped")
+	end
+	cl.dprint = oldDprint
+	cl.simorg = free
+end
+
 t.finish("test_qw_loopback")

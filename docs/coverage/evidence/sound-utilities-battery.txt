@@ -1,0 +1,25 @@
+Live battery (text): sound-utilities-battery.txt (2026-07-06)
+==============================================================
+Both boots, driven through RQDBG_Console; measured via workspace
+QuakeSounds Sound instances (numeric readback).
+
+NQ (nq-dm preset, dm3):
+- S_Play: exec "play misc/talk" -> a new playing local channel
+  (atten 0) appeared.
+- S_SoundList: exec "soundlist" -> "221 sounds" report (bank regions
+  replace the C byte sizes).
+- S_LocalSound menu beeps: "togglemenu" raised the playing-count 42->43
+  (misc/menu1.wav through menu.onBeep).
+- S_AmbientOff/On: at the dm3 water channel (SVDBG_SetOrigin
+  1060 -380 -330) the looped water ambient sat at volume 0.30;
+  "snd_ambient 0" faded it to 0.00; "snd_ambient 1" restored 0.30.
+  (WinQuake itself never calls S_AmbientOff/On — dead exports; the
+  port keeps the snd_ambient gate reachable via the command.)
+
+QW (qw-dm preset, dm3):
+- S_Play/S_SoundList: same results (43 playing, 221 sounds).
+- S_LocalSound talk.wav fires on PRINT_CHAT prints (code path shared
+  with the NQ beeps proven above).
+
+Re-verify: the exec sequences above; count IsPlaying Sounds under
+workspace.QuakeSounds and read the looped ambient volumes.

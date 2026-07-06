@@ -142,6 +142,9 @@ cshiftFrame.Parent = overlayGui
 
 local con = consolelib.create(fs, pal, overlayGui)
 local mnu = menulib.create(fs, pal, overlayGui)
+mnu.onBeep = function(name: string)
+	soundlib.localSound(snd, name) -- S_LocalSound menu beeps
+end
 
 -- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair cvar
 -- (WinQuake defaults it off; we default on). C draws it at the vrect
@@ -618,6 +621,7 @@ c.onServerInfo = function()
 	-- loading plaque holds until the first rendered frame of the new level
 	loadingUp = 1
 	hudlib.setLoading(hud, true)
+	particleslib.clear(psys) -- R_ClearParticles on the map change
 	-- release every mesh from the old level SYNCHRONOUSLY. Destroying
 	-- signals are deferred, so ClearAllChildren alone would still hold the
 	-- EditableMesh budget while the new world builds below — starving it
@@ -801,6 +805,7 @@ task.spawn(function()
 			end
 			local src = m.TextSource
 			local name = if src then src.Name else "?"
+			soundlib.localSound(snd, "misc/talk.wav") -- C's chat beep
 			c.print(`\1{name}: {m.Text}\n`)
 		end)
 	else
@@ -1200,6 +1205,39 @@ execCommand = function(line: string)
 		consolelib.toggle(con)
 	elseif cmd == "version" then
 		consolelib.print(con, "robloquake — WinQuake 1.09 port")
+	elseif cmd == "play" or cmd == "playvol" then
+		-- S_Play / S_PlayVol: local test playback; C appends .wav when
+		-- the name has no dot
+		local toks = {}
+		for tok in args:gmatch("%S+") do
+			table.insert(toks, tok)
+		end
+		local i = 1
+		while i <= #toks do
+			local name = toks[i]
+			if not name:find("%.") then
+				name ..= ".wav"
+			end
+			local vol = 1
+			if cmd == "playvol" then
+				vol = tonumber(toks[i + 1]) or 1
+				i += 2
+			else
+				i += 1
+			end
+			if not soundlib.localSound(snd, name, vol) then
+				consolelib.print(con, `couldn't load {name}`)
+			end
+		end
+		return
+	elseif cmd == "soundlist" then
+		-- S_SoundList (bank regions replace file sizes)
+		consolelib.print(con, soundlib.soundList(snd))
+		return
+	elseif cmd == "snd_ambient" then
+		-- S_AmbientOff / S_AmbientOn (the C snd_ambient static, exposed)
+		soundlib.setAmbientsEnabled(snd, (tonumber(args) or 1) ~= 0)
+		return
 	elseif cmd == "developer" then
 		-- the developer cvar gates Con_DPrintf
 		local v = tonumber(args)

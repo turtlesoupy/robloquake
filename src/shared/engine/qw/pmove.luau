@@ -943,4 +943,8 @@ function pmove.playerMove(pm: PlayerMove, movevars: MoveVars)
 	pm.watertype = watertype
 end
 
+-- exported for CL_NudgePosition (cl_pred.c uses PM_HullPointContents on
+-- the world's player hull directly)
+pmove.hullPointContents = hullPointContents
+
 return pmove
