@@ -394,7 +394,7 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 | PENDING | 1 |
 | SUBSTITUTED | 41 |
 | N/A | 7 |
-| UNIMPLEMENTED | 8 |
+| UNIMPLEMENTED | 7 |
 | N/A | 3 |
 | Total rows | 236 |
 

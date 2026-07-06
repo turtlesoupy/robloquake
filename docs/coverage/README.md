@@ -29,24 +29,25 @@ no from-memory claims. Statuses:
 Each manifest ends with a list of port-side additions that have no C
 counterpart, each with its justification.
 
-| Manifest | Rows | Verified | Pending | Unimplemented | Substituted | N/A |
-|---|---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 455 | 223 | 58 | 61 | 111 | 2 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 267 | 22 | 114 | 62 | 66 | 3 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 240 | 135 | 39 | 21 | 42 | 3 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 230 | 52 | 69 | 60 | 49 | 0 |
-| **Total** | **1192** | **432** | **280** | **204** | **268** | **8** |
+| Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
+|---|---|---|---|---|---|
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 279 | 0 | 25 | 111 | 36 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 131 | 0 | 30 | 78 | 25 |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 172 | 1 | 7 | 41 | 7 |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 119 | 0 | 53 | 51 | 5 |
+| **Total** | **701** | **1** | **115** | **281** | **73** |
 
-Counts as of 2026-07-04 after the evidence reset (VERIFIED = re-runnable
-evidence only) and the first burn-down passes; regenerate with
-`grep -oE '\| (VERIFIED|PENDING|UNIMPLEMENTED|SUBSTITUTED|N/A) ' docs/coverage/*.md | sort | uniq -c`.
+Counts as of 2026-07-05 (post N/A formalization + ruling passes); these are
+column-exact status-cell counts per content row — the naive
+`grep -oE '\| (VERIFIED|...) '` over-counts by matching totals tables and
+reason cells, so count the status COLUMN only. The 1 PENDING is qw-server's
+SV_Serverinfo/Localinfo honest partial, noted in that file.
 
-Notes on reading the numbers: 13 of the nq-server UNIMPLEMENTED rows are
-dead code in the original build (QUAKE2/#if 0/PF_Fixme slots); the
-SUBSTITUTED columns are dominated by the software rasterizer (d_*.c,
-r_* span/edge internals, gl_*), UDP/WinSock networking, and Win32/DOS
-platform files, replaced wholesale by the Roblox renderer, remotes, and
-runtime.
+Notes on reading the numbers: dead-in-C code (QUAKE2/#if 0/PF_Fixme slots)
+now sits in N/A; the SUBSTITUTED columns are dominated by the software
+rasterizer (d_*.c, r_* span/edge internals, gl_*), UDP/WinSock networking,
+and Win32/DOS platform files, replaced wholesale by the Roblox renderer,
+remotes, and runtime.
 
 ## Burn-down goal rules (ratified 2026-07-05)
 
