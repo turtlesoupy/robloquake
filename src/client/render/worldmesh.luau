@@ -229,6 +229,32 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	-- still degrades to skipping instead of hanging the build forever.
 	local budgetDeadline = os.clock() + 15
 
+	-- settle gate: prefer waiting HERE, behind the loading plaque, over
+	-- stumbling through mid-build retries — probe until allocation works
+	-- at all (a dynamic mesh reserves the 60k max, so success means real
+	-- headroom). The per-batch retry below remains the backstop: no API
+	-- exposes the budget level, so a passing probe cannot guarantee a
+	-- whole level fits (device-dependent ceilings).
+	do
+		local probeDelay = 0.1
+		local waited = false
+		while os.clock() < budgetDeadline do
+			local ok, probe = pcall(function()
+				return AssetService:CreateEditableMesh()
+			end)
+			if ok and probe then
+				probe:Destroy()
+				break
+			end
+			waited = true
+			task.wait(probeDelay)
+			probeDelay = math.min(probeDelay * 2, 1)
+		end
+		if waited then
+			print(`[robloquake] budget settle gate held the {name} build`)
+		end
+	end
+
 	-- group surfaces by texture
 	local byTexture: { [number]: { bsp.Surface } } = {}
 	for i = 0, model.nummodelsurfaces - 1 do
