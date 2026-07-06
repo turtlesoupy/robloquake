@@ -71,7 +71,10 @@ modepresets.PRESETS = {
 		engine = "qw",
 		game = "id1",
 		gamedir = "threewave",
-		teamplay = 1,
+		-- threewave overloads teamplay as a bitfield: 256 enables CTF (flags
+		-- don't spawn without it). 419 = the mod's shipped server.cfg value
+		-- (health+armor protect, color lock, drop items, CTF)
+		teamplay = 419,
 		deathmatch = 1,
 		fraglimit = 15,
 		timelimit = 20,

@@ -239,6 +239,11 @@ return function()
 	local explosions: { qwview.Explosion? } = {}
 	local explosionIndex: number? = nil
 
+	-- forward ref: execCommand is declared after the stufftext consumer
+	-- below, but stuffed lines must run through the full command layer
+	-- (Cbuf_AddText semantics — mods stuff "setinfo topcolor N" etc.)
+	local execStuffLine: (string) -> () = function(_line: string) end
+
 	local function updateHudAdapter()
 		hudC.time = cl.time
 		hudC.intermission = cl.intermission
@@ -269,20 +274,15 @@ return function()
 			end
 		end
 
-		-- server-stuffed view commands: "bf" (V_BonusFlash_f) on item
-		-- pickup, "v_cshift ..." (V_cshift_f) from trigger_cshift-style QC
+		-- server-stuffed commands run through the console layer like C's
+		-- Cbuf_AddText: "bf"/"v_cshift" from pickups and triggers, but
+		-- also mod stuffcmds — threewave's color lock stuffs "setinfo
+		-- topcolor/bottomcolor N" to team-color new joiners
 		local raw = cl.rawStufftext
 		if raw and raw ~= "" then
 			cl.rawStufftext = ""
 			for line in raw:gmatch("[^\n]+") do
-				if line == "bf" then
-					qwview.bonusFlash(blend)
-				else
-					local vargs = line:match("^v_cshift%s*(.*)$")
-					if vargs then
-						qwview.cshiftCmd(blend, vargs)
-					end
-				end
+				execStuffLine(line)
 			end
 		end
 
@@ -1335,6 +1335,7 @@ return function()
 		end
 	end
 	con.onCommand = execCommand
+	execStuffLine = execCommand
 	mnu.onColor = function(top: number, bottom: number)
 		execCommand(`color {top} {bottom}`)
 	end
