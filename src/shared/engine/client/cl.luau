@@ -252,6 +252,11 @@ end
 
 -- CL_SignonReply
 local function signonReply(c: Client)
+	-- Con_DPrintf in C: visible only with the developer cvar
+	local dp = (c :: any).dprint
+	if dp then
+		dp(`CL_SignonReply: {c.signon}`)
+	end
 	if c.signon == 1 then
 		msg.writeByte(c.message, proto.clc_stringcmd)
 		msg.writeString(c.message, "prespawn")

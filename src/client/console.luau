@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local vfslib = require(engine.common.vfs)
 local wadlib = require(engine.gfx.wad)
+local com = require(engine.common.com)
 
 local confont = require(script.Parent.render.confont)
 local textures = require(script.Parent.render.textures)
@@ -30,6 +31,11 @@ export type Console = {
 	open: boolean,
 	-- called with a full command line when the user presses return
 	onCommand: (line: string) -> (),
+	-- CompleteCommand (keys.c): Tab completes against these (command
+	-- names first, then cvar names), set by the boot
+	completions: { string },
+	-- Con_DPrintf gate: the developer cvar
+	developer: number,
 	blinkTime: number,
 	slide: number,
 	lastTime: number,
@@ -79,6 +85,8 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	end
 	c.lines = {}
 	c.inputText = ""
+	c.completions = {}
+	c.developer = 0
 	c.history = {}
 	c.historyPos = 0
 	c.open = false
@@ -103,6 +111,20 @@ function console.print(c: Console, s: string)
 	while #c.lines > 200 do
 		table.remove(c.lines, 1)
 	end
+end
+
+-- Con_DPrintf: only prints when the developer cvar is set
+function console.dprint(c: Console, text: string)
+	if c.developer ~= 0 then
+		console.print(c, text)
+	end
+end
+
+-- Con_SafePrintf: C temporarily disables screen updates to print during
+-- video re-init; a retained GUI has nothing to disable, so this is
+-- Con_Printf with the guard collapsed
+function console.safePrint(c: Console, text: string)
+	console.print(c, text)
 end
 
 function console.toggle(c: Console)
@@ -132,6 +154,16 @@ function console.handleKey(c: Console, input: InputObject): boolean
 				if cmd ~= "" then
 					c.onCommand(cmd)
 				end
+			end
+		end
+	elseif key == Enum.KeyCode.Tab then
+		-- CompleteCommand (keys.c): complete the partial into a full
+		-- command; the C console puts a trailing space after the match
+		local partial = c.inputText:match("^%s*(%S*)$")
+		if partial and partial ~= "" then
+			local match = com.completePrefix(c.completions, partial)
+			if match then
+				c.inputText = match .. " "
 			end
 		end
 	elseif key == Enum.KeyCode.Backspace then

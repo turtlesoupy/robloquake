@@ -38,6 +38,7 @@ local STAT_MONSTERS = 14
 
 function host.newGame(fs: vfslib.Vfs, maxclients: number): svlib.Server
 	local svr = svlib.new(fs, maxclients)
+	;(svr :: any).fsys = fs -- COM_Path_f reads the searchpath
 	for i = 1, maxclients do
 		svr.clients[i] = svlib.newClient(i)
 	end
@@ -403,9 +404,184 @@ local HOST_ONLY = {
 	edict = true,
 	edictcount = true,
 	profile = true,
+	kick = true,
+	viewmodel = true,
+	viewframe = true,
+	viewnext = true,
+	viewprev = true,
 }
 
 -- Host_ClientCommand dispatch (the clc_stringcmd cases SV_ReadClientMessage allows)
+-- Host_Status_f's report body (also the director admin menu's source).
+-- Deltas: no tcp/ip address lines (platform transport); connect time
+-- counted from svr.time at connect.
+function host.statusReport(svr: svlib.Server): string
+	local lines = {
+		`host:    {cvarlib.string(svr.cvars, "hostname")}\n`,
+		"version: 1.09\n",
+		`map:     {svr.name}\n`,
+	}
+	local active = 0
+	for _, c2 in svr.clients do
+		if c2.active then
+			active += 1
+		end
+	end
+	table.insert(lines, `players: {active} active ({svr.maxclients} max)\n\n`)
+	for j, c2 in svr.clients do
+		if c2.active then
+			local secs = math.max(math.floor(svr.time - ((c2 :: any).connecttime or 0)), 0)
+			local mins = (secs // 60) % 60
+			local hours = secs // 3600
+			table.insert(
+				lines,
+				("#%-2u %-16s  %3i  %2i:%02i:%02i\n"):format(j, c2.name:sub(1, 16), vmlib.edFloat(c2.edict, ent.frags), hours, mins, secs % 60)
+			)
+		end
+	end
+	return table.concat(lines)
+end
+
+-- Host_Ping_f's report body (NUM_PING_TIMES=16 average per client)
+function host.pingReport(svr: svlib.Server): string
+	local lines = { "Client ping times:\n" }
+	for _, c2 in svr.clients do
+		if c2.active then
+			local total = 0
+			local pt = (c2 :: any).ping_times
+			if pt then
+				for _, v in pt do
+					total += v
+				end
+			end
+			table.insert(lines, ("%4i %s\n"):format(math.floor(total / 16 * 1000), c2.name))
+		end
+	end
+	return table.concat(lines)
+end
+
+-- Host_Kick_f's body: by name (case-insensitive) or slot number; kicker
+-- name "Console" for host-tool kicks like C's cmd_source console path
+function host.kick(svr: svlib.Server, targetSpec: string, message: string, kicker: svlib.Client?): boolean
+	local target: svlib.Client? = nil
+	if targetSpec:sub(1, 1) == "#" then
+		local slot = tonumber(targetSpec:sub(2))
+		if slot and svr.clients[slot] and svr.clients[slot].active then
+			target = svr.clients[slot]
+		end
+	else
+		for _, c2 in svr.clients do
+			if c2.active and c2.name:lower() == targetSpec:lower() then
+				target = c2
+				break
+			end
+		end
+	end
+	if not target or target == kicker then -- can't kick yourself!
+		return false
+	end
+	local who = if kicker then kicker.name else "Console"
+	if message ~= "" then
+		clientPrint(target, `Kicked by {who}: {message}\n`)
+	else
+		clientPrint(target, `Kicked by {who}\n`)
+	end
+	svlib.dropClient(svr, target, false)
+	return true
+end
+
+-- FindViewthing (host_cmd.c dev model inspector): the entity classed
+-- "viewthing" that maps like test scenes place for frame inspection
+local function findViewthing(svr: svlib.Server): vmlib.Edict?
+	local vm = svr.vm
+	for i = 0, vm.num_edicts - 1 do
+		local e = vm.edicts[i + 1]
+		if e and not e.free and vmlib.edString(vm, e, ent.classname) == "viewthing" then
+			return e
+		end
+	end
+	svr.print("No viewthing on map")
+	return nil
+end
+
+local function viewthingModel(svr: svlib.Server, e: vmlib.Edict)
+	return svr.models[vmlib.edFloat(e, ent.modelindex) + 1]
+end
+
+-- PrintFrameName: alias frame name at the index
+function host.printFrameName(svr: svlib.Server, mod: any, frame: number)
+	local alias = mod and mod.alias
+	local fr = alias and alias.frames[frame + 1]
+	if fr then
+		svr.print(`frame {frame}: {fr.name}`)
+	end
+end
+
+-- Host_Viewmodel_f. Delta vs C: C side-loads the model into the CLIENT's
+-- precache list (a renderer hack the server/client split cannot reach);
+-- the port requires the model precached and swaps via the normal fields.
+function host.viewmodel(svr: svlib.Server, name: string)
+	local e = findViewthing(svr)
+	if not e then
+		return
+	end
+	local index: number? = nil
+	for i, n in svr.model_precache do
+		if n == name then
+			index = i - 1
+			break
+		end
+	end
+	if not index then
+		svr.print(`Can't load {name}`)
+		return
+	end
+	vmlib.edSetFloat(e, ent.frame, 0)
+	vmlib.edSetFloat(e, ent.modelindex, index)
+end
+
+-- Host_Viewframe_f: clamp to the model's frame count
+function host.viewframe(svr: svlib.Server, f: number)
+	local e = findViewthing(svr)
+	if not e then
+		return
+	end
+	local mod = viewthingModel(svr, e)
+	if mod and f >= mod.numframes then
+		f = mod.numframes - 1
+	end
+	vmlib.edSetFloat(e, ent.frame, f)
+end
+
+-- Host_Viewnext_f / Host_Viewprev_f: step and announce the frame name
+function host.viewnext(svr: svlib.Server)
+	local e = findViewthing(svr)
+	if not e then
+		return
+	end
+	local mod = viewthingModel(svr, e)
+	local f = vmlib.edFloat(e, ent.frame) + 1
+	if mod and f >= mod.numframes then
+		f = mod.numframes - 1
+	end
+	vmlib.edSetFloat(e, ent.frame, f)
+	host.printFrameName(svr, mod, f)
+end
+
+function host.viewprev(svr: svlib.Server)
+	local e = findViewthing(svr)
+	if not e then
+		return
+	end
+	local mod = viewthingModel(svr, e)
+	local f = vmlib.edFloat(e, ent.frame) - 1
+	if f < 0 then
+		f = 0
+	end
+	vmlib.edSetFloat(e, ent.frame, f)
+	host.printFrameName(svr, mod, f)
+end
+
 function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 	s = s:gsub("%s+$", "") -- strip trailing newline/spaces from the wire
 	local cmd, args = s:match("^(%S+)%s*(.*)$")
@@ -545,8 +721,45 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 		if hook and path then
 			hook(path)
 		end
-	elseif cmd == "status" or cmd == "ping" then
-		-- informational; not needed for gameplay
+	elseif cmd == "status" then
+		-- Host_Status_f
+		clientPrint(client, host.statusReport(svr))
+	elseif cmd == "ping" then
+		-- Host_Ping_f
+		clientPrint(client, host.pingReport(svr))
+	elseif cmd == "kick" then
+		-- Host_Kick_f: "kick <name>" or "kick # <slot>", optional message
+		local a1, restk = (args :: string):match("^(%S+)%s*(.*)$")
+		if a1 == "#" then
+			local numStr, m2 = (restk :: string):match("^(%d+)%s*(.*)$")
+			if numStr then
+				host.kick(svr, "#" .. numStr, m2 :: string, client)
+			end
+		elseif a1 then
+			host.kick(svr, a1, restk :: string, client)
+		end
+	elseif cmd == "viewmodel" then
+		host.viewmodel(svr, args :: string)
+	elseif cmd == "viewframe" then
+		host.viewframe(svr, tonumber(args) or 0)
+	elseif cmd == "viewnext" then
+		host.viewnext(svr)
+	elseif cmd == "viewprev" then
+		host.viewprev(svr)
+	elseif cmd == "version" then
+		-- Host_Version_f (exe date replaced by the port identity)
+		clientPrint(client, "Version 1.09\nrobloquake WinQuake port\n")
+	elseif cmd == "path" then
+		-- COM_Path_f: the vfs searchpath, newest first
+		local lines = { "Current search path:\n" }
+		for _, sp in (svr :: any).fsys.searchpaths do
+			if sp.pack then
+				table.insert(lines, `{sp.pack.filename} ({sp.pack.numfiles} files)\n`)
+			else
+				table.insert(lines, tostring(sp.folder and sp.folder:GetFullName() or "?") .. "\n")
+			end
+		end
+		clientPrint(client, table.concat(lines))
 	else
 		svr.dprint(`{client.name} tried to {s}`)
 	end

@@ -1,0 +1,17 @@
+Capture context: nq-admin-menu-players.jpg (2026-07-06)
+========================================================
+Engine: NQ boot (nq-dm preset), dm4, id1, Studio host session.
+
+Shows the Match Control admin menu's host tools (the ruled
+"IMPLEMENT via director admin menu" surface for Host_Status_f/
+Host_Ping_f/Host_Kick_f): the PLAYERS section listing the connected
+player (self shows no KICK button — C's can't-kick-yourself), the
+STATUS / PING report buttons, and the live report area showing
+"Client ping times: 34 turtlesoupy" fetched over the Director remote
+({t=admin} messages, host-gated server-side). Kick buttons appear per
+non-self player and send {t=admin, cmd=kick, arg=<name>} — the kick
+body itself is offline-tested (test_server Host_Kick_f checks;
+test_qwsv SV_Kick).
+
+Re-verify: Play as host, gear icon -> MATCH CONTROL, scroll to
+PLAYERS, press STATUS/PING.

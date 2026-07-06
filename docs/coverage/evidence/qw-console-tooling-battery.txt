@@ -1,0 +1,24 @@
+Capture context (text battery): qw-console-tooling-battery.txt (2026-07-06)
+============================================================================
+Engine: QW boot (qw-dm preset), dm3, id1. RQDBG_Console battery; the
+measured console tail (session transcript):
+
+  Version 2.40
+  robloquake QuakeWorld port          <- CL_Version_f
+  userid frags name
+  ------ ----- ----
+       1    0 turtlesoupy
+  1 total users                       <- CL_Users_f
+  name                turtlesoupy     <- CL_User_f (20-col userinfo)
+  *version            2.40
+  deathmatch          1               <- SV_ShowServerinfo_f reply
+  fraglimit           15                 (Info_Print over the wire)
+  maxclients          32
+  timelimit           20
+
+Tab completion measured on the same boot: "use" -> "user " through
+consolelib's Key_Console Tab path (com.completePrefix over the QW
+command list).
+
+Re-verify: boot qw-dm, RQDBG_Console exec version / users /
+user <name> / serverinfo; keys U,S,E,Tab for completion.

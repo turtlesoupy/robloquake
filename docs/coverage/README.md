@@ -31,11 +31,11 @@ counterpart, each with its justification.
 
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
-| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 292 | 0 | 12 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 141 | 0 | 20 | 78 | 25 |
+| [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 304 | 0 | 0 | 111 | 36 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 143 | 0 | 18 | 78 | 25 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 188 | 0 | 0 | 42 | 6 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 138 | 0 | 38 | 53 | 5 |
-| **Total** | **759** | **0** | **70** | **284** | **72** |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 142 | 0 | 34 | 54 | 5 |
+| **Total** | **765** | **0** | **52** | **285** | **72** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -93,6 +93,29 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-06 (burn-down pass 5: nq-server reaches zero; console tooling both boots)
+- Host_Status_f/Host_Ping_f/Host_Kick_f land as C-format report builders
+  (host.statusReport/pingReport/kick) + host commands + the ruled director
+  admin-menu surface: a PLAYERS section with per-player KICK, STATUS/PING
+  buttons, and a live report area over the Director remote ({t=admin},
+  host-gated). SV_ReadClientMove now keeps the NUM_PING_TIMES ring from
+  the clc_move mtime float — live measured ping (31ms) in the evidence.
+- COM_Path_f (`path`), Host_Version_f, and the Host_Viewmodel_f dev family
+  (viewthing inspector: viewmodel/viewframe/viewnext/viewprev +
+  PrintFrameName, precache-required delta noted) — all test_server-covered.
+- Console tab completion: com.completePrefix + cvar.completeVariable
+  (test_com) + the consolelib Tab handler with per-boot command lists —
+  live "sta"->"status " (NQ) and "use"->"user " (QW).
+- Con_DPrintf (developer cvar gate; CL_SignonReply traced only at
+  developer 1, live) + Con_SafePrintf (guard collapses on a retained GUI).
+- QW client: CL_Version_f/CL_User_f/CL_Users_f live-verified;
+  CheckForCommand SUBSTITUTED (implicit console-chat deliberately not
+  reproduced — speech must ride the filtered TextChatService path).
+- Evidence: nq-admin-console-battery.jpg (the whole battery in one
+  scrollback + admin menu), nq-admin-menu-players.jpg (PLAYERS/STATUS/
+  PING/report), qw-console-tooling-battery.txt.
+- nq-server: ZERO UNIMPLEMENTED — second manifest done.
 
 ### 2026-07-06 (burn-down pass 4: qw-server reaches ZERO open rows)
 - sv_move.luau parameterized over the engine ABI: offsets resolve through

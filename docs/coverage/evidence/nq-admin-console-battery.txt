@@ -1,0 +1,23 @@
+Capture context: nq-admin-console-battery.jpg (2026-07-06)
+===========================================================
+Engine: NQ boot (nq-dm preset), dm4 (rotation), id1. Battery driven
+through RQDBG_Console "exec"/"key" actions; the Match Control admin
+menu raised alongside.
+
+The console scrollback documents the whole console-tooling battery:
+1. Con_DPrintf gate: "developer" is "0" -> "1", then CL_SignonReply
+   1..4 traced across the map change (silent at developer 0 — the
+   earlier boot shows none).
+2. Host_Version_f: "robloquake — WinQuake 1.09 port" (client-side
+   version like C) — the server "version" reply above it.
+3. Host_Status_f: host/version/map/players report with the per-client
+   "#1 turtlesoupy 0 0:00:05" session-clock row.
+4. Host_Ping_f: "Client ping times: 31 turtlesoupy" (real measured
+   ping from the clc_move mtime ring).
+5. COM_Path_f: "Current search path: id1/pak1.pak (85 files),
+   id1/pak0.pak (339 files)".
+Also measured (transcript): Tab completion "sta" -> "status " through
+the real Key_Console path (com.completePrefix).
+
+Re-verify: boot nq-dm, RQDBG_Console exec developer 1 / map dm3 /
+status / ping / path / version; keys S,T,A,Tab for completion.

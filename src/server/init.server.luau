@@ -391,6 +391,18 @@ local dir = directorlib.attach({
 	getRule = function(name: string)
 		return cvarlib.value(svr.cvars, name)
 	end,
+	adminCommand = function(cmd: string, arg: string): string?
+		-- Host_Status_f / Host_Ping_f / Host_Kick_f for the admin menu
+		if cmd == "status" then
+			return host.statusReport(svr)
+		elseif cmd == "ping" then
+			return host.pingReport(svr)
+		elseif cmd == "kick" and arg ~= "" then
+			local ok = host.kick(svr, arg, "", nil) -- kicker "Console" like C
+			return if ok then `kicked {arg}\n` else `can't kick {arg}\n`
+		end
+		return nil
+	end,
 })
 -- ===== end match director =====
 

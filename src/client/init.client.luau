@@ -1200,6 +1200,13 @@ execCommand = function(line: string)
 		consolelib.toggle(con)
 	elseif cmd == "version" then
 		consolelib.print(con, "robloquake — WinQuake 1.09 port")
+	elseif cmd == "developer" then
+		-- the developer cvar gates Con_DPrintf
+		local v = tonumber(args)
+		if v then
+			con.developer = v
+		end
+		consolelib.print(con, `"developer" is "{con.developer}"`)
 	else
 		sendStringCmd(line)
 	end
@@ -1292,7 +1299,26 @@ demoFrame = function()
 	demoBusy = false
 end
 
+-- Con_DPrintf consumer: the signon-reply trace prints only under
+-- "developer 1" (consolelib.dprint gates on con.developer)
+;(c :: any).dprint = function(s2: string)
+	consolelib.dprint(con, s2)
+end
 con.onCommand = execLine
+-- CompleteCommand list (keys.c Tab): local commands + the forwarded host
+-- commands + settable cvar-style names
+con.completions = {
+	"alias", "bf", "bind", "centerview", "changelevel", "chase_active",
+	"clear", "coop", "crosshair", "deathmatch", "developer", "echo",
+	"edict", "edictcount", "edicts", "exec", "fly", "fov", "give", "god",
+	"impulse", "kick", "kill", "load", "map", "messagemode", "noclip",
+	"notarget", "path", "pause", "ping", "playdemo", "profile", "record",
+	"save", "say", "say_team", "sensitivity", "sizedown", "sizeup",
+	"skill", "status", "stop", "stopdemo", "sv_gravity", "sv_maxspeed",
+	"togglemenu", "toggleconsole", "unbind", "unbindall", "v_cshift",
+	"version", "viewsize", "volume", "wait",
+	"+showscores", "-showscores",
+}
 
 mnu.onNewGame = function()
 	sendStringCmd("map start")

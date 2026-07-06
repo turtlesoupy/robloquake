@@ -102,6 +102,9 @@ export type Adapter = {
 	forceChangelevel: (map: string) -> (),
 	setRule: (name: string, value: number) -> (), -- live cvar set
 	getRule: (name: string) -> number?,
+	-- host admin tools (Host_Status_f/Host_Ping_f/Host_Kick_f per engine):
+	-- returns a report string for "status"/"ping"; performs "kick <name>"
+	adminCommand: ((cmd: string, arg: string) -> string?)?,
 }
 
 -- rules admins may change live (cvars both QC codebases re-read while
@@ -232,6 +235,18 @@ function director.attach(a: Adapter)
 			end
 			a.assets:SetAttribute("roblox_avatars", msg.value == true)
 			broadcastState()
+		elseif msg.t == "admin" then
+			-- host tools: status/ping reports + kick (Host_*_f per engine)
+			if not a.isHost(player) then
+				return
+			end
+			local fn = a.adminCommand
+			if fn and typeof(msg.cmd) == "string" then
+				local report = fn(msg.cmd, if typeof(msg.arg) == "string" then msg.arg else "")
+				if report then
+					remote:FireClient(player, { t = "report", text = report })
+				end
+			end
 		end
 	end)
 

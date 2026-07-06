@@ -755,6 +755,10 @@ end
 
 -- SV_ConnectClient
 function sv.connectClient(svr: Server, clientnum: number, preserveParms: boolean?)
+	local cc = svr.clients[clientnum] :: any
+	if cc then
+		cc.connecttime = svr.time -- Host_Status_f's session clock
+	end
 	local client = svr.clients[clientnum]
 	local vm = svr.vm
 

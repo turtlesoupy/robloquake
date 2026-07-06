@@ -175,8 +175,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_Print | console.print | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: scrollback renders the battery lines. Delta: hard wrap at 64 cols, 200-line scrollback vs 16K text buffer. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DebugLog | — | N/A | N/A: file logging without a writable filesystem; Studio output log covers it. | — (implement first) |
 | Con_Printf | c.print → console + notify + output | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: c.print output (VERSION banner, cvar prints) lands in the console. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | ruled: IMPLEMENT (2026-07-05) |
-| Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | ruled: IMPLEMENT (2026-07-05) |
+| Con_DPrintf | `consolelib.dprint` gated on the developer cvar (`developer` command); CL_SignonReply routed through it like C | VERIFIED | Live battery: silent at developer 0, "CL_SignonReply: 1..4" traced across a map change at developer 1 ([evidence/nq-admin-console-battery.jpg](evidence/nq-admin-console-battery.jpg)). | Stage per evidence/nq-admin-console-battery.txt |
+| Con_SafePrintf | `consolelib.safePrint` | VERIFIED | Implemented as Con_Printf with the guard collapsed: C's temporary screen-disable exists to print during video re-init, which a retained GUI never needs (code comment records the collapse); the print path itself is the battery-verified consolelib.print. | code: console.luau safePrint; any console battery |
 | Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots usually hide the area under Roblox chrome (recorded divergence: below-topbar inset) — but [evidence/nq-notify-thunderbolt.jpg](evidence/nq-notify-thunderbolt.jpg) catches a pickup notify line rendered in conchars. Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
 | Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
@@ -459,9 +459,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 ## Totals
 
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
-- VERIFIED: 141
+- VERIFIED: 143
 - PENDING: 0
-- UNIMPLEMENTED: 20
+- UNIMPLEMENTED: 18
 - SUBSTITUTED: 78
 - N/A: 25
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)

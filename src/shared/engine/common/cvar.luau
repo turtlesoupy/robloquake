@@ -86,4 +86,27 @@ function cvar.setValue(c: Cvars, name: string, value: number)
 	cvar.set(c, name, if value == math.floor(value) then tostring(value) else string.format("%f", value))
 end
 
+-- Cvar_CompleteVariable: exact match wins, then the first prefix match.
+-- Delta: C scans registration order; the hash map is sorted by name for
+-- a deterministic "first".
+function cvar.completeVariable(c: Cvars, partial: string): string?
+	if partial == "" then
+		return nil
+	end
+	if c.vars[partial] then
+		return partial
+	end
+	local names = {}
+	for name in c.vars do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	for _, name in names do
+		if name:sub(1, #partial) == partial then
+			return name
+		end
+	end
+	return nil
+end
+
 return cvar

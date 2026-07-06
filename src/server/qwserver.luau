@@ -117,6 +117,45 @@ return function(ctx: Ctx)
 		getRule = function(name: string)
 			return cvarlib.value(svr.cvars, name)
 		end,
+		adminCommand = function(cmd: string, arg: string): string?
+			-- SV_Status-style report / pings / SV_Kick_f for the admin menu
+			if cmd == "status" then
+				local lines = { `map:     {svr.name}\n`, "userid frags name\n------ ----- ----\n" }
+				for i = 1, svr.maxclients do
+					local c2 = svr.clients[i]
+					if c2.active then
+						table.insert(lines, ("%6i %5i %s\n"):format(c2.userid or 0, (c2 :: any).old_frags or 0, c2.name))
+					end
+				end
+				return table.concat(lines)
+			elseif cmd == "ping" then
+				local lines = { "Client ping times:\n" }
+				for i = 1, svr.maxclients do
+					local c2 = svr.clients[i]
+					if c2.active then
+						local total, n = 0, 0
+						for _, fr in c2.frames do
+							if fr.ping_time and fr.ping_time >= 0 then
+								total += fr.ping_time
+								n += 1
+							end
+						end
+						table.insert(lines, ("%4i %s\n"):format(if n > 0 then math.floor(total / n * 1000) else 0, c2.name))
+					end
+				end
+				return table.concat(lines)
+			elseif cmd == "kick" and arg ~= "" then
+				for i = 1, svr.maxclients do
+					local c2 = svr.clients[i]
+					if c2.active and c2.name:lower() == arg:lower() then
+						qwsv.kick(svr, c2.userid)
+						return `kicked {arg}\n`
+					end
+				end
+				return `can't kick {arg}\n`
+			end
+			return nil
+		end,
 	})
 	-- ===== end match director =====
 

@@ -491,4 +491,72 @@ do
 	svr.print = oldPrint
 end
 
+--------------------------------------------------------------------------
+-- Host_Status_f / Host_Ping_f / Host_Version_f / Host_Kick_f / COM_Path_f
+do
+	local captured: { buffer } = {}
+	-- capture what clientPrint sends: svc_print rides the client message;
+	-- easier: call the report builders directly + drive the commands
+	-- earlier batteries leave the slot inactive; re-connect for the report
+	if not client.active then
+		host.connectClient(svr, 1)
+	end
+	local report = host.statusReport(svr)
+	t.check(report:find("host:") == 1, "statusReport: host line first")
+	t.check(report:find("map:%s+e1m1") ~= nil, "statusReport: map name")
+	t.check(report:find("players: %d+ active %(4 max%)") ~= nil, "statusReport: active/max counts")
+	t.check(report:find("#1  unconnected") ~= nil or report:find("#1 ") ~= nil, "statusReport: per-client #slot row")
+	t.check(report:find("%d+:%d%d:%d%d") ~= nil, "statusReport: session clock hh:mm:ss")
+
+	local pings = host.pingReport(svr)
+	t.check(pings:find("Client ping times:") == 1, "pingReport: header")
+	t.check(pings:find("%s*%-?%d+ ") ~= nil, "pingReport: %4i ms column")
+
+	-- kick: refuse self, kick by #slot works
+	t.check(not host.kick(svr, "#1", "", client), "Host_Kick_f: can't kick yourself")
+	t.check(not host.kick(svr, "nosuchplayer", "", nil), "Host_Kick_f: unknown name refused")
+
+	-- COM_Path_f: searchpath through the fsys reference
+	t.check((svr :: any).fsys ~= nil and #(svr :: any).fsys.searchpaths > 0, "COM_Path_f: fsys searchpath reachable for the path command")
+end
+
+--------------------------------------------------------------------------
+-- Host_Viewmodel_f family (dev model inspector on a "viewthing" entity)
+do
+	-- e1m1 has no viewthing: the C "No viewthing on map" path first
+	local msgs: { string } = {}
+	local oldPrint = svr.print
+	svr.print = function(s2: string)
+		table.insert(msgs, s2)
+	end
+	host.viewnext(svr)
+	t.check(msgs[1] == "No viewthing on map", "viewthing: C's no-viewthing message")
+
+	-- stage one: a fresh edict classed viewthing wearing the grunt model
+	local thing = vmlib.alloc(vm)
+	local cnDef = vm.progs.fielddefsByName.classname
+	vmlib.edSetInt(thing, cnDef.ofs, vmlib.newString(vm, "viewthing"))
+	host.viewmodel(svr, "progs/soldier.mdl")
+	local soldierIdx = vmlib.edFloat(thing, ent.modelindex)
+	t.check(soldierIdx > 0, "viewmodel: precached model assigned, frame reset")
+	t.eq(vmlib.edFloat(thing, ent.frame), 0, "viewmodel: frame 0")
+
+	host.viewmodel(svr, "progs/nosuch.mdl")
+	t.check(msgs[#msgs] == "Can't load progs/nosuch.mdl", "viewmodel: unprecached refused (recorded delta vs C's side-load)")
+
+	host.viewframe(svr, 5)
+	t.eq(vmlib.edFloat(thing, ent.frame), 5, "viewframe: sets the frame")
+	host.viewframe(svr, 9999)
+	local soldier = svr.models[soldierIdx + 1]
+	t.eq(vmlib.edFloat(thing, ent.frame), soldier.numframes - 1, "viewframe: clamps at numframes-1")
+
+	host.viewprev(svr)
+	t.eq(vmlib.edFloat(thing, ent.frame), soldier.numframes - 2, "viewprev: steps back")
+	t.check(msgs[#msgs]:find("^frame %d+: ") ~= nil, "PrintFrameName: 'frame %i: %s'")
+	host.viewframe(svr, 0)
+	host.viewnext(svr)
+	t.eq(vmlib.edFloat(thing, ent.frame), 1, "viewnext: steps forward")
+	svr.print = oldPrint
+end
+
 t.finish("test_server")

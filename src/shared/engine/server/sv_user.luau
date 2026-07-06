@@ -330,8 +330,16 @@ end
 function sv_user.readClientMove(svr: svlib.Server, client: svlib.Client, r: msg.Reader)
 	local player = client.edict
 
-	-- read ping time (unused for now, but must consume the float)
-	msg.readFloat(r)
+	-- ping bookkeeping: the move carries cl.mtime[0] (the last server
+	-- message time the client saw); C keeps a NUM_PING_TIMES=16 ring
+	local sentTime = msg.readFloat(r)
+	local cc = client :: any
+	if not cc.ping_times then
+		cc.ping_times = table.create(16, 0)
+		cc.num_pings = 0
+	end
+	cc.ping_times[cc.num_pings % 16 + 1] = svr.time - sentTime
+	cc.num_pings += 1
 
 	-- read current angles
 	local v_angle = vector.create(msg.readAngle(r), msg.readAngle(r), msg.readAngle(r))

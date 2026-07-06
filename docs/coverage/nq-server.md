@@ -75,7 +75,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | COM_Init (common.c:1125) | — | SUBSTITUTED | endianness moot; init in bootstrap | — (substitution; verify justification still holds) |
 | va (common.c:1169) | — | SUBSTITUTED | Luau string interpolation | — (substitution; verify justification still holds) |
 | memsearch (common.c:1183) | — | N/A | unused. N/A: unused in scope. | — (implement first) |
-| COM_Path_f (common.c:1258) | — | UNIMPLEMENTED | debug console command | ruled: IMPLEMENT (2026-07-05) |
+| COM_Path_f (common.c:1258) | `path` host command (vfs searchpaths, newest first, pak file counts) | VERIFIED | Live battery: "Current search path: id1/pak1.pak (85 files), id1/pak0.pak (339 files)" ([evidence/nq-admin-console-battery.jpg](evidence/nq-admin-console-battery.jpg)); the fsys reference is test-pinned (test_server). | Stage per evidence/nq-admin-console-battery.txt; `lune run tests/test_server.luau` |
 | COM_WriteFile (common.c:1281) | — | SUBSTITUTED | no writable filesystem; saves persist via ServerStorage.QuakeSaves (init.server.luau) | — (substitution; verify justification still holds) |
 | COM_CreatePath (common.c:1308) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_CopyFile (common.c:1332) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
@@ -128,7 +128,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | Cvar_FindVar (cvar.c:32) | common/cvar.luau (vars table lookup) | VERIFIED | test_com cvar battery (set/value/string, missing-name empty string). | `lune run tests/test_com.luau` |
 | Cvar_VariableValue (cvar.c:48) | cvar.luau:value | VERIFIED | sv_friction/sv_gravity/etc. feed the movement chain matched against compiled C (test_movement) | `lune run tests/test_movement.luau` |
 | Cvar_VariableString (cvar.c:64) | cvar.luau:string | VERIFIED | test_com: returns the set string; missing cvar reads empty like C cvar_null_string. | `lune run tests/test_com.luau` |
-| Cvar_CompleteVariable (cvar.c:80) | — | UNIMPLEMENTED | console tab-completion (client UI nicety) | ruled: IMPLEMENT (2026-07-05) |
+| Cvar_CompleteVariable (cvar.c:80) | `cvar.completeVariable` | VERIFIED | test_com: exact match wins, prefix match, no-match nil (sorted-order determinism delta noted vs C's registration order). | `lune run tests/test_com.luau` |
 | Cvar_Set (cvar.c:104) | cvar.luau:set | VERIFIED | test_com round-trips; also exercised by both builtin batteries via cvar_set. | `lune run tests/test_com.luau` |
 | Cvar_SetValue (cvar.c:135) | cvar.luau:setValue | VERIFIED | test_multiplayer sets coop=1 → QC coop behavior asserted (instant respawn, -2 frag suicide) | `lune run tests/test_multiplayer.luau` |
 | Cvar_RegisterVariable (cvar.c:151) | cvar.luau DEFAULTS table | SUBSTITUTED | static default table instead of dynamic registration; no engine code registers at runtime | — (substitution; verify justification still holds) |
@@ -161,7 +161,7 @@ F11 zoom chain) but there is no offline test.
 | Cmd_TokenizeString (cmd.c:481) | init.client.luau:tokenize | VERIFIED | Console battery: quoted argument survives as one token (echo "quoted string here"). | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_AddCommand (cmd.c:532) | — | SUBSTITUTED | dispatcher if-chain | — (substitution; verify justification still holds) |
 | Cmd_Exists (cmd.c:568) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
-| Cmd_CompleteCommand (cmd.c:588) | — | UNIMPLEMENTED | console tab-completion | ruled: IMPLEMENT (2026-07-05) |
+| Cmd_CompleteCommand (cmd.c:588) | `com.completePrefix` + the consolelib Tab handler (both boots' command lists) | VERIFIED | test_com battery (exact-beats-longer, prefix, empty-partial nil); live: Tab completed "sta" -> "status " through the real Key_Console path (nq battery) and "use" -> "user " on the QW boot. | `lune run tests/test_com.luau`; batteries per the evidence .txt files |
 | Cmd_ExecuteString (cmd.c:614) | init.client.luau:execCommand | VERIFIED | Console battery: dispatch across builtins (echo/bind/exec), aliases, and cvar queries. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_ForwardToServer (cmd.c:660) | client console → clc_stringcmd forward | VERIFIED | evidence/nq-cbuf-battery.txt: "say" forwards as clc_stringcmd and the broadcast returns to the console with the player prefix. | RQDBG battery per evidence/nq-cbuf-battery.txt |
 | Cmd_CheckParm (cmd.c:693) | — | N/A | unused. N/A: unused in scope. | — (implement first) |
@@ -415,12 +415,12 @@ parses (test_bsp/test_models headers).
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Host_Quit_f (host_cmd.c:37) | — | SUBSTITUTED | players leave via Roblox; no process quit | — (substitution; verify justification still holds) |
-| Host_Status_f (host_cmd.c:56) | host.luau:clientCommand ("status" no-op) | UNIMPLEMENTED | informational report not built | ruled: IMPLEMENT via director admin menu (2026-07-05) |
+| Host_Status_f (host_cmd.c:56) | `host.statusReport` + the `status` command + the director admin menu's STATUS button | VERIFIED | test_server: host/version/map lines, active/max counts, per-client #slot row with the hh:mm:ss session clock; live report in [evidence/nq-admin-console-battery.jpg](evidence/nq-admin-console-battery.jpg) and the admin menu surface in [evidence/nq-admin-menu-players.jpg](evidence/nq-admin-menu-players.jpg). Deltas: no tcp/ip address lines (platform transport). | `lune run tests/test_server.luau`; evidence .txt batteries |
 | Host_God_f (host_cmd.c:113) | host.luau:toggleFlag (god) | VERIFIED | test_server: god toggles FL_GODMODE both ways. | `lune run tests/test_server.luau` |
 | Host_Notarget_f (host_cmd.c:131) | toggleFlag (notarget) | VERIFIED | test_server: notarget sets FL_NOTARGET. | `lune run tests/test_server.luau` |
 | Host_Noclip_f (host_cmd.c:151) | clientCommand "noclip" | VERIFIED | test_server: noclip toggles MOVETYPE_NOCLIP/WALK. | `lune run tests/test_server.luau` |
 | Host_Fly_f (host_cmd.c:183) | clientCommand "fly" | VERIFIED | test_server: fly toggles MOVETYPE_FLY. | `lune run tests/test_server.luau` |
-| Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) | ruled: IMPLEMENT via director admin menu (2026-07-05) |
+| Host_Ping_f (host_cmd.c:213) | `host.pingReport` + the `ping` command + the admin menu's PING button; SV_ReadClientMove now keeps the NUM_PING_TIMES=16 ring from the clc_move mtime float | VERIFIED | test_server report format; LIVE measured ping ("31 turtlesoupy") in [evidence/nq-admin-console-battery.jpg](evidence/nq-admin-console-battery.jpg) and through the admin menu report area ([evidence/nq-admin-menu-players.jpg](evidence/nq-admin-menu-players.jpg)). | `lune run tests/test_server.luau`; evidence batteries |
 | Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | VERIFIED | test_server: map routes to svr.changelevelTo (the platform respawn driver consumes it, changelevel-tested in test_changelevel). | `lune run tests/test_server.luau` |
 | Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | VERIFIED | test_changelevel end-to-end: trigger touch → intermission → changelevel with SV_SaveSpawnparms carry | `lune run tests/test_changelevel.luau` |
 | Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | VERIFIED | test_nqbuiltins: localcmd restart routes to the respawn driver (changelevelTo set). | `lune run tests/test_nqbuiltins.luau` |
@@ -433,7 +433,7 @@ parses (test_bsp/test_models headers).
 | LoadGamestate (host_cmd.c:761) | — | N/A | dead: QUAKE2-only. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | Host_Changelevel2_f (host_cmd.c:865) | — | N/A | dead: QUAKE2-only. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | Host_Name_f (host_cmd.c:910) | host.luau:hostName | VERIFIED | test_multiplayer: names propagate to both clients' scoreboards; 15-char clamp + netname set | `lune run tests/test_multiplayer.luau` |
-| Host_Version_f (host_cmd.c:949) | — | UNIMPLEMENTED | trivial console print | ruled: IMPLEMENT (2026-07-05) |
+| Host_Version_f (host_cmd.c:949) | client-side `version` command + the server `version` host command (exe date replaced by the port identity) | VERIFIED | Live battery: "robloquake — WinQuake 1.09 port" in the scrollback ([evidence/nq-admin-console-battery.jpg](evidence/nq-admin-console-battery.jpg)). | Stage per the evidence .txt |
 | Host_Please_f (host_cmd.c:956) | — | N/A | registered-only easter egg. N/A: dead-end easter egg; no counterpart meaningful. | — (implement first) |
 | Host_Say (host_cmd.c:1008) | host.luau:hostSay | VERIFIED | test_server: say broadcasts svc_print into the client reliable stream. | `lune run tests/test_server.luau` |
 | Host_Say_f (host_cmd.c:1072) | clientCommand "say" | VERIFIED | test_server say check (clientCommand "say ..."). | `lune run tests/test_server.luau` |
@@ -445,13 +445,13 @@ parses (test_bsp/test_models headers).
 | Host_PreSpawn_f (host_cmd.c:1254) | host.luau:hostPreSpawn | VERIFIED | loopback signon: signon buffer replay + signonnum 2 (baselines/ambients received) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Host_Spawn_f (host_cmd.c:1279) | host.luau:hostSpawn | VERIFIED | loopback: ClientConnect/PutClientInServer run, names/frags/colors, lightstyles, stats, setangle, clientdata, signonnum 3 all parsed; loadgame branch in test_savegame | `lune run tests/test_savegame.luau` |
 | Host_Begin_f (host_cmd.c:1403) | host.luau:hostBegin | VERIFIED | client.spawned asserted everywhere; loadgame unpause branch in test_savegame | `lune run tests/test_savegame.luau` |
-| Host_Kick_f (host_cmd.c:1424) | — | UNIMPLEMENTED | admin kick not ported (platform Kick only for full server) | ruled: IMPLEMENT via director admin menu (2026-07-05) |
+| Host_Kick_f (host_cmd.c:1424) | `host.kick` (by name or "# slot", "Kicked by" message, kicker "Console" for host-tool kicks) + the `kick` host command + per-player KICK buttons in the admin menu | VERIFIED | test_server: self-kick refused, unknown name refused (the C guards); the admin surface is live in [evidence/nq-admin-menu-players.jpg](evidence/nq-admin-menu-players.jpg) (self correctly shows no KICK button); drop mechanics are the test-covered svlib.dropClient. | `lune run tests/test_server.luau`; evidence capture |
 | Host_Give_f (host_cmd.c:1516) | clientCommand "give" | VERIFIED | test_server: give r 44 sets rockets; test_savegame gives weapon 7 + rockets. | `lune run tests/test_server.luau`; `lune run tests/test_savegame.luau` |
-| Host_Viewmodel_f (host_cmd.c:1690) | — | UNIMPLEMENTED | dev model-viewer command | — (implement first) |
-| Host_Viewframe_f (host_cmd.c:1715) | — | UNIMPLEMENTED | dev | — (implement first) |
-| PrintFrameName (host_cmd.c:1734) | — | UNIMPLEMENTED | dev | — (implement first) |
-| Host_Viewnext_f (host_cmd.c:1752) | — | UNIMPLEMENTED | dev | — (implement first) |
-| Host_Viewprev_f (host_cmd.c:1774) | — | UNIMPLEMENTED | dev | — (implement first) |
+| Host_Viewmodel_f (host_cmd.c:1690) | `host.viewmodel` (+`viewmodel` host command) on the classname-"viewthing" entity | VERIFIED | test_server: precached model assigned with frame reset; "Can't load" for unknown; "No viewthing on map" path. Delta: C side-loads into the CLIENT's precache list (unreachable across the server/client split) — the port requires the model precached. | `lune run tests/test_server.luau` |
+| Host_Viewframe_f (host_cmd.c:1715) | `host.viewframe` | VERIFIED | test_server: sets the frame, clamps at numframes-1. | `lune run tests/test_server.luau` |
+| PrintFrameName (host_cmd.c:1734) | `host.printFrameName` (alias frame name) | VERIFIED | test_server: "frame %i: %s" printed on viewnext/viewprev. | `lune run tests/test_server.luau` |
+| Host_Viewnext_f (host_cmd.c:1752) | `host.viewnext` | VERIFIED | test_server: steps forward, clamps at the last frame, announces the frame name. | `lune run tests/test_server.luau` |
+| Host_Viewprev_f (host_cmd.c:1774) | `host.viewprev` | VERIFIED | test_server: steps back, floors at 0. | `lune run tests/test_server.luau` |
 | Host_Startdemos_f (host_cmd.c:1806) | client demo system (out of server scope) | SUBSTITUTED | demo playback/record ported client-side per FIDELITY.md; server contributes the rq_need file hook | — (substitution; verify justification still holds) |
 | Host_Demos_f (host_cmd.c:1845) | client-side | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | Host_Stopdemo_f (host_cmd.c:1862) | client-side | SUBSTITUTED | same | — (substitution; verify justification still holds) |
@@ -630,9 +630,9 @@ socket entries), so the rows cover ~490 C function definitions.
 
 | Status | Count (rows) |
 |---|---|---|
-| VERIFIED | 292 |
+| VERIFIED | 304 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 12 |
+| UNIMPLEMENTED | 0 |
 | SUBSTITUTED | 111 |
 | N/A | 36 |
 

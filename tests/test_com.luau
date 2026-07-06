@@ -44,4 +44,21 @@ t.eq(cvarlib.string(cv, "missing_var"), "", "missing cvar reads as empty string 
 cvarlib.setValue(cv, "test_var", 7)
 t.eq(cvarlib.value(cv, "test_var"), 7, "Cvar_SetValue round-trip")
 
+--------------------------------------------------------------------------
+-- Cmd_CompleteCommand / Cvar_CompleteVariable (console Tab completion):
+-- exact match wins, then first prefix match (sorted-order delta noted)
+local com2 = require("../src/shared/engine/common/com")
+local cvarlib2 = require("../src/shared/engine/common/cvar")
+local names = { "say_team", "say", "status", "sizeup" }
+t.eq(com2.completePrefix(names, "say"), "say", "completePrefix: exact match beats longer names")
+t.eq(com2.completePrefix(names, "si"), "sizeup", "completePrefix: prefix match")
+t.eq(com2.completePrefix(names, "s"), "say", "completePrefix: first in sorted order")
+t.eq(com2.completePrefix(names, "zz"), nil, "completePrefix: no match -> nil")
+t.eq(com2.completePrefix(names, ""), nil, "completePrefix: empty partial -> nil (C len check)")
+
+local cvs = cvarlib2.new()
+t.eq(cvarlib2.completeVariable(cvs, "host"), "hostname", "completeVariable: prefix match on a real cvar")
+t.eq(cvarlib2.completeVariable(cvs, "hostname"), "hostname", "completeVariable: exact match")
+t.eq(cvarlib2.completeVariable(cvs, "zzz"), nil, "completeVariable: no match")
+
 t.finish("test_com")

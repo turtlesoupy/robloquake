@@ -19,7 +19,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CL_Quit_f | — | SUBSTITUTED | Roblox leave-game UI owns quitting; no client quit command. | — (substitution; verify justification still holds) |
-| CL_Version_f | — | UNIMPLEMENTED | Console command; QW console overlay is journaled follow-up. | ruled: IMPLEMENT (2026-07-05) |
+| CL_Version_f | `version` in execCommand | VERIFIED | Live battery: "Version 2.40 / robloquake QuakeWorld port" ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)). | Stage per the battery .txt |
 | CL_SendConnectPacket | `qwcl.connect` | SUBSTITUTED | No OOB challenge/qport/userinfo blob: Roblox remotes are per-player authenticated; server side takes userinfo via `qwsv.wireConnect`. `connect()` goes straight to `clc_stringcmd "new"`. | — (substitution; verify justification still holds) |
 | CL_CheckForResend | — | SUBSTITUTED | Reliable ordered transport; no connect resend timer. | — (substitution; verify justification still holds) |
 | CL_BeginServerConnect | `qwcl.connect` | SUBSTITUTED | One server per place; no address, no connect_time state. | — (substitution; verify justification still holds) |
@@ -28,8 +28,8 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ClearState | `qwcl` `clearState` | VERIFIED | test_qw_loopback changelevel: "client cleared state and loaded e1m2" — full state reset + rebuild over the wire. | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect | partial (`svc_disconnect` handler) | VERIFIED | test_qw_loopback: svc_disconnect sets state "disconnected" + records the reason; heartbeat bail-out is the qwclient consumer. No drop-cmd send, no demo/upload teardown (both N/A on remotes). | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect_f | — | N/A | No user-initiated disconnect command. N/A: platform-owned flow. | — (implement first) |
-| CL_User_f | — | UNIMPLEMENTED | Console command. | ruled: IMPLEMENT (2026-07-05) |
-| CL_Users_f | — | UNIMPLEMENTED | Console command; `cl.players` holds the data (name/frags/ping asserted in loopback). | ruled: IMPLEMENT (2026-07-05) |
+| CL_User_f | `user <name/userid>` in execCommand (20-column userinfo dump) | VERIFIED | Live battery: own userinfo dumped by name ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)); "User not in server." for misses. | Stage per the battery .txt |
+| CL_Users_f | `users` in execCommand (userid/frags/name table + total) | VERIFIED | Live battery: the C-format table with "1 total users" ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)); the data side is the loopback-verified cl.players. | Stage per the battery .txt |
 | CL_Color_f | — | UNIMPLEMENTED | Color userinfo setting; colormap skin translation journaled open. | — (implement first) |
 | CL_FullServerinfo_f | `execStufftext` `fullserverinfo` branch | VERIFIED | test_qw_loopback now asserts cl.serverinfo is populated by the handshake's fullserverinfo stufftext. | `lune run tests/test_qw_loopback.luau` |
 | CL_FullInfo_f | — | UNIMPLEMENTED | Client userinfo editing not exposed. | — (implement first) |
@@ -239,7 +239,8 @@ The QW boot now drives the shared `src/client/console.luau` (the NQ boot's conso
 |---|---|---|---|---|
 | Key_Event | qwclient `onKey` (InputBegan/InputEnded) | VERIFIED | Real UserInputService W (not the harness) moved the player through onKey -> buttons -> pmove ([evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dispatch-tier behaviour previously shown in the messagemode/console evidence. | Battery steps in the evidence file |
 | Key_Console / Key_Message | `consoleKey` (consolelib.handleKey) / `messageKey` | VERIFIED | Committed captures: qw-messagemode.jpg (say: line typed through messageKey live) and qw-console-open.jpg (console battery typed through handleKey/handleText — same shared consolelib as the NQ battery). | qw-messagemode + qw-console-open evidence |
-| CheckForCommand / CompleteCommand | — | UNIMPLEMENTED | | — (implement first) |
+| CompleteCommand | consolelib Tab handler + `com.completePrefix` | VERIFIED | Live: Tab completed "use" -> "user " on the QW boot ([evidence/qw-console-tooling-battery.txt](evidence/qw-console-tooling-battery.txt)); matcher offline-tested (test_com). | `lune run tests/test_com.luau`; battery .txt |
+| CheckForCommand | unknown console lines forward as clc_stringcmd (Cmd_ForwardToServer) instead of becoming implicit `say` | SUBSTITUTED | C uses CheckForCommand so bare console text becomes chat; on this platform player speech MUST route through the filtered TextChatService say path, so implicit console-chat is deliberately not reproduced — bare text forwards to the server like any command. | — (substitution; platform chat filtering) |
 | Key_StringToKeynum / Key_KeynumToString | — | UNIMPLEMENTED | | — (implement first) |
 | Key_SetBinding / Key_Unbind_f / Key_Unbindall_f / Key_Bind_f / Key_WriteBindings / Key_Init | — | UNIMPLEMENTED | No bind system in the QW boot (code comment: "QW console/bind integration is journaled follow-up work"). | — (implement first) |
 | Key_ClearStates | — | UNIMPLEMENTED | | — (implement first) |
@@ -409,12 +410,12 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 138 |
+| VERIFIED | 142 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 38 |
-| SUBSTITUTED | 53 |
+| UNIMPLEMENTED | 34 |
+| SUBSTITUTED | 54 |
 | N/A | 5 |
-| **Total rows** | **234** |
+| **Total rows** | **235** |
 
 Counts are the mechanical status-column count (2026-07-05 presentation pass;
 the previous 53-UNIMPLEMENTED total under-counted by one vs the same method).

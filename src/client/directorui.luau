@@ -193,6 +193,8 @@ function directorui.attach(opts: Opts)
 		menu.Visible = false
 		menu.Parent = gui
 		local refreshMenuRef: () -> () = function() end
+	local reportLabelRef: TextLabel? = nil
+	local rebuildPlayersRef = function() end
 		local function setMenuVisible(open: boolean)
 			if menu.Visible == open then
 				return
@@ -395,6 +397,80 @@ function directorui.attach(opts: Opts)
 			re:FireServer({ t = "maplist", value = rotBox.Text })
 		end)
 
+		-- host admin tools: Host_Status_f / Host_Ping_f / Host_Kick_f
+		section("PLAYERS")
+		local playersFrame = Instance.new("Frame")
+		playersFrame.BackgroundTransparency = 1
+		playersFrame.Size = UDim2.new(1, 0, 0, 0)
+		playersFrame.AutomaticSize = Enum.AutomaticSize.Y
+		order += 1
+		playersFrame.LayoutOrder = order
+		playersFrame.Parent = scroll
+		local playersList = Instance.new("UIListLayout")
+		playersList.Padding = UDim.new(0, 4)
+		playersList.SortOrder = Enum.SortOrder.LayoutOrder
+		playersList.Parent = playersFrame
+
+		local reportRow = Instance.new("Frame")
+		reportRow.BackgroundTransparency = 1
+		reportRow.Size = UDim2.new(1, 0, 0, 44)
+		order += 1
+		reportRow.LayoutOrder = order
+		reportRow.Parent = scroll
+		local statusBtn = button(reportRow, "STATUS")
+		statusBtn.Size = UDim2.new(0.5, -4, 1, 0)
+		statusBtn.Activated:Connect(function()
+			re:FireServer({ t = "admin", cmd = "status" })
+		end)
+		local pingBtn = button(reportRow, "PING")
+		pingBtn.AnchorPoint = Vector2.new(1, 0)
+		pingBtn.Position = UDim2.new(1, 0, 0, 0)
+		pingBtn.Size = UDim2.new(0.5, -4, 1, 0)
+		pingBtn.Activated:Connect(function()
+			re:FireServer({ t = "admin", cmd = "ping" })
+		end)
+
+		local reportLabel = label(scroll, "", 12, DIM, false)
+		reportLabel.Size = UDim2.new(1, 0, 0, 0)
+		reportLabel.AutomaticSize = Enum.AutomaticSize.Y
+		reportLabel.TextXAlignment = Enum.TextXAlignment.Left
+		reportLabel.TextYAlignment = Enum.TextYAlignment.Top
+		reportLabel.Font = Enum.Font.Code
+		reportLabel.TextWrapped = true
+		order += 1
+		reportLabel.LayoutOrder = order
+		reportLabelRef = reportLabel
+
+		local function rebuildPlayers()
+			for _, ch in playersFrame:GetChildren() do
+				if ch:IsA("Frame") then
+					ch:Destroy()
+				end
+			end
+			local me = game:GetService("Players").LocalPlayer
+			for i, plr in game:GetService("Players"):GetPlayers() do
+				local row = Instance.new("Frame")
+				row.BackgroundTransparency = 1
+				row.Size = UDim2.new(1, 0, 0, 32)
+				row.LayoutOrder = i
+				row.Parent = playersFrame
+				local nameLbl = label(row, plr.Name, 14, TEXT, true)
+				nameLbl.Size = UDim2.new(1, -80, 1, 0)
+				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+				if plr ~= me then
+					local kickBtn = button(row, "KICK")
+					kickBtn.AnchorPoint = Vector2.new(1, 0)
+					kickBtn.Position = UDim2.new(1, 0, 0, 0)
+					kickBtn.Size = UDim2.fromOffset(72, 32)
+					kickBtn.TextColor3 = Color3.fromRGB(255, 120, 120)
+					kickBtn.Activated:Connect(function()
+						re:FireServer({ t = "admin", cmd = "kick", arg = plr.Name })
+					end)
+				end
+			end
+		end
+		rebuildPlayersRef = rebuildPlayers
+
 		-- toggles + read-only footer
 		section("OPTIONS")
 		local avatarsBtn = button(scroll, "")
@@ -442,6 +518,12 @@ function directorui.attach(opts: Opts)
 		end
 
 		refreshMenuRef = refreshMenu
+		local oldRefresh = refreshMenu
+		refreshMenu = function()
+			oldRefresh()
+			rebuildPlayersRef()
+		end
+		refreshMenuRef = refreshMenu
 		gear.Activated:Connect(function()
 			setMenuVisible(not menu.Visible)
 		end)
@@ -463,6 +545,11 @@ function directorui.attach(opts: Opts)
 				end
 				if menu.Visible then
 					refreshMenu()
+				end
+			elseif msg.t == "report" then
+				local rl = reportLabelRef
+				if rl then
+					rl.Text = tostring(msg.text or "")
 				end
 			elseif msg.t == "voteBegin" then
 				beginVote(msg.maps or {}, tonumber(msg.secondsLeft) or 30)

@@ -113,4 +113,26 @@ function com.crcBuffer(buf: buffer): number
 	return crc
 end
 
+-- Cmd_CompleteCommand over a supplied name list: exact match wins, then
+-- the first prefix match (list sorted for determinism; C scans
+-- registration order)
+function com.completePrefix(names: { string }, partial: string): string?
+	if partial == "" then
+		return nil
+	end
+	local sorted = table.clone(names)
+	table.sort(sorted)
+	for _, name in sorted do
+		if name == partial then
+			return name
+		end
+	end
+	for _, name in sorted do
+		if name:sub(1, #partial) == partial then
+			return name
+		end
+	end
+	return nil
+end
+
 return com

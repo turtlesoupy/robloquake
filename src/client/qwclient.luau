@@ -917,6 +917,48 @@ return function()
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
 			-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores
 			hudlib.setShowTeamScores(hud, cmd == "+showteamscores")
+		elseif cmd == "version" then
+			-- CL_Version_f (exe date replaced by the port identity)
+			consolelib.print(con, "Version 2.40\nrobloquake QuakeWorld port")
+		elseif cmd == "users" then
+			-- CL_Users_f: userid frags name for every connected player
+			consolelib.print(con, "userid frags name")
+			consolelib.print(con, "------ ----- ----")
+			local total = 0
+			for i = 0, 31 do
+				local info = cl.players[i]
+				if info and info.name ~= "" then
+					consolelib.print(con, ("%6i %4i %s"):format(info.userid or 0, info.frags or 0, info.name))
+					total += 1
+				end
+			end
+			consolelib.print(con, `{total} total users`)
+		elseif cmd == "user" then
+			-- CL_User_f: dump one player's userinfo by name or userid
+			local who = args :: string
+			if who == "" then
+				consolelib.print(con, "Usage: user <username / userid>")
+			else
+				local found = false
+				for i = 0, 31 do
+					local info = cl.players[i]
+					if info and info.name ~= "" and (info.name == who or tostring(info.userid) == who) then
+						found = true
+						local keys = {}
+						for k in info.userinfo do
+							table.insert(keys, k)
+						end
+						table.sort(keys)
+						for _, k in keys do
+							local pad = if #k < 20 then (" "):rep(20 - #k) else ""
+							consolelib.print(con, k .. pad .. tostring(info.userinfo[k]))
+						end
+					end
+				end
+				if not found then
+					consolelib.print(con, "User not in server.")
+				end
+			end
 		elseif cmd == "centerview" then
 			-- V_StartPitchDrift: glide back to level, not a snap
 			viewlib.startPitchDrift(pitchDrift, cl.time)
@@ -957,6 +999,14 @@ return function()
 		end
 	end
 	con.onCommand = execCommand
+	-- CompleteCommand list (keys.c Tab): local + forwarded commands
+	con.completions = {
+		"bf", "centerview", "clear", "disconnect", "fov", "impulse", "kill",
+		"messagemode", "messagemode2", "pause", "pings", "quit", "say",
+		"say_team", "serverinfo", "setinfo", "toggleconsole", "user",
+		"users", "v_cshift", "version", "viewsize",
+		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
+	}
 
 	-- console text entry straight from key codes (same scheme as the NQ
 	-- boot: no TextBox, GetStringForKeyCode + shifted punctuation)
