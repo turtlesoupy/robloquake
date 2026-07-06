@@ -25,6 +25,7 @@ modepresets.KEYS = {
 	"noexit",
 	"maplist",
 	"votetime",
+	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
 }
 
@@ -43,7 +44,6 @@ modepresets.PRESETS = {
 		engine = "nq",
 		game = "id1",
 		startmap = "start",
-		roblox_avatars = true,
 	},
 	["nq-dm"] = {
 		engine = "nq",
@@ -54,7 +54,6 @@ modepresets.PRESETS = {
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		roblox_avatars = true,
 	},
 	["qw-dm"] = {
 		engine = "qw",
@@ -65,7 +64,6 @@ modepresets.PRESETS = {
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		roblox_avatars = true,
 	},
 	-- Threewave CTF on QW (the verified mod path: tests/test_scenario_ctf
 	-- + qw-ctf2m3 evidence); pak ships ctf1..ctf8
@@ -100,7 +98,6 @@ modepresets.PRESETS = {
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		roblox_avatars = true,
 	},
 }
 

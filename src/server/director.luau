@@ -149,7 +149,7 @@ function director.attach(a: Adapter)
 			map = a.getCurrentMap(),
 			rules = rules,
 			maplist = a.assets:GetAttribute("maplist") or "",
-			avatars = a.assets:GetAttribute("roblox_avatars") == true,
+			avatars = a.assets:GetAttribute("roblox_avatars") ~= false,
 			engine = a.assets:GetAttribute("engine") or "nq",
 			game = a.assets:GetAttribute("game") or "id1",
 			mod = a.assets:GetAttribute("gamedir") or "", -- boot attr is "gamedir"

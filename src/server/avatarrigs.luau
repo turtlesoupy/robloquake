@@ -19,10 +19,12 @@ local QUAKE_PLAYER_HEIGHT = 56 * qcoords.SCALE
 
 -- returns the per-player rig publisher; call it on connect
 return function(assets: Instance, clientFS: Instance): (Player) -> ()
+	-- avatars are a product-layer default: absent = ON; a place/preset
+	-- opts out with an explicit roblox_avatars = false
 	local avatarsAttr = "roblox_avatars"
-	clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
+	clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) ~= false)
 	assets:GetAttributeChangedSignal(avatarsAttr):Connect(function()
-		clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
+		clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) ~= false)
 	end)
 
 	local avatarFolder = Instance.new("Folder")

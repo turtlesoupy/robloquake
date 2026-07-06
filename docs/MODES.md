@@ -20,7 +20,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `samelevel` / `noexit` | number | both | yes | exit behavior rules |
 | `maplist` | string | both | yes | space-separated rotation, e.g. `"dm3 dm4 dm6 dm2"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
 | `votetime` | number | both | yes | vote window seconds before auto-advance (default 30) |
-| `roblox_avatars` | bool | both | yes | avatar rigs for players |
+| `roblox_avatars` | bool | both | yes | avatar rigs for players — **default on when absent**; set `false` to opt out |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
 Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=20,
