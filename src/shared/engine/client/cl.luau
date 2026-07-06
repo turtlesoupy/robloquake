@@ -194,7 +194,7 @@ function cl.new(playerName: string, color: number): Client
 		statics = {},
 		lightstyles = {},
 		scores = {},
-		stats = {},
+		stats = table.create(32, 0) :: { [number]: number }, -- C: int stats[MAX_CL_STATS] (zeroed)
 		items = 0,
 		item_gettime = {},
 		viewangles = vector.zero,
@@ -308,7 +308,12 @@ local function parseServerInfo(c: Client, r: msg.Reader)
 	-- positive modulo pins every owned item on a pickup-flash frame
 	-- forever (the "all inventory icons highlighted" playtest bug)
 	c.item_gettime = {}
+	-- C's memset leaves stats ZEROED, not absent: readers (view damage
+	-- flash, sbar) run before the first clientdata of the new level
 	c.stats = {}
+	for i = 0, 31 do
+		c.stats[i] = 0
+	end
 	c.faceanimtime = 0
 	c.cshift_damage_percent = 0
 	c.cshift_bonus_percent = 0
