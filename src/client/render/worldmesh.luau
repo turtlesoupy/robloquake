@@ -53,7 +53,10 @@ end
 -- signals, so a teardown that relies on it still holds the mesh budget
 -- while the next map builds — which starves that build into skipped
 -- batches (missing world geometry).
+local lastTeardownAt = -math.huge -- feeds the settle gate in build()
+
 function worldmesh.destroyBuild(container: Instance)
+	lastTeardownAt = os.clock()
 	local held = liveMeshes[container]
 	liveMeshes[container] = nil
 	if held then
@@ -230,11 +233,22 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	local budgetDeadline = os.clock() + 15
 
 	-- settle gate: prefer waiting HERE, behind the loading plaque, over
-	-- stumbling through mid-build retries — probe until allocation works
-	-- at all (a dynamic mesh reserves the 60k max, so success means real
-	-- headroom). The per-batch retry below remains the backstop: no API
-	-- exposes the budget level, so a passing probe cannot guarantee a
-	-- whole level fits (device-dependent ceilings).
+	-- stumbling through mid-build retries. Two layers, both applying only
+	-- when a teardown just happened (boot loads and mid-play brush
+	-- template builds skip them entirely):
+	--   1. a MINIMUM settle window after the teardown — refunds land over
+	--      a couple of seconds, and one successful allocation only proves
+	--      60k of headroom, not that the refund finished;
+	--   2. an allocation probe loop for refunds slower than the window.
+	-- The per-batch retry below remains the backstop: no API exposes the
+	-- budget level, so no gate can guarantee a whole level fits on
+	-- device-dependent ceilings.
+	local SETTLE_AFTER_TEARDOWN = 2
+	local settleLeft = SETTLE_AFTER_TEARDOWN - (os.clock() - lastTeardownAt)
+	if settleLeft > 0 then
+		print(`[robloquake] settle gate holding the {name} build {string.format("%.1f", settleLeft)}s post-teardown`)
+		task.wait(settleLeft)
+	end
 	do
 		local probeDelay = 0.1
 		local waited = false
@@ -251,7 +265,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			probeDelay = math.min(probeDelay * 2, 1)
 		end
 		if waited then
-			print(`[robloquake] budget settle gate held the {name} build`)
+			print(`[robloquake] budget probe held the {name} build further`)
 		end
 	end
 
