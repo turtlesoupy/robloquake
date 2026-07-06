@@ -1,0 +1,17 @@
+Capture context: nq-fragcells-minidm.jpg (2026-07-05)
+======================================================
+Engine: NQ boot (nq-dm preset: engine=nq, dm3, deathmatch=1), id1
+registered, solo player "turtlesoupy" at the dm3 spawn.
+
+Shows BOTH new sbar.c pieces in one frame:
+1. Sbar_DrawFrags — the in-sbar frag cell in the ibar's top-right
+   (x=23*8 region): topcolor/bottomcolor fill (28x4 + 28x3 like C),
+   "%3i" frags in conchars digits, own-slot brackets (chars 16/17).
+   Gated on sb_lines > 24 and cl.maxclients != 1 like Sbar_Draw.
+2. Sbar_MiniDeathmatchOverlay — the frags/name strip right of the sbar
+   (x=324): color fills, frags, own-row brackets, player name.
+Sorting behind both is qwview.sortFrags (offline-tested in
+tests/test_qwview.luau).
+
+Re-verify: boot the nq-dm preset, Play solo, look at the ibar
+top-right and right of the status bar.

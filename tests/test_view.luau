@@ -200,4 +200,88 @@ t.check(approx(r, 255 * (1 - w2)) and approx(b, 255 * w2), "blend: colors weight
 r, g, b, a = view.calcBlend({})
 t.check(a == 0, "blend: empty -> transparent")
 
+--------------------------------------------------------------------------
+-- V_DriftPitch / V_StartPitchDrift / V_StopPitchDrift (view.c):
+-- pitchvel accelerates at v_centerspeed 500, exact overshoot clamp,
+-- forward running re-arms after v_centermove 0.15s
+local d = view.newPitchDrift()
+t.check(not d.nodrift and d.pitchvel == 0, "drift: C cl struct starts zeroed (drifting armed)")
+
+-- accelerating glide toward idealpitch 10: move uses the OLD pitchvel
+local p = view.driftPitch(d, 0.1, 0, 10, 0.1, true, 0)
+t.check(p == 0 and approx(d.pitchvel, 50), "drift: first frame moves 0, pitchvel += ft*500")
+p = view.driftPitch(d, 0.2, p, 10, 0.1, true, 0)
+t.check(approx(p, 5) and approx(d.pitchvel, 100), "drift: second frame moves ft*pitchvel = 5")
+p = view.driftPitch(d, 0.3, p, 10, 0.1, true, 0)
+t.check(p == 10 and d.pitchvel == 0, "drift: overshoot clamps exactly at idealpitch, pitchvel 0")
+p = view.driftPitch(d, 0.4, p, 10, 0.1, true, 0)
+t.check(p == 10 and d.pitchvel == 0, "drift: zero delta keeps pitchvel 0")
+
+-- negative delta drifts down symmetrically (move must EXCEED -delta to
+-- clamp — C uses strict >)
+d = view.newPitchDrift()
+d.pitchvel = 200
+p = view.driftPitch(d, 0.1, 5, -5, 0.1, true, 0)
+t.check(approx(p, -5) and d.pitchvel == 0, "drift: negative delta clamps at idealpitch from above")
+
+-- not onground resets the accumulators and leaves pitch alone
+d.pitchvel = 100
+d.driftmove = 0.1
+p = view.driftPitch(d, 0.2, 3, 0, 0.1, false, 400)
+t.check(p == 3 and d.pitchvel == 0 and d.driftmove == 0, "drift: airborne resets pitchvel/driftmove")
+
+-- stop + re-arm: sustained forward running (>= cl_forwardspeed 200)
+-- accumulates driftmove past v_centermove 0.15 and restarts the drift
+d = view.newPitchDrift()
+view.stopPitchDrift(d, 1.0)
+t.check(d.nodrift and d.pitchvel == 0 and d.laststop == 1.0, "stopPitchDrift: nodrift + laststop stamped")
+p = view.driftPitch(d, 1.1, 7, 0, 0.1, true, 100)
+t.check(d.driftmove == 0 and p == 7, "drift re-arm: slow forwardmove resets driftmove")
+view.driftPitch(d, 1.2, 7, 0, 0.1, true, 200)
+t.check(approx(d.driftmove, 0.1) and d.nodrift, "drift re-arm: running accumulates driftmove")
+view.driftPitch(d, 1.3, 7, 0, 0.1, true, 200)
+t.check(not d.nodrift and d.pitchvel == 500, "drift re-arm: driftmove > 0.15 restarts (pitchvel = v_centerspeed)")
+
+-- laststop == time guard: something else is keeping it from drifting
+d = view.newPitchDrift()
+view.stopPitchDrift(d, 2.0)
+view.startPitchDrift(d, 2.0)
+t.check(d.nodrift, "startPitchDrift: refused when stopped the same frame")
+view.startPitchDrift(d, 2.1)
+t.check(not d.nodrift and d.pitchvel == 500, "startPitchDrift: arms on a later frame")
+
+--------------------------------------------------------------------------
+-- V_AddIdle (view.c cvar defaults: cycles 1/2/0.5, levels 0.3/0.3/0.1)
+local ip, iy, ir = view.addIdle(1.0, 1)
+t.check(approx(ip, math.sin(1.0) * 0.3), "addIdle: pitch sin(t*1)*0.3")
+t.check(approx(iy, math.sin(2.0) * 0.3), "addIdle: yaw sin(t*2)*0.3")
+t.check(approx(ir, math.sin(0.5) * 0.1), "addIdle: roll sin(t*0.5)*0.1")
+ip, iy, ir = view.addIdle(1.0, 0.5)
+t.check(approx(ip, math.sin(1.0) * 0.15), "addIdle: scales by v_idlescale")
+
+--------------------------------------------------------------------------
+-- V_BoundOffsets: eye clamped to +/-14 laterally, -22/+30 vertically
+local bo = view.boundOffsets(vector.create(100, -100, 100), vector.create(0, 0, 0))
+t.check(bo == vector.create(14, -14, 30), "boundOffsets: clamps to +14/-14/+30")
+bo = view.boundOffsets(vector.create(0, 0, -100), vector.create(0, 0, 0))
+t.check(bo.z == -22, "boundOffsets: floor at -22")
+bo = view.boundOffsets(vector.create(1 / 32, 1 / 32, 22), vector.create(0, 0, 0))
+t.check(bo == vector.create(1 / 32, 1 / 32, 22), "boundOffsets: normal eye passes through")
+
+--------------------------------------------------------------------------
+-- V_CalcIntermissionRefdef: view pinned to the view entity, gun hidden,
+-- idle sway forced to scale 1
+local mc: any = {
+	entities = { [7] = { origin = vector.create(10, 20, 30), angles = vector.create(5, 15, 0) } },
+	viewentity = 7,
+	viewangles = vector.create(99, 99, 99),
+	time = 1.0,
+	intermission = 1,
+}
+local rd = view.calcIntermissionRefdef(mc)
+t.check(rd.vieworg == vector.create(10, 20, 30), "intermission: vieworg = ent origin (no viewheight/bob)")
+t.check(rd.gunmodel == 0, "intermission: view model hidden")
+ip, iy, ir = view.addIdle(1.0, 1)
+t.check(approx(rd.viewangles.x, 5 + ip) and approx(rd.viewangles.y, 15 + iy) and approx(rd.viewangles.z, ir), "intermission: ent angles + full idle sway")
+
 t.finish("test_view")

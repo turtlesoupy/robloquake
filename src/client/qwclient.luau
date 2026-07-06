@@ -113,6 +113,9 @@ return function()
 	local blend = qwview.newBlendState()
 	local V_KICKTIME = 0.5 -- v_kicktime (V_CalcViewRoll ramp divisor)
 	local v_oldz = 0 -- V_CalcRefdef stair-step smoothing state
+	-- V_DriftPitch state (QW has no idealpitch wire — centers to 0)
+	local pitchDrift = viewlib.newPitchDrift()
+	local lastDriftPitch: number? = nil
 
 	local cshiftGui = Instance.new("ScreenGui")
 	cshiftGui.Name = "QuakeCshift"
@@ -914,6 +917,9 @@ return function()
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
 			-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores
 			hudlib.setShowTeamScores(hud, cmd == "+showteamscores")
+		elseif cmd == "centerview" then
+			-- V_StartPitchDrift: glide back to level, not a snap
+			viewlib.startPitchDrift(pitchDrift, cl.time)
 		elseif cmd == "impulse" then
 			-- IN_Impulse is a CLIENT command in C (cl_input.c); it rides
 			-- the next move cmd, never a server stringcmd
@@ -1054,6 +1060,12 @@ return function()
 		[Enum.KeyCode.Down] = "back",
 		[Enum.KeyCode.A] = "moveleft",
 		[Enum.KeyCode.D] = "moveright",
+		-- default.cfg NQ parity: arrow keys turn (CL_AdjustAngles in the
+		-- shared input.updateTurn; PageUp/PageDown look)
+		[Enum.KeyCode.Left] = "left",
+		[Enum.KeyCode.Right] = "right",
+		[Enum.KeyCode.PageUp] = "lookup",
+		[Enum.KeyCode.PageDown] = "lookdown",
 		[Enum.KeyCode.Space] = "jump",
 		[Enum.KeyCode.LeftControl] = "attack",
 		[Enum.KeyCode.LeftShift] = "speed",
@@ -1292,6 +1304,24 @@ return function()
 			end
 		end
 
+		-- V_DriftPitch (QW view.c): glide pitch toward 0 while running;
+		-- any manual pitch motion stops the drift like C's IN_MouseMove
+		do
+			local ownPs = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
+			if cl.intermission == 0 and ownPs then
+				local vp = cl.viewangles.x
+				if lastDriftPitch ~= nil and vp ~= lastDriftPitch then
+					viewlib.stopPitchDrift(pitchDrift, cl.time)
+				end
+				local drifted = viewlib.driftPitch(pitchDrift, cl.time, vp, 0, dt, ownPs.onground ~= -1, st.forwardmove)
+				if drifted ~= vp then
+					input.setAngles(vector.create(drifted, cl.viewangles.y, 0))
+					cl.viewangles = vector.create(drifted, cl.viewangles.y, cl.viewangles.z)
+				end
+				lastDriftPitch = cl.viewangles.x
+			end
+		end
+
 		-- V_CalcRefdef: bob, roll, kicks, death/gib view, intermission
 		-- DropPunchAngle, verbatim: punchangle -= 10*dt, clamped at 0 from
 		-- below — since kicks arrive negative, a kick lasts one frame
@@ -1306,9 +1336,11 @@ return function()
 		local gunVisible = false
 		local gunFrame = ownState.weaponframe
 		if cl.intermission ~= 0 then
-			-- V_CalcIntermissionRefdef: fixed org/angles, no bob/height
+			-- V_CalcIntermissionRefdef: fixed org/angles, no bob/height,
+			-- full idle sway (v_idlescale forced 1, shared V_AddIdle)
 			eye = cl.simorg
-			angles = cl.simangles
+			local ip, iy, ir = viewlib.addIdle(cl.time, 1)
+			angles = cl.simangles + vector.create(ip, iy, ir)
 		elseif trackPs then
 			-- Cam_Track chase lock: through the tracked player's eyes at
 			-- their predicted origin (stats already mirror the target)

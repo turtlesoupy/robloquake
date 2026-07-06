@@ -14,6 +14,14 @@ local cl_bobcycle = 0.6
 local cl_bobup = 0.5
 local v_kicktime = 0.5
 local v_idlescale = 0 -- disabled by default
+-- V_AddIdle sway cvars (view.c defaults)
+local v_iyaw_cycle, v_iyaw_level = 2, 0.3
+local v_iroll_cycle, v_iroll_level = 0.5, 0.1
+local v_ipitch_cycle, v_ipitch_level = 1, 0.3
+-- pitch drift cvars
+local v_centermove = 0.15
+local v_centerspeed = 500
+local cl_forwardspeed = 200
 
 local oldz = 0 -- stair smoothing state
 
@@ -46,6 +54,107 @@ local function calcBob(c: cllib.Client): number
 	return math.clamp(bob, -7, 4)
 end
 
+-- V_AddIdle: returns the (pitch, yaw, roll) sway additions
+local function addIdle(time: number, idlescale: number): (number, number, number)
+	local pitch = idlescale * math.sin(time * v_ipitch_cycle) * v_ipitch_level
+	local yaw = idlescale * math.sin(time * v_iyaw_cycle) * v_iyaw_level
+	local roll = idlescale * math.sin(time * v_iroll_cycle) * v_iroll_level
+	return pitch, yaw, roll
+end
+view.addIdle = addIdle
+
+-- V_BoundOffsets: the eye stays within 14 units laterally and -22/+30
+-- vertically of the view entity origin ("don't allow cheats" in C)
+local function boundOffsets(vieworg: vector, entorg: vector): vector
+	return vector.create(
+		math.clamp(vieworg.x, entorg.x - 14, entorg.x + 14),
+		math.clamp(vieworg.y, entorg.y - 14, entorg.y + 14),
+		math.clamp(vieworg.z, entorg.z - 22, entorg.z + 30)
+	)
+end
+view.boundOffsets = boundOffsets
+
+--------------------------------------------------------------------------
+-- pitch drift (V_StartPitchDrift / V_StopPitchDrift / V_DriftPitch):
+-- with +mlook centering, the view glides back to idealpitch when the
+-- player runs forward. State is a plain table so both boots (and tests)
+-- can drive it; under always-on mouselook any mouse pitch movement calls
+-- stop, exactly like C's IN_MouseMove.
+
+export type PitchDrift = {
+	nodrift: boolean,
+	pitchvel: number,
+	driftmove: number,
+	laststop: number,
+}
+
+function view.newPitchDrift(): PitchDrift
+	-- C's cl struct starts zeroed: drifting armed
+	return { nodrift = false, pitchvel = 0, driftmove = 0, laststop = -1 }
+end
+
+function view.startPitchDrift(d: PitchDrift, time: number)
+	if d.laststop == time then
+		return -- something else is keeping it from drifting
+	end
+	if d.nodrift or d.pitchvel == 0 then
+		d.pitchvel = v_centerspeed
+		d.nodrift = false
+		d.driftmove = 0
+	end
+end
+
+function view.stopPitchDrift(d: PitchDrift, time: number)
+	d.laststop = time
+	d.nodrift = true
+	d.pitchvel = 0
+end
+
+-- V_DriftPitch: returns the new view pitch. `onground` false (or demo
+-- playback upstream) resets the accumulators like C.
+function view.driftPitch(d: PitchDrift, time: number, pitch: number, idealpitch: number, frametime: number, onground: boolean, forwardmove: number): number
+	if not onground then
+		d.driftmove = 0
+		d.pitchvel = 0
+		return pitch
+	end
+
+	if d.nodrift then
+		-- re-arm: sustained forward running starts the drift
+		if math.abs(forwardmove) < cl_forwardspeed then
+			d.driftmove = 0
+		else
+			d.driftmove += frametime
+		end
+		if d.driftmove > v_centermove then
+			view.startPitchDrift(d, time) -- laststop==time guard applies
+		end
+		return pitch
+	end
+
+	local delta = idealpitch - pitch
+	if delta == 0 then
+		d.pitchvel = 0
+		return pitch
+	end
+
+	local move = frametime * d.pitchvel
+	d.pitchvel += frametime * v_centerspeed
+	if delta > 0 then
+		if move > delta then
+			d.pitchvel = 0
+			move = delta
+		end
+		return pitch + move
+	else
+		if move > -delta then
+			d.pitchvel = 0
+			move = -delta
+		end
+		return pitch - move
+	end
+end
+
 export type Refdef = {
 	vieworg: vector,
 	viewangles: vector,
@@ -56,8 +165,31 @@ export type Refdef = {
 	gunframe: number,
 }
 
--- V_CalcRefdef (plus V_CalcViewRoll folded in)
+-- V_CalcIntermissionRefdef: the view sits on the view entity with the
+-- gun hidden and full idle sway (v_idlescale forced 1)
+local function calcIntermissionRefdef(c: cllib.Client): Refdef
+	local e = c.entities[c.viewentity]
+	local entOrigin = if e then e.origin else vector.zero
+	local viewangles = if e then e.angles else c.viewangles
+	local ip, iy, ir = addIdle(c.time, 1)
+	viewangles += vector.create(ip, iy, ir)
+	return {
+		vieworg = entOrigin,
+		viewangles = viewangles,
+		gunorg = entOrigin,
+		gunangles = vector.zero,
+		gunmodel = 0, -- view->model = NULL
+		gunframe = 0,
+	}
+end
+view.calcIntermissionRefdef = calcIntermissionRefdef
+
+-- V_CalcRefdef (plus V_CalcViewRoll folded in); V_RenderView's
+-- intermission dispatch included
 function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
+	if (c.intermission or 0) ~= 0 then
+		return calcIntermissionRefdef(c)
+	end
 	local e = c.entities[c.viewentity]
 	local entOrigin = if e then e.origin else vector.zero
 
@@ -80,8 +212,15 @@ function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 	end
 	viewangles = vector.create(viewangles.x, viewangles.y, viewangles.z + roll)
 
-	-- V_AddIdle would go here (v_idlescale is 0 by default)
-	local _ = v_idlescale
+	-- V_BoundOffsets: keep the eye near the view entity (bob/viewheight
+	-- never exceed the bounds in practice; kept for C shape)
+	vieworg = boundOffsets(vieworg, entOrigin)
+
+	-- V_AddIdle (v_idlescale is 0 by default outside intermission)
+	if v_idlescale ~= 0 then
+		local ip, iy, ir = addIdle(c.time, v_idlescale)
+		viewangles += vector.create(ip, iy, ir)
+	end
 
 	-- gun position
 	local forward = mathlib.angleVectors(viewangles)

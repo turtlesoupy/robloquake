@@ -32,10 +32,10 @@ counterpart, each with its justification.
 | Manifest | Verified | Pending | Unimplemented | Substituted | N/A |
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 279 | 0 | 25 | 111 | 36 |
-| [nq-client.md](nq-client.md) — WinQuake client/presentation | 131 | 0 | 30 | 78 | 25 |
+| [nq-client.md](nq-client.md) — WinQuake client/presentation | 141 | 0 | 20 | 78 | 25 |
 | [qw-server.md](qw-server.md) — QuakeWorld server | 172 | 1 | 14 | 42 | 7 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 134 | 0 | 42 | 53 | 5 |
-| **Total** | **716** | **1** | **111** | **284** | **73** |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 138 | 0 | 38 | 53 | 5 |
+| **Total** | **730** | **1** | **97** | **284** | **73** |
 
 Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
 presentation pass); these are column-exact status-cell counts per content
@@ -93,6 +93,31 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-05 (burn-down pass 2: NQ HUD odds + view.c odds, both boots)
+- Shared view.luau grew the offline-tested view.c odds: the pitch-drift
+  trio (V_StartPitchDrift/V_StopPitchDrift/V_DriftPitch — accelerating
+  glide, exact overshoot clamp, forward-running re-arm, laststop guard),
+  V_AddIdle (exact sway cvar constants), V_BoundOffsets, and
+  V_CalcIntermissionRefdef (ent-pinned view, gun hidden, idle forced 1)
+  dispatched from calcRefdef. test_view grew 23 checks.
+- Both boots drive the drift per-frame (manual pitch motion stops it, like
+  C's IN_MouseMove under +mlook; recorded delta: keyboard look also stops
+  it here); centerview now GLIDES per C instead of snapping. The QW
+  intermission branch gained the idle sway; QW got NQ-parity keyboard
+  turning keys (Left/Right turn, PageUp/PageDown look) through the shared
+  CL_AdjustAngles port in input.updateTurn.
+- hudlib: Sbar_DrawFrags (in-sbar frag cells, both boots) and the NQ
+  Sbar_MiniDeathmatchOverlay (the QW mini overlay generalized); fixed a
+  latent off-by-one in the NQ rankings self-marker (viewentity vs 1-based
+  scores index) and a locals-before-declaration nil (updateMiniOverlay
+  defined below its NQ caller — caught live by the user's debugger).
+- NQ: v_cshift command (cshift_empty edited, empty contents consume it),
+  sizeup/sizedown (viewsize +/-10).
+- New captures: nq-fragcells-minidm (frag cells + mini overlay in one
+  frame), nq-vcshift, nq-sizeup-110. nq-client 10 rows -> VERIFIED;
+  qw-client 4 more (drift trio, CL_AdjustAngles, Sbar_DrawFrags,
+  V_AddIdle).
 
 ### 2026-07-05 (QW presentation cluster: burn-down pass 1)
 - New shared module `src/shared/engine/qw/qwview.luau`: the view.c blend

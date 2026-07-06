@@ -834,6 +834,16 @@ local chase_active = false
 local camera = Workspace.CurrentCamera
 local currentFov = 90 -- fov cvar (horizontal, CalcFov semantics)
 local currentViewsize = 100 -- screen.c viewsize (sb_lines)
+-- V_DriftPitch state: any manual pitch motion stops the drift (C's
+-- IN_MouseMove under +mlook); running forward re-arms it. Declared
+-- before the command dispatch closure that captures it (locals declared
+-- after a closure would silently read as nil globals).
+local pitchDrift = viewlib.newPitchDrift()
+local lastDriftPitch: number? = nil
+local lastForwardmove = 0
+-- view.c cshift_empty {130,80,50,0}: what CONTENTS_EMPTY looks like;
+-- the v_cshift command edits it
+local cshiftEmpty = { 130, 80, 50, 0 }
 local gunVrectPitch = 0 -- vrect view-model raise (see qcoords.vrect)
 local applyFov: () -> () = function() end
 local refreshInputMode: () -> () = function() end
@@ -1058,7 +1068,9 @@ execCommand = function(line: string)
 		cbufWait = true
 		return
 	elseif cmd == "centerview" then
-		input.centerview()
+		-- V_StartPitchDrift (Cmd_AddCommand "centerview" in view.c): the
+		-- view GLIDES to idealpitch at v_centerspeed, not a snap
+		viewlib.startPitchDrift(pitchDrift, c.time)
 		return
 	elseif cmd == "fov" then
 		local v = tonumber(args)
@@ -1093,9 +1105,23 @@ execCommand = function(line: string)
 	elseif cmd == "messagemode" or cmd == "messagemode2" then
 		consolelib.print(con, "use say <text> or the Roblox chat")
 		return
-	elseif cmd == "viewsize" or cmd == "gamma" or cmd == "volume" then
+	elseif cmd == "gamma" or cmd == "volume" then
 		return -- accepted, fixed on this platform
-	elseif cmd == "sizeup" or cmd == "sizedown" or cmd == "screenshot" then
+	elseif cmd == "sizeup" or cmd == "sizedown" then
+		-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
+		currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
+		hudlib.setViewsize(hud, currentViewsize)
+		applyFov()
+		return
+	elseif cmd == "v_cshift" then
+		-- V_cshift_f: sets what empty contents look like (atoi zero-fill)
+		local vals = {}
+		for tok in args:gmatch("%S+") do
+			table.insert(vals, tonumber(tok) or 0)
+		end
+		cshiftEmpty = { vals[1] or 0, vals[2] or 0, vals[3] or 0, vals[4] or 0 }
+		return
+	elseif cmd == "screenshot" then
 		return
 	elseif cmd == "quit"
 		or cmd == "menu_save" or cmd == "menu_load" or cmd == "menu_options"
@@ -1845,12 +1871,32 @@ RunService.Heartbeat:Connect(function(dt: number)
 	c.oldtime = c.time
 	c.time += dt
 
+	-- V_DriftPitch: glide the view pitch toward cl.idealpitch. Demo
+	-- playback resets like C; manual pitch motion (mouse or look keys)
+	-- stops the drift until forward running re-arms it.
+	if demoPlaying then
+		pitchDrift.driftmove = 0
+		pitchDrift.pitchvel = 0
+		lastDriftPitch = nil
+	else
+		local va = input.viewangles()
+		if lastDriftPitch ~= nil and va.x ~= lastDriftPitch then
+			viewlib.stopPitchDrift(pitchDrift, c.time)
+		end
+		local drifted = viewlib.driftPitch(pitchDrift, c.time, va.x, c.idealpitch, dt, c.onground, lastForwardmove)
+		if drifted ~= va.x then
+			input.setAngles(vector.create(drifted, va.y, 0))
+		end
+		lastDriftPitch = drifted
+	end
+
 	-- input → viewangles → move packet (throttled to ~72Hz like NetQuake)
 	c.viewangles = input.viewangles()
 	sendAccumulator += dt
 	if sendAccumulator >= 1 / 72 and not demoPlaying then
 		sendAccumulator = 0
 		local st = input.sample()
+		lastForwardmove = st.forwardmove
 		local move = cllib.buildMove(c, st.forwardmove, st.sidemove, st.upmove, st.attack, st.jump, st.impulse)
 		if move then
 			unreliable:FireServer(move)
@@ -2196,7 +2242,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 	local shifts: { { number } } = {} -- {r,g,b,percent}
 	local viewLeaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
 	do
-		-- contents shift from the view leaf (V_SetContentsColor)
+		-- contents shift from the view leaf (V_SetContentsColor); empty
+		-- contents use cshift_empty, which the v_cshift command edits
 		local cont = viewLeaf.contents
 		if cont == -3 then -- water
 			table.insert(shifts, { 130, 80, 50, 128 })
@@ -2204,6 +2251,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 			table.insert(shifts, { 0, 25, 5, 150 })
 		elseif cont == -5 then -- lava
 			table.insert(shifts, { 255, 80, 0, 150 })
+		elseif cshiftEmpty[4] > 0 then
+			table.insert(shifts, { cshiftEmpty[1], cshiftEmpty[2], cshiftEmpty[3], cshiftEmpty[4] })
 		end
 	end
 	-- S_UpdateAmbientSounds: leaf-based water/sky ambience

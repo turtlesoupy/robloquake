@@ -1,0 +1,12 @@
+Capture context: nq-vcshift.jpg (2026-07-05)
+=============================================
+Engine: NQ boot (nq-dm preset), dm3, id1. exec "v_cshift 0 120 200 90"
+through the RQDBG_Console hook.
+
+Shows: V_cshift_f live on the NQ boot — cshift_empty edited to
+{0,120,200,90} and blended over the whole (empty-contents) view by the
+shared calcBlend path; world/sbar visible through the teal tint.
+Reset with bare "v_cshift" (atoi zero-fill) restores a clear view.
+
+Re-verify: boot nq-dm, exec "v_cshift 0 120 200 90" via RQDBG_Console,
+capture; bare "v_cshift" to reset.

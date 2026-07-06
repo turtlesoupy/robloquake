@@ -1,0 +1,12 @@
+Capture context: nq-sizeup-110.jpg (2026-07-05)
+================================================
+Engine: NQ boot (nq-dm preset), dm3, id1. exec "sizeup" (viewsize
+100 -> 110) through the RQDBG_Console hook.
+
+Shows: SCR_SizeUp_f — one sizeup step drops the inventory bar
+(sb_lines 24: status row only), the 3D vrect grows to match, and the
+mini deathmatch overlay re-anchors to the shorter strip. Compare the
+full-HUD state in nq-fragcells-minidm.jpg (same session, viewsize
+100). sizedown steps back down; both clamp 30..120.
+
+Re-verify: boot nq-dm, exec "sizeup" via RQDBG_Console, capture.
