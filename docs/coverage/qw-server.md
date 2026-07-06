@@ -22,7 +22,7 @@ Status legend:
 | ServerPaused | `svr.paused` field (qwsv.luau) | VERIFIED | test_qw_loopback: "server time frozen while paused" — pause over the wire gates qwsv.frame. | `lune run tests/test_qw_loopback.luau` |
 | SV_Shutdown | — | SUBSTITUTED | No process/log lifecycle on Roblox; server dies with the DataModel. | — (substitution; verify justification still holds) |
 | SV_Error | Luau `error()` propagation | SUBSTITUTED | Lua error/stack semantics replace longjmp + SV_FinalMessage. | — (substitution; verify justification still holds) |
-| SV_FinalMessage | — | UNIMPLEMENTED | No shutdown broadcast; players are disconnected by the platform. | — (implement first) |
+| SV_FinalMessage | — | N/A | No shutdown broadcast; players are disconnected by the platform. N/A: platform-owned flow (server shutdown). | — (implement first) |
 | SV_DropClient | `qwsv.dropClient` (qwsv.luau:1213) | VERIFIED | test_qw_loopback "kicked client dropped". | `lune run tests/test_qw_loopback.luau` |
 | SV_CalcPing | `qwsv.calcPing` (qwsv.luau:930) | VERIFIED | test_qw_loopback: pings answers with svc_updateping (calcPing output on the wire). | `lune run tests/test_qw_loopback.luau` |
 | SV_FullClientUpdate | `qwsv.fullClientUpdate` (qwsv.luau:946) | VERIFIED | test_qw_loopback: "own player info received" (name via svc_updateuserinfo); `_`-prefixed keys stripped as in Info_RemovePrefixedKeys. | `lune run tests/test_qw_loopback.luau` |
@@ -108,7 +108,7 @@ Status legend:
 | SV_SendClientDatagram | `qwsv.sendClientDatagram` (qwsv.luau:1412) | VERIFIED | Loopback frames flow through it every tick. Delta: stats update not gated on Netchan_CanReliable (no reliable backlog exists on this transport). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | SV_UpdateToReliableMessages | partial: reliable_datagram fan-out in `qwsv.frame` (qwsv.luau:1945) | VERIFIED | Frag path: loopback "frag change rebroadcast". Fan-out path: conSay/say prints traverse reliable_datagram to the spawned client. | `lune run tests/test_qw_loopback.luau` |
 | SV_SendClientMessages | `qwsv.sendClientMessages` + `qwsv.replyToClient` (qwsv.luau:1448,1466) | VERIFIED | Loopback: strict 1:1 packet exchange (send_message flag) keeps sequence spaces aligned for delta/prediction. Delta: no rate/choke logic (chokecount always 0 — transport does not drop), spectator slower update path absent. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| SV_SendMessagesToAll | — | UNIMPLEMENTED | Only used at shutdown/final message, both absent. | — (implement first) |
+| SV_SendMessagesToAll | — | N/A | Only used at shutdown/final message, both absent. N/A: platform-owned flow (shutdown broadcast). | — (implement first) |
 
 ## sv_init.c
 
@@ -130,7 +130,7 @@ sv_phys port, ABI injected via qwdefs). Primary evidence: test_qwsv boots and se
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| SV_CheckAllEnts | — | UNIMPLEMENTED | Debug-only sweep; never called in the C frame loop. | — (implement first) |
+| SV_CheckAllEnts | — | N/A | Debug-only sweep; never called in the C frame loop. N/A: dead in C (never called in frame loop). | — (implement first) |
 | SV_CheckVelocity | `sv_phys.checkVelocity` (qwphys.luau:43) | VERIFIED | test_qwsv "SV_CheckVelocity clamped to sv_maxvelocity". | `lune run tests/test_qwsv.luau` |
 | SV_RunThink | `sv_phys.runThink` (qwphys.luau:77) | VERIFIED | test_qwsv weapon think chain fires (shotgun via player think path); item/door thinks run during settle frames. | `lune run tests/test_qwsv.luau` |
 | SV_Impact | `sv_phys.impact` (qwphys.luau:97) | VERIFIED | test_qwsv "spike impacted a wall and spike_touch removed it". | `lune run tests/test_qwsv.luau` |
@@ -237,7 +237,7 @@ test_qwsv/test_qw_loopback running id1 qwprogs.dat.
 | PF_sound (8) | qwbuiltins.luau:140 | VERIFIED | test_qwsv guncock in soundLog; loopback hears it via PHS. | `lune run tests/test_qwsv.luau` |
 | PF_break (6) | qwbuiltins.luau:131 | N/A | C deliberately crashes into the debugger (*(int*)-4 = 0); a debugger trap is platform-meaningless — port errors with a message instead. | — (N/A) |
 | PF_traceline (16) | qwbuiltins.luau:209 | VERIFIED | Shotgun fire traces in test_qwsv. | `lune run tests/test_qwsv.luau` |
-| PF_checkpos | — | UNIMPLEMENTED | Stubbed/unused in C too (never registered). | — (implement first) |
+| PF_checkpos | — | N/A | Stubbed/unused in C too (never registered). N/A: dead in C (never registered). | — (implement first) |
 | PF_newcheckclient / PF_checkclient (17) | qwbuiltins.luau:219,250 | UNIMPLEMENTED (broken wiring) | Logic fully ported but references `bsplib` **which is never required** in qwbuiltins.luau — dangling global, errors if qwprogs calls checkclient. |
 | PF_stuffcmd (21) | qwbuiltins.luau:352 | VERIFIED | Handshake "skins"/"cmd spawn" stufftexts drive the verified loopback flow via svr.clientCommands. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | PF_localcmd (46) | qwbuiltins.luau:605 | VERIFIED | test_qwbuiltins: "changelevel e1m2" routes to svr.changelevelTo (consumed by the QW boot since b98aa9a). Delta: only changelevel/restart routed; others logged. | `lune run tests/test_qwbuiltins.luau` |
@@ -380,6 +380,10 @@ approach) — four courses, 600 ticks total.
 
 ## Totals
 
+> N/A status formalized 2026-07-05 (see coverage README): concept cannot exist in the port (dead-in-C, DOS/transport-era, unused-in-scope, platform-owned). Initial N/A pass done by hand; counts below are column-exact.
+> PENDING 1 = SV_Serverinfo/Localinfo row (honest partial: localinfo landed for Rocket Arena, serverinfo still fixed at newGame) — the previous 'PENDING 0' total was stale.
+
+
 Counted per manifest row (some rows deliberately merge families of C functions, e.g. the 11
 ClientReliableWrite_* variants, the 7 IP-filter commands, the 19 Mod_Load* lump loaders — so the
 underlying C function count is higher than the row count in the SUBSTITUTED/VERIFIED buckets):
@@ -387,9 +391,10 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 | Status | Rows |
 |---|---|
 | VERIFIED | 172 |
-| PENDING | 0 |
+| PENDING | 1 |
 | SUBSTITUTED | 41 |
-| UNIMPLEMENTED | 20 |
+| N/A | 7 |
+| UNIMPLEMENTED | 8 |
 | N/A | 3 |
 | Total rows | 236 |
 

@@ -24,10 +24,10 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_CheckForResend | — | SUBSTITUTED | Reliable ordered transport; no connect resend timer. | — (substitution; verify justification still holds) |
 | CL_BeginServerConnect | `qwcl.connect` | SUBSTITUTED | One server per place; no address, no connect_time state. | — (substitution; verify justification still holds) |
 | CL_Connect_f | — | SUBSTITUTED | No server address to type; place boot connects automatically. | — (substitution; verify justification still holds) |
-| CL_Rcon_f | — | UNIMPLEMENTED | rcon has no meaning over place-local remotes. | — (implement first) |
+| CL_Rcon_f | — | N/A | rcon has no meaning over place-local remotes. N/A: transport-era (rcon). | — (implement first) |
 | CL_ClearState | `qwcl` `clearState` | VERIFIED | test_qw_loopback changelevel: "client cleared state and loaded e1m2" — full state reset + rebuild over the wire. | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect | partial (`svc_disconnect` handler) | VERIFIED | test_qw_loopback: svc_disconnect sets state "disconnected" + records the reason; heartbeat bail-out is the qwclient consumer. No drop-cmd send, no demo/upload teardown (both N/A on remotes). | `lune run tests/test_qw_loopback.luau` |
-| CL_Disconnect_f | — | UNIMPLEMENTED | No user-initiated disconnect command. | — (implement first) |
+| CL_Disconnect_f | — | N/A | No user-initiated disconnect command. N/A: platform-owned flow. | — (implement first) |
 | CL_User_f | — | UNIMPLEMENTED | Console command. | — (implement first) |
 | CL_Users_f | — | UNIMPLEMENTED | Console command; `cl.players` holds the data (name/frags/ping asserted in loopback). | — (implement first) |
 | CL_Color_f | — | UNIMPLEMENTED | Color userinfo setting; colormap skin translation journaled open. | — (implement first) |
@@ -48,7 +48,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Host_WriteConfiguration | — | UNIMPLEMENTED | No config/bind persistence in the QW boot. | — (implement first) |
 | Host_SimulationTime | — | SUBSTITUTED | Heartbeat drives the frame; no host_speeds/maxfps gate. | — (substitution; verify justification still holds) |
 | Host_Frame | Heartbeat closure in qwclient | VERIFIED | Live 547df88: full frame loop (read packets → send cmd → predict → render) plays in Studio; loopback `tick()` mirrors the same order. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| simple_crypt / Host_FixupModelNames | — | UNIMPLEMENTED | id's model-name de-obfuscation; assets are already plain. | — (implement first) |
+| simple_crypt / Host_FixupModelNames | — | N/A | id's model-name de-obfuscation; assets are already plain. N/A: DOS-era (asset de-obfuscation; assets plain). | — (implement first) |
 | Host_Init | qwclient boot | VERIFIED | The QW boot path is exercised end-to-end by every committed QW artifact (S4 anchor, sky, scoreboard, rocket, input battery — all captured on live engine="qw" boots). | Boot with QuakeAssets engine="qw"; QW_State must reach "active" |
 | Host_Shutdown | — | SUBSTITUTED | Roblox instance teardown. | — (substitution; verify justification still holds) |
 
@@ -178,7 +178,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | V_cshift_f / V_BonusFlash_f | — | UNIMPLEMENTED | Screen color shifts absent. | — (implement first) |
 | V_SetContentsColor / V_CalcPowerupCshift / V_CalcBlend / V_UpdatePalette | — | UNIMPLEMENTED | No underwater/powerup/damage palette blends in the QW boot (NQ fidelity backlog too). | — (implement first) |
 | angledelta / CalcGunAngle | — | UNIMPLEMENTED | Gun yaw/pitch lag not ported; gun uses view angles directly. | — (implement first) |
-| V_BoundOffsets | — | UNIMPLEMENTED | 14-unit eye clamp vs entity origin; prediction keeps eye on simorg so drift can't occur. | — (implement first) |
+| V_BoundOffsets | — | N/A | 14-unit eye clamp vs entity origin; prediction keeps eye on simorg so drift can't occur. N/A: condition structurally impossible in port (eye pinned to simorg). | — (implement first) |
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. | — (implement first) |
 | V_CalcViewRoll | camera block (movement roll shared; dead branch inline) | VERIFIED | Movement roll now delegates to the C-truth-tested view.calcRoll; the dead branch (80-degree roll at viewheight -16) is two code-pinned lines observed live in the dm3 discharge death this session. | `lune run tests/test_view.luau`; code: qwclient camera dead branch |
 | V_CalcIntermissionRefdef | intermission branch | VERIFIED | test_qw_cam crafted svc_intermission: intermission=1 with simorg pinned, simvel zeroed, simangles pinned — exactly the fixed refdef inputs; the camera branch consumes them with no bob/height (code). No idle sway (V_AddIdle) stands as the recorded delta. | `lune run tests/test_qw_cam.luau` |
@@ -397,14 +397,18 @@ No additions were found without a stated justification (code comment or backlog 
 
 ## Totals
 
+> N/A status formalized 2026-07-05 (see coverage README): concept cannot exist in the port (dead-in-C, DOS/transport-era, unused-in-scope, platform-owned). Initial N/A pass done by hand; counts below are column-exact.
+
+
 Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/download clusters) as single rows.
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 120 |
+| VERIFIED | 119 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 59 |
-| SUBSTITUTED | 49 |
+| UNIMPLEMENTED | 54 |
+| SUBSTITUTED | 51 |
+| N/A | 4 |
 | **Total rows** | **226** |
 
 Highest-impact gaps (all journaled in the backlog):

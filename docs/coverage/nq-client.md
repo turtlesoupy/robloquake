@@ -11,8 +11,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CL_ClearState | cl.luau parseServerInfo wipe + init.client onServerInfo teardown | VERIFIED | tests/test_changelevel.luau: fresh signon/precache on e1m2 after level change | `lune run tests/test_changelevel.luau` |
-| CL_Disconnect | c.onDisconnect hook (print only) | UNIMPLEMENTED | no stop-sounds/clc_disconnect/demo teardown path; Roblox leave = session end | — (implement first) |
-| CL_Disconnect_f | — | UNIMPLEMENTED | no `disconnect` command | — (implement first) |
+| CL_Disconnect | c.onDisconnect hook (print only) | N/A | no stop-sounds/clc_disconnect/demo teardown path; Roblox leave = session end. N/A: platform-owned flow. | — (implement first) |
+| CL_Disconnect_f | — | N/A | no `disconnect` command. N/A: platform-owned flow. | — (implement first) |
 | CL_EstablishConnection | clc_nop hello over RemoteEvent | SUBSTITUTED | no sockets; server connects the client when it first hears from it | — (substitution; verify justification still holds) |
 | CL_SignonReply | cl.luau signonReply | VERIFIED | tests/test_loopback.luau: "client fully signed on" (prespawn/name/color/spawn/begin) | `lune run tests/test_loopback.luau` |
 | CL_NextDemo | — | UNIMPLEMENTED | no startdemos attract-loop cycling; playdemo is manual | — (implement first) |
@@ -30,7 +30,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CL_ParseStartSoundPacket | cl.luau parseStartSound | VERIFIED | tests/test_loopback.luau: "shotgun sound event received" | `lune run tests/test_loopback.luau` |
-| CL_KeepaliveMessage | — | UNIMPLEMENTED | RemoteEvent transport has no keepalive need during long loads | — (implement first) |
+| CL_KeepaliveMessage | — | N/A | RemoteEvent transport has no keepalive need during long loads. N/A: transport-era. | — (implement first) |
 | CL_ParseServerInfo | cl.luau parseServerInfo | VERIFIED | tests/test_loopback.luau: levelname/maxclients/precache lists; test_changelevel.luau. FIDELITY FIX 2026-07-04: now wipes item_gettime/stats/clocks like C's CL_ClearState memset (stale stamps caused the all-items-highlighted playtest bug — evidence/nq-inventory-steady.txt) | `lune run tests/test_changelevel.luau`; `lune run tests/test_loopback.luau` |
 | CL_ParseUpdate | cl.luau parseUpdate | VERIFIED | tests/test_loopback.luau: entity positions/visibility through fast updates | `lune run tests/test_loopback.luau` |
 | CL_ParseBaseline | cl.luau parseBaseline | VERIFIED | tests/test_loopback.luau signon path (baselines feed spawnstatic/spawnbaseline) | `lune run tests/test_loopback.luau` |
@@ -81,7 +81,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Chase_Init | chase_active console command | VERIFIED | The command it registers is proven by the committed third-person capture (evidence/nq-chase-cam.jpg, exec "chase_active 1"). chase_back/up/right hardcoded at the C defaults 100/16/0. | RQDBG_Console exec "chase_active 1", capture, compare |
-| Chase_Reset | — | UNIMPLEMENTED | C stub is an empty TODO too | — (implement first) |
+| Chase_Reset | — | N/A | C stub is an empty TODO too. N/A: dead in C (empty stub). | — (implement first) |
 | TraceLine | worldlib.recursiveHullCheck against hull 0 | VERIFIED | FIDELITY.md: hull collision bit-exact vs trace_truth (1503 checks) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Chase_Update | init.client chase branch | VERIFIED | [evidence/nq-chase-cam.jpg](evidence/nq-chase-cam.jpg) + .txt: chase.c offsets, player.mdl from behind, gun hidden, no wall clip (authentic quirk). | Console "chase_active 1" per evidence/nq-chase-cam.txt, capture, compare |
 
@@ -154,9 +154,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | SCR_DrawLoading / SCR_BeginLoadingPlaque / SCR_EndLoadingPlaque | hud.setLoading + loadingUp gate | VERIFIED | Per-frame GUI watcher across a reload: plaque visible at t=0.15s (serverinfo) and cleared at t=1.33s — the first rendered frame after the deferred world build ([evidence/nq-loading-plaque-probe.txt](evidence/nq-loading-plaque-probe.txt)). | Watcher snippet per the evidence file |
 | SCR_SetUpToDrawConsole | console.update slide | VERIFIED | Half-screen slide in [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg); mid-slide retraction visible at the top of [evidence/nq-pause-plaque.jpg](evidence/nq-pause-plaque.jpg) (scr_conspeed). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | SCR_DrawConsole | console.update rows | VERIFIED | evidence/nq-console-open.jpg: the console rendered mid-slide over the 3D view with scrollback rows (and nq-pause-plaque.jpg catches it mid-animation). | RQDBG_Console "toggle", capture, compare |
-| WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | UNIMPLEMENTED | no writable filesystem | — (implement first) |
-| SCR_ModalMessage | — | UNIMPLEMENTED | no modal quit/confirm flow (Roblox owns quit) | — (implement first) |
-| SCR_DrawNotifyString | — | UNIMPLEMENTED | modal notify text (goes with SCR_ModalMessage) | — (implement first) |
+| WritePCXfile / SCR_ScreenShot_f | `screenshot` accepted no-op | N/A | no writable filesystem. N/A: DOS-era; platform owns screenshots. | — (implement first) |
+| SCR_ModalMessage | — | N/A | no modal quit/confirm flow (Roblox owns quit). N/A: platform-owned flow (quit). | — (implement first) |
+| SCR_DrawNotifyString | — | N/A | modal notify text (goes with SCR_ModalMessage). N/A: platform-owned flow (quit). | — (implement first) |
 | SCR_BringDownConsole | — | UNIMPLEMENTED | | — (implement first) |
 | SCR_UpdateScreen | Heartbeat overlay updates | SUBSTITUTED | Roblox render pipeline owns presentation; per-frame GUI updates replace the 2D compose | — (substitution; verify justification still holds) |
 | SCR_UpdateWholeScreen | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
@@ -208,24 +208,24 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | M_Menu_Main_f / M_Main_Draw / M_Main_Key | menu.create/update/handleKey | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg): qplaque + ttl_main + mainmenu entries + animated menudot at the C coordinates. Delta: key navigation not exercised in the capture (needs real key events). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
 | M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | Enter on item 0 → `map start` | UNIMPLEMENTED | submenu absent; direct new-game action instead | — (implement first) |
 | M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | — | UNIMPLEMENTED | F6/F9 quicksave/quickload binds work end to end (FIDELITY save/load record) | — (implement first) |
-| M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | stub print | UNIMPLEMENTED | Roblox players join the server automatically | — (implement first) |
+| M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | stub print | N/A | Roblox players join the server automatically. N/A: platform-owned flow (join). | — (implement first) |
 | M_Menu_Setup_f / M_Setup_Draw / M_Setup_Key | — | UNIMPLEMENTED | name comes from Roblox; color fixed 0x04 | — (implement first) |
-| M_Menu_Net_f / M_Net_Draw / M_Net_Key | — | UNIMPLEMENTED | serial/IPX/TCP menu meaningless here | — (implement first) |
+| M_Menu_Net_f / M_Net_Draw / M_Net_Key | — | N/A | serial/IPX/TCP menu meaningless here. N/A: transport-era. | — (implement first) |
 | M_Menu_Options_f / M_AdjustSliders / M_DrawSlider / M_DrawCheckbox / M_Options_Draw / M_Options_Key | — | UNIMPLEMENTED | console commands (sensitivity, fov, crosshair, chase_active) cover the options | — (implement first) |
 | M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | UNIMPLEMENTED | bind/unbind console commands cover it | — (implement first) |
-| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | UNIMPLEMENTED | no video modes on platform | — (implement first) |
+| M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | N/A | no video modes on platform. N/A: DOS-era (video modes). | — (implement first) |
 | M_Menu_Help_f / M_Help_Draw / M_Help_Key | help state + gfx/help0-5.lmp pages | VERIFIED | [evidence/nq-help-page1.jpg](evidence/nq-help-page1.jpg) (help0 ORDERING, "Pg 1 of 6") entered via Return on HELP/ORDERING; [nq-help-page2.jpg](evidence/nq-help-page2.jpg) (BASIC MOVEMENT) after a real Right key = M_Help_Key forward paging. | Studio: tools/verify_input_nq.luau menu steps + captures |
-| M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | onQuit → print | UNIMPLEMENTED | quitting is Roblox's; no confirm screen | — (implement first) |
-| M_Menu_SerialConfig_f / M_SerialConfig_Draw / M_SerialConfig_Key | — | UNIMPLEMENTED | DOS serial/modem N/A | — (implement first) |
-| M_Menu_ModemConfig_f / M_ModemConfig_Draw / M_ModemConfig_Key | — | UNIMPLEMENTED | N/A | — (implement first) |
-| M_Menu_LanConfig_f / M_LanConfig_Draw / M_LanConfig_Key | — | UNIMPLEMENTED | N/A | — (implement first) |
+| M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | onQuit → print | N/A | quitting is Roblox's; no confirm screen. N/A: platform-owned flow (quit). | — (implement first) |
+| M_Menu_SerialConfig_f / M_SerialConfig_Draw / M_SerialConfig_Key | — | N/A | DOS serial/modem N/A. N/A: transport-era. | — (implement first) |
+| M_Menu_ModemConfig_f / M_ModemConfig_Draw / M_ModemConfig_Key | — | N/A | N/A. N/A: transport-era. | — (implement first) |
+| M_Menu_LanConfig_f / M_LanConfig_Draw / M_LanConfig_Key | — | N/A | N/A. N/A: transport-era. | — (implement first) |
 | M_Menu_GameOptions_f / M_GameOptions_Draw / M_NetStart_Change / M_GameOptions_Key | — | UNIMPLEMENTED | server rules are server-side console/attributes | — (implement first) |
-| M_Menu_Search_f / M_Search_Draw / M_Search_Key | — | UNIMPLEMENTED | no LAN search | — (implement first) |
-| M_Menu_ServerList_f / M_ServerList_Draw / M_ServerList_Key | — | UNIMPLEMENTED | no server list | — (implement first) |
+| M_Menu_Search_f / M_Search_Draw / M_Search_Key | — | N/A | no LAN search. N/A: transport-era (LAN search). | — (implement first) |
+| M_Menu_ServerList_f / M_ServerList_Draw / M_ServerList_Key | — | N/A | no server list. N/A: transport-era. | — (implement first) |
 | M_Init | menu.create | VERIFIED | Menu opens/draws/navigates end-to-end in the committed captures (nq-main-menu.jpg, nq-menu-cursor-help.jpg, help pages). | Studio: tools/verify_input_nq.luau menu steps |
 | M_Draw | menu.update | VERIFIED | [evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg): MAIN plaque, QUAKE sidebar, id logo, item list and spinner cursor rendered mid-game. Delta stands: no Draw_FadeScreen dim. | Studio: tools/verify_input_nq.luau menu steps + capture |
 | M_Keydown | menu.handleKey | VERIFIED | Three real Down keys moved the spinner cursor to HELP/ORDERING ([evidence/nq-menu-cursor-help.jpg](evidence/nq-menu-cursor-help.jpg)); Return entered Help; M closed. Delta stands: no menu sounds. | Studio: tools/verify_input_nq.luau menu steps + captures |
-| M_ConfigureNetSubsystem | — | UNIMPLEMENTED | N/A | — (implement first) |
+| M_ConfigureNetSubsystem | — | N/A | N/A. N/A: transport-era. | — (implement first) |
 
 ## draw.c
 
@@ -242,7 +242,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Draw_TileClear | — | SUBSTITUTED | no vrect borders — 3D view is full-window | — (substitution; verify justification still holds) |
 | Draw_Fill | hud interFill (palette-indexed Frames) | VERIFIED | The scoreboard colour bar behind the frag count is the Draw_Fill path ([evidence/nq-dm-rankings.jpg](evidence/nq-dm-rankings.jpg) (+ -before.jpg pair, [context](evidence/nq-dm-rankings.txt))). | Stage per the evidence file |
 | Draw_FadeScreen | — | UNIMPLEMENTED | menu backdrop dim absent | — (implement first) |
-| Draw_BeginDisc / Draw_EndDisc | — | UNIMPLEMENTED | disc I/O icon absent | — (implement first) |
+| Draw_BeginDisc / Draw_EndDisc | — | N/A | disc I/O icon absent. N/A: DOS-era (disc I/O icon). | — (implement first) |
 
 ## snd_dma.c
 
@@ -353,7 +353,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | R_InitParticles | particles.new pool | SUBSTITUTED | Pool is 1024 round-robin (oldest slot stolen) vs C's 2048 free-list that truncates effects when exhausted; pooled neon Parts are a platform substitution. Expiry: raise the pool / adopt free-list truncation if particle-heavy scenes visibly steal live particles. | code: particlesim.new/alloc; spawner behaviour under load exercised by test_particles2 |
-| R_DarkFieldParticles | — | UNIMPLEMENTED | dead code in WinQuake (QUAKE2 #ifdef) — justified omission | — (implement first) |
+| R_DarkFieldParticles | — | N/A | dead code in WinQuake (QUAKE2 #ifdef) — justified omission. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | R_EntityParticles | particles.entityParticles (renders the verified particlesim core) | VERIFIED | test_particles2: 162 anorm particles, color 0x6f, die +0.01, orgs on the 64±16 shell (real anorms.h table). | `lune run tests/test_particles2.luau` |
 | R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) | — (implement first) |
 | R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool | — (implement first) |
@@ -461,8 +461,12 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
 - VERIFIED: 131
 - PENDING: 0
-- UNIMPLEMENTED: 62
+- UNIMPLEMENTED: 43
 - SUBSTITUTED: 71
+- N/A: 19
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
+
+
+> N/A status formalized 2026-07-05 (see coverage README): concept cannot exist in the port (dead-in-C, DOS/transport-era, unused-in-scope, platform-owned). Initial N/A pass done by hand; totals below are column-exact counts.
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 45 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

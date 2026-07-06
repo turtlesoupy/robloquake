@@ -9,10 +9,22 @@ no from-memory claims. Statuses:
   comparison confirms it. This is the only status that counts as done.
 - **PENDING** — ported and structurally equivalent on reading, but no test
   or visual proof yet.
-- **UNIMPLEMENTED** — no port counterpart exists.
+- **UNIMPLEMENTED** — no port counterpart exists, and one COULD exist:
+  the row is open work (or an open product decision) until implemented,
+  reclassified with justification, or ruled N/A.
 - **SUBSTITUTED** — intentionally replaced by a platform mechanism; the row
   states what replaces it and why the platform requires it. A substitution
   without a stated justification is a defect.
+- **N/A** — the concept the C function serves does not exist in this port
+  and never will: dead code in WinQuake itself (QUAKE2/#if 0 ifdefs, empty
+  stubs), DOS/transport-era machinery (serial/IPX/LAN config, disc icons,
+  PCX screenshots), functions unused by the in-scope C paths, or flows the
+  Roblox platform owns outright (quit, leave, session join). The row must
+  say WHICH of those it is. N/A is terminal like SUBSTITUTED, but stricter:
+  assigning it requires that no counterpart could meaningfully exist — "we
+  don't want to build it" is UNIMPLEMENTED or SUBSTITUTED, never N/A.
+  (Initial N/A classification done by hand 2026-07-05; a burn-down thread
+  must not move rows INTO N/A without flagging each for user review.)
 
 Each manifest ends with a list of port-side additions that have no C
 counterpart, each with its justification.
