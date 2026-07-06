@@ -19,7 +19,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CL_Quit_f | — | SUBSTITUTED | Roblox leave-game UI owns quitting; no client quit command. | — (substitution; verify justification still holds) |
-| CL_Version_f | — | UNIMPLEMENTED | Console command; QW console overlay is journaled follow-up. | — (implement first) |
+| CL_Version_f | — | UNIMPLEMENTED | Console command; QW console overlay is journaled follow-up. | ruled: IMPLEMENT (2026-07-05) |
 | CL_SendConnectPacket | `qwcl.connect` | SUBSTITUTED | No OOB challenge/qport/userinfo blob: Roblox remotes are per-player authenticated; server side takes userinfo via `qwsv.wireConnect`. `connect()` goes straight to `clc_stringcmd "new"`. | — (substitution; verify justification still holds) |
 | CL_CheckForResend | — | SUBSTITUTED | Reliable ordered transport; no connect resend timer. | — (substitution; verify justification still holds) |
 | CL_BeginServerConnect | `qwcl.connect` | SUBSTITUTED | One server per place; no address, no connect_time state. | — (substitution; verify justification still holds) |
@@ -28,8 +28,8 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ClearState | `qwcl` `clearState` | VERIFIED | test_qw_loopback changelevel: "client cleared state and loaded e1m2" — full state reset + rebuild over the wire. | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect | partial (`svc_disconnect` handler) | VERIFIED | test_qw_loopback: svc_disconnect sets state "disconnected" + records the reason; heartbeat bail-out is the qwclient consumer. No drop-cmd send, no demo/upload teardown (both N/A on remotes). | `lune run tests/test_qw_loopback.luau` |
 | CL_Disconnect_f | — | N/A | No user-initiated disconnect command. N/A: platform-owned flow. | — (implement first) |
-| CL_User_f | — | UNIMPLEMENTED | Console command. | — (implement first) |
-| CL_Users_f | — | UNIMPLEMENTED | Console command; `cl.players` holds the data (name/frags/ping asserted in loopback). | — (implement first) |
+| CL_User_f | — | UNIMPLEMENTED | Console command. | ruled: IMPLEMENT (2026-07-05) |
+| CL_Users_f | — | UNIMPLEMENTED | Console command; `cl.players` holds the data (name/frags/ping asserted in loopback). | ruled: IMPLEMENT (2026-07-05) |
 | CL_Color_f | — | UNIMPLEMENTED | Color userinfo setting; colormap skin translation journaled open. | — (implement first) |
 | CL_FullServerinfo_f | `execStufftext` `fullserverinfo` branch | VERIFIED | test_qw_loopback now asserts cl.serverinfo is populated by the handshake's fullserverinfo stufftext. | `lune run tests/test_qw_loopback.luau` |
 | CL_FullInfo_f | — | UNIMPLEMENTED | Client userinfo editing not exposed. | — (implement first) |
@@ -86,7 +86,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | KeyDown / KeyUp + the 38 IN_*Down/IN_*Up wrappers | qwclient `keyButtons` map + `input.setButton` | SUBSTITUTED | Roblox UserInputService replaces the bind-driven ± command pairs. Delta: booleans, not the C two-source `kbutton_t` down[2]/impulse tracking — simultaneous bind sources and 0.25/0.75 partial-frame presses are lost. | — (substitution; verify justification still holds) |
 | IN_Impulse | number keys 1–8 → `input.setImpulse` | VERIFIED | exec `impulse 8` selected and fired the freshly picked-up dm3 LG (which discharged underwater for the authentic -99 — [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); impulse 9 correctly refused in DM. Number-key synthesis blocked by CoreGUI (platform note shared with the NQ row). | Battery steps in the evidence file |
 | CL_KeyState | — | SUBSTITUTED | Digital 0/1 only (see above); QW's fractional key state depended on sub-frame press timing. | — (substitution; verify justification still holds) |
-| CL_AdjustAngles | — | UNIMPLEMENTED | No keyboard turn/look (+left/+right/+lookup/+lookdown); mouse-only via `input.updateTurn`. | — (implement first) |
+| CL_AdjustAngles | — | UNIMPLEMENTED | No keyboard turn/look (+left/+right/+lookup/+lookdown); mouse-only via `input.updateTurn`. | ruled: IMPLEMENT (2026-07-05) — NQ parity keyboard turning |
 | CL_BaseMove | `input.sample` | VERIFIED | Real W and RQ_ForceForward both drove forwardmove over the wire (QW_SimOrg deltas in [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dead-player moves ignored until respawn (authentic). Speeds fixed — noted. | Battery steps in the evidence file |
 | MakeChar | `qwcl` `makeChar` | VERIFIED | Loopback convergence (<1 unit) replays quantized cmds; &~3 with signed clamp ±508 preserved (bit32 sign fixup noted in code). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_FinishMove | split: qwclient heartbeat (buttons/impulse/msec, 250ms→100ms hitch rule) + `qwcl.sendCmd` (MakeChar + angle quantize) | VERIFIED | Loopback convergence; backlog 115a438: "MakeChar+angle16 quantization before storing cmds, 2-move discard, latency drift" fixed and live-verified session followed. Delta: quantization applied to the *stored* cmd so prediction replays the wire exactly (see additions). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
@@ -172,7 +172,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 |---|---|---|---|---|
 | V_CalcRoll | shared view.calcRoll (own view + CL_LinkPlayers lean * 4) | VERIFIED | Both inline copies now delegate to the shared, C-truth-tested view.calcRoll (test_view battery: 2/200 scaling, clamp, sign). | `lune run tests/test_view.luau` |
 | V_CalcBob | shared view.calcBob (camera block delegates) | VERIFIED | The inline copy now delegates to the shared, C-truth-tested view.calcBob (test_view: cycle split, blend, clamps). | `lune run tests/test_view.luau` |
-| V_StartPitchDrift / V_StopPitchDrift / V_DriftPitch | — | UNIMPLEMENTED | Pitch drift is keyboard-look-era behavior; mouse-look always on. | — (implement first) |
+| V_StartPitchDrift / V_StopPitchDrift / V_DriftPitch | — | UNIMPLEMENTED | Pitch drift is keyboard-look-era behavior; mouse-look always on. | ruled: IMPLEMENT (2026-07-05) |
 | BuildGammaTable / V_CheckGamma | shared texture path (gamma 0.7) | SUBSTITUTED | Gamma baked into palette conversion in the shared textures module; no runtime table. | — (substitution; verify justification still holds) |
 | V_ParseDamage | `svc_damage` → `cl.damage` in qwcl | VERIFIED | test_scenario_qw: "svc_damage reached the victim" (save/take/from parsed); the Studio-side kick/cshift application is covered by the punchangle-absence check + the cshift row. | `lune run tests/test_scenario_qw.luau` |
 | V_cshift_f / V_BonusFlash_f | — | UNIMPLEMENTED | Screen color shifts absent. | — (implement first) |

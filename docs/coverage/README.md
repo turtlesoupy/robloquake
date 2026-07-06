@@ -48,6 +48,25 @@ r_* span/edge internals, gl_*), UDP/WinSock networking, and Win32/DOS
 platform files, replaced wholesale by the Roblox renderer, remotes, and
 runtime.
 
+## Burn-down goal rules (ratified 2026-07-05)
+
+Goal: every row VERIFIED or SUBSTITUTED (N/A rows from the hand pass stay),
+with a bias for VERIFIED. Rules:
+
+- No row moves INTO N/A without flagging it for user review — the initial
+  N/A pass was done by hand with the user; "don't want to build it" is
+  UNIMPLEMENTED or SUBSTITUTED, never N/A.
+- Every SUBSTITUTED move cites what serves the purpose.
+- PENDING stays 0 throughout: evidence lands with the claim, never after.
+- Totals are column-exact counts, updated in the same commit as row changes.
+- Rows annotated "ruled: IMPLEMENT (2026-07-05)" / "ruled: KEEP OPEN" are
+  decided — build them, do not reclassify or re-ask. Unannotated
+  UNIMPLEMENTED rows are the thread's judgment within the rules above.
+- Implementation priority: QW presentation cluster (scoreboard overlays,
+  cshifts, CTF flag attach, player color translation, s_explod) first, NQ
+  HUD odds second, ruled tooling/menus/admin lists third, classification
+  sweep last.
+
 Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
 it enters here in the same commit.

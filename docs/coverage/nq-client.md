@@ -91,13 +91,13 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | V_CalcRoll | view.luau calcRoll (now shared: src/shared/engine/client/view.luau) | VERIFIED | test_view.luau hand-computed C truths: side scaling 2/200 below rollspeed, clamp at exactly 200, sign from dot(vel,right), yaw-rotated right vector. | `lune run tests/test_view.luau` |
 | V_CalcBob | view.luau calcBob (shared module) | VERIFIED | test_view.luau: cycle fraction of cl_bobcycle .6, pi ramp split at bobup .5 (peak sin at t=.15, trough at t=.45), xy-speed*.02, .3+.7*sin mix, clamps 4/-7. | `lune run tests/test_view.luau` |
-| V_StartPitchDrift | — | UNIMPLEMENTED | always-mouselook: C disables drift under mouselook anyway | — (implement first) |
-| V_StopPitchDrift | — | UNIMPLEMENTED | as above | — (implement first) |
-| V_DriftPitch | — | UNIMPLEMENTED | as above; idealpitch received but unused | — (implement first) |
+| V_StartPitchDrift | — | UNIMPLEMENTED | always-mouselook: C disables drift under mouselook anyway | ruled: IMPLEMENT (2026-07-05) |
+| V_StopPitchDrift | — | UNIMPLEMENTED | as above | ruled: IMPLEMENT (2026-07-05) |
+| V_DriftPitch | — | UNIMPLEMENTED | as above; idealpitch received but unused | ruled: IMPLEMENT (2026-07-05) |
 | BuildGammaTable | — | SUBSTITUTED | no palette; gamma folded into the ^0.7 light curve | — (substitution; verify justification still holds) |
 | V_CheckGamma | — | SUBSTITUTED | as above | — (substitution; verify justification still holds) |
 | V_ParseDamage | cl.luau parseDamage | VERIFIED | test_view.luau wire battery: count (blood+armor)*.5 floored at 10, faceanimtime +0.2, damage cshift 3*count clamped 0..150, color split (255,0,0)/(200,100,100)/(220,50,50), kicks count*side*0.6 from the hit direction, dmg_time 0.5. | `lune run tests/test_view.luau` |
-| V_cshift_f | — | UNIMPLEMENTED | debug command | — (implement first) |
+| V_cshift_f | — | UNIMPLEMENTED | debug command | ruled: IMPLEMENT (2026-07-05) |
 | V_BonusFlash_f | `bf` command (console + stufftext via Cbuf) | VERIFIED | RQ_CshiftBonus decay series: 50 → 36.5/21.7 → 0 in ~0.5-0.6s = percent 50 with the authentic 100/s decay ([evidence/nq-input-menu-battery.txt](evidence/nq-input-menu-battery.txt)). FIDELITY FIX 2026-07-04: bf was a stufftext-only special case — now a real command like C's Cmd_AddCommand, and svc_stufftext routes every line through the Cbuf. Bonus color 215/186/69 in the compositor. | Studio: tools/verify_input_nq.luau battery (user_keyboard_input steps documented in the script) (bonusProbe) |
 | V_SetContentsColor | init.client view-leaf contents shifts | VERIFIED | [evidence/nq-slime-cshift.jpg](evidence/nq-slime-cshift.jpg) + .txt: full-screen slime tint while submerged, blended with the damage flash from the slime tick. Delta: no CONTENTS_SOLID grey (cannot be seen in play). | Teleport per evidence/nq-slime-cshift.txt, capture, compare |
 | V_CalcPowerupCshift | view.powerupShift (shared; init.client delegates) | VERIFIED | test_view battery vs view.c:442: quad(0,0,255,30) > suit(0,255,0,20) > invisibility(100,100,100,100) > invulnerability(255,255,0,30) priority chain, combined-items precedence, none->nil. | `lune run tests/test_view.luau` |
@@ -168,15 +168,15 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_ToggleConsole_f | console.toggle (backquote/tilde) | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: console toggled open/closed through the harness across the battery. Delta: no Key_ClearStates. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Clear_f | `clear` command | VERIFIED | Console dump 368 chars -> 0 after exec `clear` ([evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)). | RQDBG_Console: exec "clear" then action "lines" |
 | Con_ClearNotify | hud.setLoading clears notifyLines | VERIFIED | Glyph census across a reload: 2 -> 35 (say line) -> 2 at t=2.4s with ~1s of the 3s notify lifetime remaining — cleared by the loading path, not expiry ([evidence/nq-loading-plaque-probe.txt](evidence/nq-loading-plaque-probe.txt)). | Census per the evidence file |
-| Con_MessageMode_f / Con_MessageMode2_f | stub print | UNIMPLEMENTED | pointed at `say`/Roblox chat | — (implement first) |
+| Con_MessageMode_f / Con_MessageMode2_f | stub print | SUBSTITUTED | pointed at `say`/Roblox chat. SUBSTITUTED: say routes through TextChatService and the Roblox chat window is the message-entry UI (chat compliance, 1a43438). | — |
 | Con_CheckResize | — | SUBSTITUTED | fixed 64-column virtual canvas | — (substitution; verify justification still holds) |
 | Con_Init | console.create | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: conback + id watermark drawn (Draw_ConsoleBackground). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Linefeed | implicit in print | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | Con_Print | console.print | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: scrollback renders the battery lines. Delta: hard wrap at 64 cols, 200-line scrollback vs 16K text buffer. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DebugLog | — | N/A | N/A: file logging without a writable filesystem; Studio output log covers it. | — (implement first) |
 | Con_Printf | c.print → console + notify + output | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: c.print output (VERSION banner, cvar prints) lands in the console. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | — (implement first) |
-| Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | — (implement first) |
+| Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | ruled: IMPLEMENT (2026-07-05) |
+| Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | ruled: IMPLEMENT (2026-07-05) |
 | Con_DrawInput | input row + blinking char-11 cursor | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: ] prompt with blinking char-11 cursor. Delta: no horizontal scroll of long input. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DrawNotify | hud notifyRows (4 lines, 3s) | VERIFIED | Conchar glyph census: +36 glyphs appear in the notify region after a server `say` print and expire at the 3s window (21 -> 57 -> 21, [evidence/nq-console-notify-clear.txt](evidence/nq-console-notify-clear.txt)); screenshots usually hide the area under Roblox chrome (recorded divergence: below-topbar inset) — but [evidence/nq-notify-thunderbolt.jpg](evidence/nq-notify-thunderbolt.jpg) catches a pickup notify line rendered in conchars. Port note: client `echo` prints console-only; notify rides server prints. | Glyph census per the evidence file |
 | Con_DrawConsole | console.update | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: half-screen console over the world. Delta: no scrollback paging, no version string. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
@@ -187,7 +187,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Key_Console | console.handleKey/handleText | VERIFIED | The committed console battery (nq-console-open.jpg + nq-cbuf-battery.txt) was typed through consoleKey -> handleKey/handleText (RQDBG "key" action drives the real path; enter executes, backspace edits, history recalled). Deltas stand: no tab completion, pgup/pgdn, clipboard. | RQDBG_Console "key"/"text" actions per the battery |
-| Key_Message | — | UNIMPLEMENTED | chat via Roblox | — (implement first) |
+| Key_Message | — | SUBSTITUTED | chat via Roblox. SUBSTITUTED: Roblox chat window owns message entry (chat compliance). | — |
 | Key_StringToKeynum / Key_KeynumToString | KEYNAMES map | VERIFIED | Every bind lookup in the committed batteries rides the map (default.cfg + autoexec binds resolved W/arrows/mouse1; bind/unbind battery echoes names back through KeynumToString). Deltas stand: Roblox KeyCodes, Escape platform-reserved, mouse1-3 mapped. | nq-console-open bind battery + tools/verify_input_nq.luau |
 | Key_SetBinding | bindings table | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind x sets, query echoes "x" = "echo xkey_fired". | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Key_Unbind_f / Key_Unbindall_f / Key_Bind_f | bind/unbind/unbindall commands | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: bind query + unbind clears the binding. Delta: unbound query prints "x" = "" instead of C's '"x" is not bound'. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
@@ -206,20 +206,20 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | M_DrawTextBox | — | UNIMPLEMENTED | | — (implement first) |
 | M_ToggleMenu_f | `togglemenu` / M key | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg) + .txt: togglemenu raises the menu. Delta: Escape reserved by Roblox (M key/togglemenu). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
 | M_Menu_Main_f / M_Main_Draw / M_Main_Key | menu.create/update/handleKey | VERIFIED | [evidence/nq-main-menu.jpg](evidence/nq-main-menu.jpg): qplaque + ttl_main + mainmenu entries + animated menudot at the C coordinates. Delta: key navigation not exercised in the capture (needs real key events). | Console "togglemenu" per evidence/nq-main-menu.txt, capture, compare |
-| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | Enter on item 0 → `map start` | UNIMPLEMENTED | submenu absent; direct new-game action instead | — (implement first) |
-| M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | — | UNIMPLEMENTED | F6/F9 quicksave/quickload binds work end to end (FIDELITY save/load record) | — (implement first) |
+| M_Menu_SinglePlayer_f / M_SinglePlayer_Draw / M_SinglePlayer_Key | Enter on item 0 → `map start` | UNIMPLEMENTED | submenu absent; direct new-game action instead | ruled: KEEP OPEN — part of the authentic menu core (menus split, 2026-07-05) |
+| M_ScanSaves / M_Menu_Load_f / M_Menu_Save_f / M_Load_Draw / M_Save_Draw / M_Load_Key / M_Save_Key | — | UNIMPLEMENTED | F6/F9 quicksave/quickload binds work end to end (FIDELITY save/load record) | ruled: KEEP OPEN — build authentic save/load menus (menus split, 2026-07-05) |
 | M_Menu_MultiPlayer_f / M_MultiPlayer_Draw / M_MultiPlayer_Key | stub print | N/A | Roblox players join the server automatically. N/A: platform-owned flow (join). | — (implement first) |
-| M_Menu_Setup_f / M_Setup_Draw / M_Setup_Key | — | UNIMPLEMENTED | name comes from Roblox; color fixed 0x04 | — (implement first) |
+| M_Menu_Setup_f / M_Setup_Draw / M_Setup_Key | — | SUBSTITUTED | name comes from Roblox; color fixed 0x04. SUBSTITUTED: identity comes from Roblox; appearance from avatars mode (menus ruling: split). | — |
 | M_Menu_Net_f / M_Net_Draw / M_Net_Key | — | N/A | serial/IPX/TCP menu meaningless here. N/A: transport-era. | — (implement first) |
-| M_Menu_Options_f / M_AdjustSliders / M_DrawSlider / M_DrawCheckbox / M_Options_Draw / M_Options_Key | — | UNIMPLEMENTED | console commands (sensitivity, fov, crosshair, chase_active) cover the options | — (implement first) |
-| M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | UNIMPLEMENTED | bind/unbind console commands cover it | — (implement first) |
+| M_Menu_Options_f / M_AdjustSliders / M_DrawSlider / M_DrawCheckbox / M_Options_Draw / M_Options_Key | — | SUBSTITUTED | console commands (sensitivity, fov, crosshair, chase_active) cover the options. SUBSTITUTED: console commands (sensitivity/fov/crosshair/chase_active) + the director admin menu cover option setting (menus ruling: split, 2026-07-05). | — |
+| M_Menu_Keys_f / M_FindKeysForCommand / M_UnbindCommand / M_Keys_Draw / M_Keys_Key | — | SUBSTITUTED | bind/unbind console commands cover it. SUBSTITUTED: bind/unbind console commands (menus ruling: split). | — |
 | M_Menu_Video_f / M_Video_Draw / M_Video_Key | — | N/A | no video modes on platform. N/A: DOS-era (video modes). | — (implement first) |
 | M_Menu_Help_f / M_Help_Draw / M_Help_Key | help state + gfx/help0-5.lmp pages | VERIFIED | [evidence/nq-help-page1.jpg](evidence/nq-help-page1.jpg) (help0 ORDERING, "Pg 1 of 6") entered via Return on HELP/ORDERING; [nq-help-page2.jpg](evidence/nq-help-page2.jpg) (BASIC MOVEMENT) after a real Right key = M_Help_Key forward paging. | Studio: tools/verify_input_nq.luau menu steps + captures |
 | M_Menu_Quit_f / M_Quit_Key / M_Quit_Draw | onQuit → print | N/A | quitting is Roblox's; no confirm screen. N/A: platform-owned flow (quit). | — (implement first) |
 | M_Menu_SerialConfig_f / M_SerialConfig_Draw / M_SerialConfig_Key | — | N/A | DOS serial/modem N/A. N/A: transport-era. | — (implement first) |
 | M_Menu_ModemConfig_f / M_ModemConfig_Draw / M_ModemConfig_Key | — | N/A | N/A. N/A: transport-era. | — (implement first) |
 | M_Menu_LanConfig_f / M_LanConfig_Draw / M_LanConfig_Key | — | N/A | N/A. N/A: transport-era. | — (implement first) |
-| M_Menu_GameOptions_f / M_GameOptions_Draw / M_NetStart_Change / M_GameOptions_Key | — | UNIMPLEMENTED | server rules are server-side console/attributes | — (implement first) |
+| M_Menu_GameOptions_f / M_GameOptions_Draw / M_NetStart_Change / M_GameOptions_Key | — | SUBSTITUTED | server rules are server-side console/attributes. SUBSTITUTED: QuakeAssets attributes + director admin menu own server rules (menus ruling: split). | — |
 | M_Menu_Search_f / M_Search_Draw / M_Search_Key | — | N/A | no LAN search. N/A: transport-era (LAN search). | — (implement first) |
 | M_Menu_ServerList_f / M_ServerList_Draw / M_ServerList_Key | — | N/A | no server list. N/A: transport-era. | — (implement first) |
 | M_Init | menu.create | VERIFIED | Menu opens/draws/navigates end-to-end in the committed captures (nq-main-menu.jpg, nq-menu-cursor-help.jpg, help pages). | Studio: tools/verify_input_nq.luau menu steps |
@@ -260,8 +260,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | S_StaticSound | sound.static (looped, vol/255, atten/64) | VERIFIED | Numeric census: 16 looping ambient Sounds playing at the e1m1 vantage (statics started from the signon); event delivery proven by test_loopback "ambient sounds spawned". | Census chunk per evidence/nq-main-menu.txt; `lune run tests/test_loopback.luau` |
 | S_UpdateAmbientSounds | sound.updateAmbients | VERIFIED | Live three-location series matches offline leaf dumps exactly: {255,255} leafs -> both channels 0.300 (= 0.3 * 255/255), the {0,255} slipgate hall -> water1 fades to 0.000 within the 100/s window while wind2 holds ([evidence/nq-sound-ambient-probe.txt](evidence/nq-sound-ambient-probe.txt)). | Probe per the evidence file |
 | S_Update / GetSoundtime / S_ExtraUpdate / S_Update_ | — | SUBSTITUTED | Roblox engine mixes and paints | — (substitution; verify justification still holds) |
-| S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities | — (implement first) |
-| S_LocalSound | — | UNIMPLEMENTED | menu/console beeps absent | — (implement first) |
+| S_Play / S_PlayVol / S_SoundList | — | UNIMPLEMENTED | console audio utilities | ruled: IMPLEMENT (2026-07-05) |
+| S_LocalSound | — | UNIMPLEMENTED | menu/console beeps absent | ruled: IMPLEMENT (2026-07-05) |
 | S_ClearPrecache / S_BeginPrecaching / S_EndPrecaching | — | SUBSTITUTED | no-ops around the bank model | — (substitution; verify justification still holds) |
 
 ## snd_mem.c
@@ -461,8 +461,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
 - VERIFIED: 131
 - PENDING: 0
-- UNIMPLEMENTED: 36
-- SUBSTITUTED: 72
+- UNIMPLEMENTED: 30
+- SUBSTITUTED: 78
 - N/A: 25
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 

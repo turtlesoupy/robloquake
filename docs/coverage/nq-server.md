@@ -75,7 +75,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | COM_Init (common.c:1125) | — | SUBSTITUTED | endianness moot; init in bootstrap | — (substitution; verify justification still holds) |
 | va (common.c:1169) | — | SUBSTITUTED | Luau string interpolation | — (substitution; verify justification still holds) |
 | memsearch (common.c:1183) | — | N/A | unused. N/A: unused in scope. | — (implement first) |
-| COM_Path_f (common.c:1258) | — | UNIMPLEMENTED | debug console command | — (implement first) |
+| COM_Path_f (common.c:1258) | — | UNIMPLEMENTED | debug console command | ruled: IMPLEMENT (2026-07-05) |
 | COM_WriteFile (common.c:1281) | — | SUBSTITUTED | no writable filesystem; saves persist via ServerStorage.QuakeSaves (init.server.luau) | — (substitution; verify justification still holds) |
 | COM_CreatePath (common.c:1308) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
 | COM_CopyFile (common.c:1332) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
@@ -128,7 +128,7 @@ Evidence sources: `tests/*.luau` (offline lune tests), `tools/trace_truth.c` /
 | Cvar_FindVar (cvar.c:32) | common/cvar.luau (vars table lookup) | VERIFIED | test_com cvar battery (set/value/string, missing-name empty string). | `lune run tests/test_com.luau` |
 | Cvar_VariableValue (cvar.c:48) | cvar.luau:value | VERIFIED | sv_friction/sv_gravity/etc. feed the movement chain matched against compiled C (test_movement) | `lune run tests/test_movement.luau` |
 | Cvar_VariableString (cvar.c:64) | cvar.luau:string | VERIFIED | test_com: returns the set string; missing cvar reads empty like C cvar_null_string. | `lune run tests/test_com.luau` |
-| Cvar_CompleteVariable (cvar.c:80) | — | UNIMPLEMENTED | console tab-completion (client UI nicety) | — (implement first) |
+| Cvar_CompleteVariable (cvar.c:80) | — | UNIMPLEMENTED | console tab-completion (client UI nicety) | ruled: IMPLEMENT (2026-07-05) |
 | Cvar_Set (cvar.c:104) | cvar.luau:set | VERIFIED | test_com round-trips; also exercised by both builtin batteries via cvar_set. | `lune run tests/test_com.luau` |
 | Cvar_SetValue (cvar.c:135) | cvar.luau:setValue | VERIFIED | test_multiplayer sets coop=1 → QC coop behavior asserted (instant respawn, -2 frag suicide) | `lune run tests/test_multiplayer.luau` |
 | Cvar_RegisterVariable (cvar.c:151) | cvar.luau DEFAULTS table | SUBSTITUTED | static default table instead of dynamic registration; no engine code registers at runtime | — (substitution; verify justification still holds) |
@@ -161,7 +161,7 @@ F11 zoom chain) but there is no offline test.
 | Cmd_TokenizeString (cmd.c:481) | init.client.luau:tokenize | VERIFIED | Console battery: quoted argument survives as one token (echo "quoted string here"). | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_AddCommand (cmd.c:532) | — | SUBSTITUTED | dispatcher if-chain | — (substitution; verify justification still holds) |
 | Cmd_Exists (cmd.c:568) | — | SUBSTITUTED | same | — (substitution; verify justification still holds) |
-| Cmd_CompleteCommand (cmd.c:588) | — | UNIMPLEMENTED | console tab-completion | — (implement first) |
+| Cmd_CompleteCommand (cmd.c:588) | — | UNIMPLEMENTED | console tab-completion | ruled: IMPLEMENT (2026-07-05) |
 | Cmd_ExecuteString (cmd.c:614) | init.client.luau:execCommand | VERIFIED | Console battery: dispatch across builtins (echo/bind/exec), aliases, and cvar queries. | RQDBG_Console battery per evidence/nq-console-open.txt |
 | Cmd_ForwardToServer (cmd.c:660) | client console → clc_stringcmd forward | VERIFIED | evidence/nq-cbuf-battery.txt: "say" forwards as clc_stringcmd and the broadcast returns to the console with the player prefix. | RQDBG battery per evidence/nq-cbuf-battery.txt |
 | Cmd_CheckParm (cmd.c:693) | — | N/A | unused. N/A: unused in scope. | — (implement first) |
@@ -267,16 +267,16 @@ parses (test_bsp/test_models headers).
 | ED_FindGlobal (pr_edict.c:206) | progs.luau:globaldefsByName | VERIFIED | savegame globals restore (test_savegame) | `lune run tests/test_savegame.luau` |
 | ED_FindFunction (pr_edict.c:226) | progs.luau:functionsByName | VERIFIED | test_vm: anglemod=90, worldspawn=209, SUB_Null=66 | `lune run tests/test_vm.luau` |
 | GetEdictFieldValue (pr_edict.c:241) | vm.luau:findFieldDef + edFloat | VERIFIED | test_savegame round-trip parses every entity field by name through findFieldDef (ED_ParseEpair on arbitrary fields). | `lune run tests/test_savegame.luau` |
-| PR_ValueString (pr_edict.c:280) | — | UNIMPLEMENTED | debug printing (ED_Print) | — (implement first) |
+| PR_ValueString (pr_edict.c:280) | — | UNIMPLEMENTED | debug printing (ED_Print) | ruled: IMPLEMENT (2026-07-05) |
 | PR_UglyValueString (pr_edict.c:332) | server/savegame.luau:uglyValue | VERIFIED | test_savegame: function/field/entity values round-trip through save text | `lune run tests/test_savegame.luau` |
-| PR_GlobalString (pr_edict.c:381) | — | UNIMPLEMENTED | debug trace printing | — (implement first) |
-| PR_GlobalStringNoContents (pr_edict.c:407) | — | UNIMPLEMENTED | debug | — (implement first) |
-| ED_Print (pr_edict.c:435) | — | UNIMPLEMENTED | edicts/edict console commands | — (implement first) |
+| PR_GlobalString (pr_edict.c:381) | — | UNIMPLEMENTED | debug trace printing | ruled: IMPLEMENT (2026-07-05) |
+| PR_GlobalStringNoContents (pr_edict.c:407) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
+| ED_Print (pr_edict.c:435) | — | UNIMPLEMENTED | edicts/edict console commands | ruled: IMPLEMENT (2026-07-05) |
 | ED_Write (pr_edict.c:485) | savegame.luau:writeEdict | VERIFIED | test_savegame: full state round-trip (health/items/rockets/origin/edict count) | `lune run tests/test_savegame.luau` |
-| ED_PrintNum (pr_edict.c:525) | — | UNIMPLEMENTED | debug | — (implement first) |
-| ED_PrintEdicts (pr_edict.c:537) | — | UNIMPLEMENTED | debug | — (implement first) |
-| ED_PrintEdict_f (pr_edict.c:553) | — | UNIMPLEMENTED | debug | — (implement first) |
-| ED_Count (pr_edict.c:573) | — | UNIMPLEMENTED | debug | — (implement first) |
+| ED_PrintNum (pr_edict.c:525) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
+| ED_PrintEdicts (pr_edict.c:537) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
+| ED_PrintEdict_f (pr_edict.c:553) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
+| ED_Count (pr_edict.c:573) | — | UNIMPLEMENTED | debug | ruled: IMPLEMENT (2026-07-05) |
 | ED_WriteGlobals (pr_edict.c:616) | savegame.luau:writeGlobals | VERIFIED | test_savegame: world message/serverflags/totals survive reload | `lune run tests/test_savegame.luau` |
 | ED_ParseGlobals (pr_edict.c:649) | savegame.luau:load (globals block) | VERIFIED | test_savegame round-trip | `lune run tests/test_savegame.luau` |
 | ED_NewString (pr_edict.c:693) | vm.luau:newString | VERIFIED | test_vm: `\n` escape converted, other backslashes preserved | `lune run tests/test_vm.luau` |
@@ -292,9 +292,9 @@ parses (test_bsp/test_models headers).
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PR_PrintStatement (pr_exec.c:150) | — | UNIMPLEMENTED | trace/debug printing | — (implement first) |
+| PR_PrintStatement (pr_exec.c:150) | — | UNIMPLEMENTED | trace/debug printing | ruled: IMPLEMENT (2026-07-05) |
 | PR_StackTrace (pr_exec.c:190) | vm.luau:runError (function+statement in message) | VERIFIED | runError carries function name + statement into the Luau error (test_qwbuiltins exec(0) check). Delta: single-frame context, not a full stack walk. | `lune run tests/test_qwbuiltins.luau` |
-| PR_Profile_f (pr_exec.c:222) | — | UNIMPLEMENTED | profiling console command | — (implement first) |
+| PR_Profile_f (pr_exec.c:222) | — | UNIMPLEMENTED | profiling console command | ruled: IMPLEMENT (2026-07-05) |
 | PR_RunError (pr_exec.c:261) | vm.luau:runError | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)" — shared vm.luau implementation serves both engines. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction (pr_exec.c:294) | vm.luau:enterFunction | VERIFIED | parm copy-in/locals save; test_vm anglemod bytecode + stack balanced after calls | `lune run tests/test_vm.luau` |
 | PR_LeaveFunction (pr_exec.c:333) | vm.luau:leaveFunction | VERIFIED | locals restore; test_vm stack depth 0 after nested calls | `lune run tests/test_vm.luau` |
@@ -415,12 +415,12 @@ parses (test_bsp/test_models headers).
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Host_Quit_f (host_cmd.c:37) | — | SUBSTITUTED | players leave via Roblox; no process quit | — (substitution; verify justification still holds) |
-| Host_Status_f (host_cmd.c:56) | host.luau:clientCommand ("status" no-op) | UNIMPLEMENTED | informational report not built | — (implement first) |
+| Host_Status_f (host_cmd.c:56) | host.luau:clientCommand ("status" no-op) | UNIMPLEMENTED | informational report not built | ruled: IMPLEMENT via director admin menu (2026-07-05) |
 | Host_God_f (host_cmd.c:113) | host.luau:toggleFlag (god) | VERIFIED | test_server: god toggles FL_GODMODE both ways. | `lune run tests/test_server.luau` |
 | Host_Notarget_f (host_cmd.c:131) | toggleFlag (notarget) | VERIFIED | test_server: notarget sets FL_NOTARGET. | `lune run tests/test_server.luau` |
 | Host_Noclip_f (host_cmd.c:151) | clientCommand "noclip" | VERIFIED | test_server: noclip toggles MOVETYPE_NOCLIP/WALK. | `lune run tests/test_server.luau` |
 | Host_Fly_f (host_cmd.c:183) | clientCommand "fly" | VERIFIED | test_server: fly toggles MOVETYPE_FLY. | `lune run tests/test_server.luau` |
-| Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) | — (implement first) |
+| Host_Ping_f (host_cmd.c:213) | "ping" no-op | UNIMPLEMENTED | ping times not tracked (see SV_ReadClientMove delta) | ruled: IMPLEMENT via director admin menu (2026-07-05) |
 | Host_Map_f (host_cmd.c:256) | clientCommand "map" → changelevelTo + platform respawn | VERIFIED | test_server: map routes to svr.changelevelTo (the platform respawn driver consumes it, changelevel-tested in test_changelevel). | `lune run tests/test_server.luau` |
 | Host_Changelevel_f (host_cmd.c:311) | clientCommand "changelevel" / QC builtin 70 | VERIFIED | test_changelevel end-to-end: trigger touch → intermission → changelevel with SV_SaveSpawnparms carry | `lune run tests/test_changelevel.luau` |
 | Host_Restart_f (host_cmd.c:366) | pr_cmds.luau localcmd "restart" → respawn same map | VERIFIED | test_nqbuiltins: localcmd restart routes to the respawn driver (changelevelTo set). | `lune run tests/test_nqbuiltins.luau` |
@@ -433,19 +433,19 @@ parses (test_bsp/test_models headers).
 | LoadGamestate (host_cmd.c:761) | — | N/A | dead: QUAKE2-only. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | Host_Changelevel2_f (host_cmd.c:865) | — | N/A | dead: QUAKE2-only. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | Host_Name_f (host_cmd.c:910) | host.luau:hostName | VERIFIED | test_multiplayer: names propagate to both clients' scoreboards; 15-char clamp + netname set | `lune run tests/test_multiplayer.luau` |
-| Host_Version_f (host_cmd.c:949) | — | UNIMPLEMENTED | trivial console print | — (implement first) |
+| Host_Version_f (host_cmd.c:949) | — | UNIMPLEMENTED | trivial console print | ruled: IMPLEMENT (2026-07-05) |
 | Host_Please_f (host_cmd.c:956) | — | N/A | registered-only easter egg. N/A: dead-end easter egg; no counterpart meaningful. | — (implement first) |
 | Host_Say (host_cmd.c:1008) | host.luau:hostSay | VERIFIED | test_server: say broadcasts svc_print into the client reliable stream. | `lune run tests/test_server.luau` |
 | Host_Say_f (host_cmd.c:1072) | clientCommand "say" | VERIFIED | test_server say check (clientCommand "say ..."). | `lune run tests/test_server.luau` |
 | Host_Say_Team_f (host_cmd.c:1078) | clientCommand "say_team" | VERIFIED | test_server: say_team broadcasts svc_print. | `lune run tests/test_server.luau` |
-| Host_Tell_f (host_cmd.c:1084) | — | UNIMPLEMENTED | private messaging not ported | — (implement first) |
+| Host_Tell_f (host_cmd.c:1084) | — | SUBSTITUTED | private messaging not ported. SUBSTITUTED: Roblox whisper/chat owns private messaging (admin ruling, 2026-07-05). | — |
 | Host_Color_f (host_cmd.c:1141) | host.luau:hostColor | VERIFIED | test_server: color 4 12 sets team = bottom + 1. | `lune run tests/test_server.luau` |
 | Host_Kill_f (host_cmd.c:1192) | host.luau:hostKill | VERIFIED | test_multiplayer: kill → ClientKill QC → -2 frags on both views + respawn | `lune run tests/test_multiplayer.luau` |
 | Host_Pause_f (host_cmd.c:1217) | clientCommand "pause" | VERIFIED | test_server: pause toggles svr.paused both ways. | `lune run tests/test_server.luau` |
 | Host_PreSpawn_f (host_cmd.c:1254) | host.luau:hostPreSpawn | VERIFIED | loopback signon: signon buffer replay + signonnum 2 (baselines/ambients received) | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | Host_Spawn_f (host_cmd.c:1279) | host.luau:hostSpawn | VERIFIED | loopback: ClientConnect/PutClientInServer run, names/frags/colors, lightstyles, stats, setangle, clientdata, signonnum 3 all parsed; loadgame branch in test_savegame | `lune run tests/test_savegame.luau` |
 | Host_Begin_f (host_cmd.c:1403) | host.luau:hostBegin | VERIFIED | client.spawned asserted everywhere; loadgame unpause branch in test_savegame | `lune run tests/test_savegame.luau` |
-| Host_Kick_f (host_cmd.c:1424) | — | UNIMPLEMENTED | admin kick not ported (platform Kick only for full server) | — (implement first) |
+| Host_Kick_f (host_cmd.c:1424) | — | UNIMPLEMENTED | admin kick not ported (platform Kick only for full server) | ruled: IMPLEMENT via director admin menu (2026-07-05) |
 | Host_Give_f (host_cmd.c:1516) | clientCommand "give" | VERIFIED | test_server: give r 44 sets rockets; test_savegame gives weapon 7 + rockets. | `lune run tests/test_server.luau`; `lune run tests/test_savegame.luau` |
 | Host_Viewmodel_f (host_cmd.c:1690) | — | UNIMPLEMENTED | dev model-viewer command | — (implement first) |
 | Host_Viewframe_f (host_cmd.c:1715) | — | UNIMPLEMENTED | dev | — (implement first) |
@@ -632,8 +632,8 @@ socket entries), so the rows cover ~490 C function definitions.
 |---|---|---|
 | VERIFIED | 279 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 26 |
-| SUBSTITUTED | 110 |
+| UNIMPLEMENTED | 25 |
+| SUBSTITUTED | 111 |
 | N/A | 36 |
 
 Notes on the UNIMPLEMENTED bucket: 13 of the 49 are dead code in the WinQuake NQ build

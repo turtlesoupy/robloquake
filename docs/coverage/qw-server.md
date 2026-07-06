@@ -38,7 +38,7 @@ Status legend:
 | SV_ReadPackets | `onInbound` (qwserver.luau) | VERIFIED | The S4 anchor + every live QW session run the full inbound flow through qwserver onInbound (reply-per-packet lockstep); packet handling logic is loopback-tested via executeClientMessage. | S4 anchor procedure; `lune run tests/test_qw_loopback.luau` |
 | SV_CheckTimeouts | — | SUBSTITUTED | Roblox fires PlayerRemoving on disconnect; no zombie/timeout sweep needed on a connection-oriented transport. | — (substitution; verify justification still holds) |
 | SV_GetConsoleCommands | — | SUBSTITUTED | No stdin console; Studio command bar + `_G.RQ_SERVER` (qwserver.luau) replace it. | — (substitution; verify justification still holds) |
-| SV_CheckVars | — | UNIMPLEMENTED | password/spectator_password not enforced (no join password concept wired). | — (implement first) |
+| SV_CheckVars | — | SUBSTITUTED | password/spectator_password not enforced (no join password concept wired). SUBSTITUTED: Roblox private servers own join access control (admin ruling, 2026-07-05). | — |
 | SV_Frame | `qwsv.frame` (qwsv.luau:1933) + Heartbeat loop (qwserver.luau) | VERIFIED | test_qwsv/test_qw_loopback drive frames; physics + reliable_datagram fan-out. Delta: bookkeeping (timeouts, master, log, vars) intentionally absent per rows above. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_qwsv.luau` |
 | SV_InitLocal | cvar seeding in `qwsv.newGame` (qwsv.luau:84) | VERIFIED | test_qw_loopback "movevars received (gravity 800)" — the seeded cvars cross the wire in serverdata. | `lune run tests/test_qw_loopback.luau` |
 | Master_Heartbeat / Master_Shutdown | — | SUBSTITUTED | No master server protocol; Roblox discovery replaces it. | — (substitution; verify justification still holds) |
@@ -178,7 +178,7 @@ Server operator console commands. No console exists on the Roblox deployment; St
 |---|---|---|---|---|
 | SV_SetMaster_f / SV_Heartbeat_f | — | SUBSTITUTED | No master server. | — (substitution; verify justification still holds) |
 | SV_Quit_f / SV_Logfile_f / SV_Fraglogfile_f | — | SUBSTITUTED | Process/file lifecycle absent; fraglog ring replaces the frag logfile. | — (substitution; verify justification still holds) |
-| SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f | — | UNIMPLEMENTED | No cheat commands (no console); could be added via Studio. | — (implement first) |
+| SV_SetPlayer / SV_God_f / SV_Noclip_f / SV_Give_f | — | UNIMPLEMENTED | No cheat commands (no console); could be added via Studio. | ruled: IMPLEMENT as host-gated commands — user explicitly rejected substituting these (2026-07-05) |
 | SV_Map_f | `qwsv.spawnServer` callable; no command/changelevel driver | VERIFIED | Changelevel driver exists since b98aa9a: loopback re-handshake after spawnServer + S1 scenario carry; test_qwbuiltins localcmd routing. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_scenario_qw.luau` |
 | SV_Kick_f | qw/qwsv.luau:kick | VERIFIED | test_qw_loopback "kick found the userid"/"kicked client dropped": broadcast + direct notice + dropClient. Exposed to the host via ServerStorage QW_HostCmd (owner-gating UI hook). | `lune run tests/test_qw_loopback.luau` |
 | SV_Status_f | attribute diagnostics (qwserver.luau Heartbeat) | SUBSTITUTED | SV_Time/SV_Edicts/SV_Origin ServerStorage attributes replace the console status dump for Studio. | — (substitution; verify justification still holds) |
@@ -283,8 +283,8 @@ evidence via test_qwsv/test_qw_loopback which run id1 qwprogs.dat through it wit
 | ED_Free | `vmlib.free` (vm.luau:289) | VERIFIED | test_vm "freed flag"/"free clears solid"/"free sets nextthink -1"; unlink hook installed by qwbuiltins and exercised by PF_Remove check. | `lune run tests/test_vm.luau`; `lune run tests/test_qwbuiltins.luau` |
 | ED_GlobalAtOfs / ED_FieldAtOfs / ED_FindField / ED_FindGlobal / ED_FindFunction | name maps in progs.luau/`vmlib.findFieldDef`/`vmlib.findFunction` | VERIFIED | test_vm globaldef/fielddef offset and functionsByName checks; qwdefs.build resolves the whole QW ABI by name at load and test_qwsv boots through it (a missing def fails loudly). | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | GetEdictFieldValue | field lookups via qwdefs `ent` table | SUBSTITUTED | Static name→offset resolution replaces per-call cached lookup. Note: the `gravity`/`maxspeed` optional-field pickup that C does with it is missing (see SV_UpdateToReliableMessages). | — (substitution; verify justification still holds) |
-| PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | — | UNIMPLEMENTED | Debug printing (edict dumps) not ported. | — (implement first) |
-| ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | — | UNIMPLEMENTED | Console debug + savegame globals; QW has no savegames. | — (implement first) |
+| PR_ValueString / PR_UglyValueString / PR_GlobalString(NoContents) | — | UNIMPLEMENTED | Debug printing (edict dumps) not ported. | ruled: IMPLEMENT (2026-07-05) |
+| ED_Print / ED_Write / ED_PrintNum / ED_PrintEdicts / ED_PrintEdict_f / ED_Count / ED_WriteGlobals / ED_ParseGlobals | — | UNIMPLEMENTED | Console debug + savegame globals; QW has no savegames. | ruled: IMPLEMENT (2026-07-05) |
 | ED_NewString | inside `vmlib.parseEpair` (vm.luau:607) | VERIFIED | test_vm: "newString escape n" / backslash-only escape check. | `lune run tests/test_vm.luau` |
 | ED_ParseEdict | `vmlib.parseEdict` (vm.luau:650) | VERIFIED | test_vm: parsed classname/origin + "anglehack applied"; e1m1 entity lump loads in every QW test. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
 | ED_LoadFromFile | `vmlib.loadFromFileQW` (vm.luau:791) | VERIFIED | test_qwsv: deathmatch inhibit flags (13 inhibited, no monsters in DM). | `lune run tests/test_qwsv.luau` |
@@ -298,7 +298,7 @@ Shared NQ port: `src/shared/engine/progs/vm.luau`.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| PR_PrintStatement / PR_StackTrace / PR_Profile_f | — | UNIMPLEMENTED | Profiling/trace printing not ported (vm.trace flag exists but prints nothing). | — (implement first) |
+| PR_PrintStatement / PR_StackTrace / PR_Profile_f | — | UNIMPLEMENTED | Profiling/trace printing not ported (vm.trace flag exists but prints nothing). | ruled: IMPLEMENT (2026-07-05) |
 | PR_RunError | `runError` (vm.luau:311) | VERIFIED | test_qwbuiltins "exec(0) errors (PR_RunError null function)"; errors carry the function name through Luau error. | `lune run tests/test_qwbuiltins.luau` |
 | PR_EnterFunction / PR_LeaveFunction | `enterFunction`/`leaveFunction` (vm.luau:320,352) | VERIFIED | test_vm "stack balanced after calls" across the anglemod exec battery; full-game recursion in every QW suite. | `lune run tests/test_vm.luau` |
 | PR_ExecuteProgram | `vmlib.exec` (vm.luau:374) | VERIFIED | test_vm anglemod exec battery (5 argument cases) + -0.0 IFNOT semantics; whole opcode interpreter runs id1 qwprogs in every QW test incl. OP_STATE through vm.stateOffsets. | `lune run tests/test_vm.luau`; `lune run tests/test_qwsv.luau` |
