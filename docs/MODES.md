@@ -10,7 +10,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 |---|---|---|---|---|
 | `engine` | `"nq"` / `"qw"` | — | no (boot) | engine selection for this place |
 | `game` | string | both | no (boot) | base gamedir (`id1`, `lq1`) |
-| `mod` | string | both | no (boot) | overlay gamedir (`threewave`, `arena`, …) |
+| `gamedir` | string | both | no (boot) | overlay mod dir stacked over `game` (`threewave`, `arena`, …); missing files fall through to the base game |
 | `startmap` | string | both | no (boot) | first map |
 | `deathmatch` | number | both | yes | QC rules: DM spawns/items, no monsters |
 | `coop` | number | NQ | yes | coop rules |
@@ -24,7 +24,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
 Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=20,
-maplist="dm3 dm4 dm6 dm2 dm5"}` · Threewave CTF = `{mod="threewave",
+maplist="dm3 dm4 dm6 dm2 dm5"}` · Threewave CTF = `{gamedir="threewave",
 teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 `deathmatch`, no `maplist` — nothing below activates.
 

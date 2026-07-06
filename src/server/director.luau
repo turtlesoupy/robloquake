@@ -149,7 +149,7 @@ function director.attach(a: Adapter)
 			avatars = a.assets:GetAttribute("roblox_avatars") == true,
 			engine = a.assets:GetAttribute("engine") or "nq",
 			game = a.assets:GetAttribute("game") or "id1",
-			mod = a.assets:GetAttribute("mod") or "",
+			mod = a.assets:GetAttribute("gamedir") or "", -- boot attr is "gamedir"
 		}
 	end
 
