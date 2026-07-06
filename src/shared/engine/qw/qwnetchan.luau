@@ -25,7 +25,10 @@ function qwnetchan.new(): Netchan
 		incoming_sequence = 0,
 		incoming_acknowledged = 0,
 		drop_count = 0,
-		message = msg.newBuf(8192),
+		-- net_chan.c sets allowoverflow: an overfull reliable stream
+		-- flags + clears instead of erroring; the server's per-frame
+		-- sweep drops the client (sv_send.c SV_SendClientMessages)
+		message = msg.newBuf(8192, true),
 	}
 end
 

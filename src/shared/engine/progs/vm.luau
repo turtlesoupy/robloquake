@@ -392,7 +392,7 @@ end
 --------------------------------------------------------------------------
 -- PR_ExecuteProgram
 
-function vmlib.exec(vm: VM, fnum: number)
+local function execLoop(vm: VM, fnum: number)
 	local pr = vm.progs
 	if fnum <= 0 or fnum >= #pr.functions then
 		error(`PR_ExecuteProgram: NULL function ({fnum})`)
@@ -613,6 +613,22 @@ function vmlib.exec(vm: VM, fnum: number)
 		else
 			runError(vm, `bad opcode {op}`)
 		end
+	end
+end
+
+-- PR_ExecuteProgram. C's PR_RunError dumps pr_depth (and with it the
+-- locals stack) before Host_Error aborts the frame; this host keeps
+-- running the next frame, so restore this call's entry state as the
+-- error unwinds — otherwise every later exec runs on a corrupted stack
+-- (leaked depth, locals restored into live globals).
+function vmlib.exec(vm: VM, fnum: number)
+	local exitdepth = vm.depth
+	local exitlocals = vm.localstack_used
+	local ok, err = pcall(execLoop, vm, fnum)
+	if not ok then
+		vm.depth = exitdepth
+		vm.localstack_used = exitlocals
+		error(err, 0)
 	end
 end
 

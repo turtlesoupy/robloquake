@@ -62,6 +62,7 @@ export type Client = {
 	chokecount: number,
 	lossage: number,
 	connection_started: number,
+	last_message: number, -- netchan.last_received (svr.realtime clock)
 	userid: number,
 	sendinfo: boolean, -- at end of frame, send info to all (new connect)
 	send_message: boolean, -- reply owed: one datagram per received packet
@@ -111,6 +112,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			sv_spectalk = 1,
 			pausable = 1,
 			registered = 1,
+			timeout = 65, -- sv_main.c: seconds without a packet before drop
 		} :: { [string]: number }
 	do
 		-- register QW cvars directly (cvar.new seeds only the NQ defaults)
@@ -144,6 +146,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			chokecount = 0,
 			lossage = 0,
 			connection_started = 0,
+			last_message = 0, -- netchan.last_received (SV_CheckTimeouts)
 			userid = i,
 			sendinfo = false,
 			send_message = false,
@@ -157,6 +160,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	-- SV_Localinfo_f's store: operator key/values QC reads via
 	-- infokey(world, ...) when serverinfo has no entry (map rotations etc)
 	svr.localinfo = {}
+	svr.realtime = 0 -- wall clock: accrues across pauses/level changes
 	svr.datagram = msg.newBuf(4096)
 	svr.reliable_datagram = msg.newBuf(4096)
 	svr.signon = msg.newBuf(32768)
@@ -515,6 +519,7 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	client.chokecount = 0
 	client.lossage = 0
 	client.connection_started = svr.time
+	client.last_message = svr.realtime or 0
 	client.send_message = false
 
 	local ed = client.edict
@@ -1456,6 +1461,7 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 
 	-- mark time so clients will know how much to predict other players
 	client.localtime = svr.time
+	client.last_message = svr.realtime or 0 -- netchan.last_received
 	client.delta_sequence = -1 -- no delta unless requested
 	client.send_message = true -- one reply per received packet (lockstep
 	-- keeps both sequence counters aligned; prediction depends on it)
@@ -2131,7 +2137,14 @@ end
 
 -- SV_Frame (physics portion; players move on cmd arrival)
 function qwsv.frame(svr: any, dt: number)
-	if not svr.active or svr.paused then
+	if not svr.active then
+		return
+	end
+	-- realtime accrues across pauses and level changes (SV_Frame);
+	-- timeouts key off it, never off the per-level sv.time
+	svr.realtime = (svr.realtime or 0) + math.clamp(dt, 0.001, 0.1)
+	qwsv.checkTimeouts(svr)
+	if svr.paused then
 		return
 	end
 	svr.frametime = math.clamp(dt, 0.001, 0.1)
@@ -2140,6 +2153,30 @@ function qwsv.frame(svr: any, dt: number)
 	qwphys.physics(svr)
 
 	qwsv.updateToReliableMessages(svr)
+end
+
+-- SV_CheckTimeouts + the sv_send.c overflow sweep: drop clients that
+-- stopped sending packets, and clients whose reliable stream overflowed
+-- (netchan.message is allowoverflow like C — the write flags + clears
+-- instead of erroring, and the drop happens here)
+function qwsv.checkTimeouts(svr: any)
+	local droptime = svr.realtime - cvarlib.value(svr.cvars, "timeout")
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if not cl.active then
+			continue
+		end
+		if cl.netchan.message.overflowed then
+			msg.clear(cl.netchan.message)
+			cl.netchan.message.overflowed = false
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{cl.name} overflowed\n`)
+			svr.print(`WARNING: reliable overflow on {cl.name}`)
+			qwsv.dropClient(svr, cl)
+		elseif (cl.last_message or 0) < droptime then
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{cl.name} timed out\n`)
+			qwsv.dropClient(svr, cl)
+		end
+	end
 end
 
 -- SV_UpdateToReliableMessages: per-frame reliable-state sync — frag

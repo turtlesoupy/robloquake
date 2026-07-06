@@ -4,7 +4,13 @@
 -- manifest row id.
 
 local t = require("./testutil")
+local fs = require("@lune/fs")
+local vfs = require("../src/shared/engine/common/vfs")
+local progslib = require("../src/shared/engine/progs/progs")
+local vmlib = require("../src/shared/engine/progs/vm")
 local qwcl = require("../src/shared/engine/qw/qwcl")
+local qwsv = require("../src/shared/engine/qw/qwsv")
+local msg = require("../src/shared/engine/common/msg")
 local sv_user = require("../src/shared/engine/server/sv_user")
 
 local gamefs = t.gameFs()
@@ -73,6 +79,60 @@ do
 	-- mixed changes still bail out
 	local _, s2 = sv_user.idealPitchSteps({ 0, 16, 0, 16, 0, 16 })
 	t.eq(s2, -1, "A3 mixed changes bail out")
+end
+
+-- B1: VM stack state restored after a QC runtime error ---------------------
+do
+	local buf = vfs.loadFile(gamefs, "progs.dat")
+	assert(buf)
+	local pr = progslib.load(buf)
+	local vm = vmlib.new(pr, 600, 0)
+	-- no builtins registered: the first builtin call inside main()
+	-- raises PR_RunError ("bad builtin call number") mid-execution
+	local fnum = pr.functionsByName["main"]
+	assert(fnum, "progs.dat main")
+	local ok = pcall(vmlib.exec, vm, fnum)
+	t.eq(ok, false, "B1 QC error propagates")
+	t.eq(vm.depth, 0, "B1 depth dumped like PR_RunError")
+	t.eq(vm.localstack_used, 0, "B1 locals stack dumped")
+	-- the VM keeps working: a pure-assignment function runs clean
+	local ok2 = pcall(vmlib.exec, vm, pr.functionsByName["SetNewParms"])
+	t.eq(ok2, true, "B1 next exec runs on a clean stack")
+	t.eq(vm.depth, 0, "B1 depth balanced after clean exec")
+end
+
+-- B2: reliable overflow flags + drops instead of erroring; timeouts --------
+do
+	local qwprogs = buffer.fromstring(fs.readFile("reference/quake-c/qw-qc/qwprogs.dat"))
+	local svr = qwsv.newGame(gamefs, qwprogs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+
+	local c1 = qwsv.wireConnect(svr, 1, { name = "spammed" }, function(_p: buffer) end)
+	-- 30 x ~300B into the 8192 reliable stream: C's allowoverflow path
+	-- must flag + clear, never error
+	local okWrite = pcall(function()
+		for _ = 1, 30 do
+			msg.writeByte(c1.netchan.message, 8) -- svc_print
+			msg.writeByte(c1.netchan.message, 2)
+			msg.writeString(c1.netchan.message, string.rep("x", 300))
+		end
+	end)
+	t.eq(okWrite, true, "B2 overflowing reliable write does not error")
+	t.eq(c1.netchan.message.overflowed, true, "B2 overflow flagged")
+	qwsv.frame(svr, 0.05)
+	t.eq(c1.active, false, "B2 overflowed client dropped at the frame sweep")
+
+	-- timeout: a client that stops sending packets gets dropped after
+	-- timeout (65s) of realtime; a talking client survives
+	local c2 = qwsv.wireConnect(svr, 2, { name = "zombie" }, function(_p: buffer) end)
+	local c3 = qwsv.wireConnect(svr, 3, { name = "alive" }, function(_p: buffer) end)
+	c2.last_message = svr.realtime
+	svr.realtime += 100
+	c3.last_message = svr.realtime
+	qwsv.checkTimeouts(svr)
+	t.eq(c2.active, false, "B2 silent client timed out")
+	t.eq(c3.active, true, "B2 talking client survives the sweep")
 end
 
 t.finish("test_audit")
