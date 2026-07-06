@@ -423,6 +423,11 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 		local v = vmlib.globalFloat(vm, OFS_PARM0)
 		local s
 		if v == mathlib.trunc(v) then
+			-- C: sprintf("%d", (int)v); out-of-int32 values saturate to
+			-- INT_MIN on x86 (cvttsd2si) instead of crashing the frame
+			if not (v >= -2147483648 and v <= 2147483647) then
+				v = -2147483648
+			end
 			s = string.format("%d", v)
 		else
 			s = fmt51(v)
@@ -881,7 +886,8 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 	end)
 
 	def(81, "stof", function()
-		vmlib.setGlobalFloat(vm, OFS_RETURN, com.atof(vmlib.globalString(vm, OFS_PARM0)))
+		-- C PF_stof is libc atof (no hex), not Q_atof
+		vmlib.setGlobalFloat(vm, OFS_RETURN, com.atofC(vmlib.globalString(vm, OFS_PARM0)))
 	end)
 
 	def(82, "multicast", function()

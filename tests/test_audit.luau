@@ -468,4 +468,50 @@ do
 	t.eq(chan.drop_count, 0, "E7 first packet drop_count 0")
 end
 
+-- F: VM/builtin odds --------------------------------------------------------
+do
+	local com = require("../src/shared/engine/common/com")
+	local qwprogs = buffer.fromstring(fs.readFile("reference/quake-c/qw-qc/qwprogs.dat"))
+	local svr = qwsv.newGame(gamefs, qwprogs)
+	svr.print = function(_s: string) end
+	qwsv.spawnServer(svr, "e1m1")
+	local vm = svr.vm
+	local B = vm.builtins
+
+	-- F1: ftos on huge integral floats prints INT_MIN like x86 C
+	-- instead of erroring (which, pre-B1, corrupted the VM for good)
+	local function ftos(v: number): string
+		buffer.writef32(vm.globals, 4 * 4, v)
+		B[26](vm)
+		return vmlib.globalString(vm, 1)
+	end
+	t.eq(ftos(5), "5", "F1 ftos integral")
+	t.eq(ftos(5.5), "  5.5", "F1 ftos fractional %5.1f")
+	t.eq(ftos(1e20), "-2147483648", "F1 ftos overflow saturates like x86 (int) cast")
+
+	-- F5: stof is libc atof — no hex (Q_atof keeps hex elsewhere)
+	buffer.writei32(vm.globals, 4 * 4, vmlib.newString(vm, "0x1A"))
+	B[81](vm)
+	t.eq(buffer.readf32(vm.globals, 1 * 4), 0, "F5 stof(0x1A) = 0 like libc atof")
+	t.eq(com.atof("0x10"), 16, "F5 Q_atof (com.atof) keeps hex")
+
+	-- F3: ED_ParseEpair vector splits on SINGLE spaces like C
+	local def = svr.progs.fielddefsByName["origin"]
+	assert(def, "origin fielddef")
+	local target = buffer.create((def.ofs + 3) * 4)
+	local function parseVec(s: string): (number, number, number)
+		buffer.fill(target, 0, 0)
+		vmlib.parseEpair(vm, target, def, s)
+		return buffer.readf32(target, def.ofs * 4),
+			buffer.readf32(target, def.ofs * 4 + 4),
+			buffer.readf32(target, def.ofs * 4 + 8)
+	end
+	local x, y, z = parseVec("1 2 3")
+	t.check(x == 1 and y == 2 and z == 3, "F3 normal vector parse")
+	x, y, z = parseVec("1  2 3")
+	t.check(x == 1 and y == 0 and z == 2, "F3 double space reads as C: (1, 0, 2)")
+	x, y, z = parseVec("4 5")
+	t.check(x == 4 and y == 5 and z == 0, "F3 short vector zero-fills")
+end
+
 t.finish("test_audit")

@@ -657,20 +657,21 @@ function vmlib.parseEpair(vm: VM, target: buffer, def: progslib.Def, s: string):
 	if typ == defs.ev_string then
 		buffer.writei32(target, d, vmlib.newString(vm, s))
 	elseif typ == defs.ev_float then
-		buffer.writef32(target, d, com.atof(s))
+		buffer.writef32(target, d, com.atofC(s))
 	elseif typ == defs.ev_vector then
-		local parts = { 0, 0, 0 }
-		local i = 1
-		for w in s:gmatch("[^ ]+") do
-			if i > 3 then
-				break
+		-- C advances to each SINGLE space: "1  2 3" parses as (1, 0, 2)
+		-- (empty token = 0) and tabs are NOT separators — bug-for-bug
+		-- with pr_edict.c so hand-edited ent fields read identically
+		local v = 1
+		local n = #s
+		for i = 0, 2 do
+			local start = v
+			while v <= n and s:sub(v, v) ~= " " do
+				v += 1
 			end
-			parts[i] = com.atof(w)
-			i += 1
+			buffer.writef32(target, d + i * 4, com.atofC(s:sub(start, v - 1)))
+			v += 1
 		end
-		buffer.writef32(target, d, parts[1])
-		buffer.writef32(target, d + 4, parts[2])
-		buffer.writef32(target, d + 8, parts[3])
 	elseif typ == defs.ev_entity then
 		buffer.writei32(target, d, com.atoi(s))
 	elseif typ == defs.ev_field then

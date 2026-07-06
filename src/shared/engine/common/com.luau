@@ -84,6 +84,16 @@ function com.atoi(s: string): number
 	return if f >= 0 then math.floor(f) else -math.floor(-f)
 end
 
+-- libc atof semantics (ED_ParseEpair / PF_stof use plain atof, not
+-- Q_atof): decimal + exponent only — NO hex ("0x1A" parses the leading
+-- 0 and stops at 'x')
+function com.atofC(s: string): number
+	if s:match("^%s*[-+]?0[xX]") then
+		return 0
+	end
+	return com.atof(s)
+end
+
 -- CRC-16 CCITT as in crc.c (init 0xffff, poly 0x1021, no final xor)
 local CRC_INIT_VALUE = 0xffff
 
