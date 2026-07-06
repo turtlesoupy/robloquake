@@ -5,10 +5,11 @@
 -- The server publishes one neutralized R15 rig per connected player
 -- under ReplicatedStorage.QuakeAvatars/<userId>; this module clones it,
 -- anchors the root, drives position/yaw from the Quake entity, and
--- plays idle/run animation tracks by measured speed. Everything here is
--- client-local visuals — the Quake simulation still owns physics, and
--- the engine's alias renderer remains the fallback (rig loading, death
--- frames, toggle off).
+-- plays animation tracks from a measured-motion state machine (idle/
+-- run/jump/fall/swim), a scripted tip-over death, and a pain flash.
+-- Everything here is client-local visuals — the Quake simulation still
+-- owns physics, and the engine's alias renderer remains the fallback
+-- (rig loading, toggle off).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,30 +19,58 @@ local qcoords = require(engine.client.qcoords)
 local avatarrender = {}
 
 -- standard R15 animation pack fallbacks (rig attributes override with
--- the player's own equipped animation pack)
+-- the player's own equipped animation pack; SwimIdle has no
+-- HumanoidDescription property, so it is always the stock track)
 local DEFAULT_IDLE = 507766666
 local DEFAULT_RUN = 507767714
+local DEFAULT_JUMP = 507765000
+local DEFAULT_FALL = 507767968
+local DEFAULT_SWIM = 507784897
+local DEFAULT_SWIM_IDLE = 507785072
 -- standard R15 tool-hold: raises the right forearm so the attached
 -- weapon reads as carried (same track the stock Animate script plays)
 local TOOL_HOLD = 507768375
 
 -- Quake player origin is mid-body: mins z = -24, so feet are 24 units
--- (2.4 studs) below the entity origin
+-- (3 studs at SCALE 1/8) below the entity origin
 local FEET_BELOW_ORIGIN = 24 * qcoords.SCALE
+
+-- movement thresholds, quake units/s (measured, smoothed)
+local RUN_SPEED = 40
+local JUMP_VSPEED = 120 -- jump launch is +270
+local FALL_VSPEED = -180 -- below stair-descent bumps
+local TELEPORT_SPEED = 700 -- instantaneous spikes above this are teleports
+local RUN_REFERENCE = 160 -- qu/s at which the run track plays at 1.0
+
+local DEATH_FALL_TIME = 0.55 -- matches the ~6-frame quake death sequences
+local PAIN_FLASH_TIME = 0.22
+
+type MoveState = "idle" | "run" | "jump" | "fall" | "swim" | "swimidle"
 
 export type AvatarEnt = {
 	userId: number,
 	model: Model?,
 	humanoid: Humanoid?,
 	rootPart: BasePart?,
-	idleTrack: AnimationTrack?,
-	runTrack: AnimationTrack?,
+	rightHand: BasePart?,
+	tracks: { [MoveState]: AnimationTrack? },
 	toolTrack: AnimationTrack?,
 	loading: boolean,
 	visible: boolean,
 	lastOrigin: vector?,
 	lastMoveTime: number,
-	speed: number,
+	speed: number, -- smoothed horizontal qu/s
+	vspeed: number, -- smoothed vertical qu/s (+up)
+	moveDot: number, -- smoothed cos(move dir vs facing); < 0 = backpedal
+	swimTilt: number, -- smoothed body pitch while swimming (radians)
+	lastJumpPlay: number,
+	dead: boolean,
+	deathT0: number,
+	painUntil: number,
+	highlight: Highlight?,
+	teamColor: Color3?,
+	baseColors: { [BasePart]: Color3 },
+	lightFactor: number,
 }
 
 function avatarrender.create(userId: number, parent: Instance): AvatarEnt
@@ -50,14 +79,25 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		model = nil,
 		humanoid = nil,
 		rootPart = nil,
-		idleTrack = nil,
-		runTrack = nil,
+		rightHand = nil,
+		tracks = {},
 		toolTrack = nil,
 		loading = true,
 		visible = false,
 		lastOrigin = nil,
 		lastMoveTime = 0,
 		speed = 0,
+		vspeed = 0,
+		moveDot = 1,
+		swimTilt = 0,
+		lastJumpPlay = 0,
+		dead = false,
+		deathT0 = 0,
+		painUntil = 0,
+		highlight = nil,
+		teamColor = nil,
+		baseColors = {},
+		lightFactor = -1,
 	}
 	task.spawn(function()
 		local folder = ReplicatedStorage:WaitForChild("QuakeAvatars", 15)
@@ -90,9 +130,23 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 			end)
 			return if ok then track else nil
 		end
-		ae.idleTrack = loadTrack("IdleAnim", DEFAULT_IDLE)
-		ae.runTrack = loadTrack("RunAnim", DEFAULT_RUN)
+		ae.tracks = {
+			idle = loadTrack("IdleAnim", DEFAULT_IDLE),
+			run = loadTrack("RunAnim", DEFAULT_RUN),
+			jump = loadTrack("JumpAnim", DEFAULT_JUMP),
+			fall = loadTrack("FallAnim", DEFAULT_FALL),
+			swim = loadTrack("SwimAnim", DEFAULT_SWIM),
+			swimidle = loadTrack("SwimIdleAnim", DEFAULT_SWIM_IDLE),
+		}
 		ae.toolTrack = loadTrack("ToolHoldAnim", TOOL_HOLD)
+		local hand = rig:FindFirstChild("RightHand")
+		ae.rightHand = if hand and hand:IsA("BasePart") then hand else nil
+		-- original part colors: setLight darkens by scaling these
+		for _, d in rig:GetDescendants() do
+			if d:IsA("BasePart") and d ~= root then
+				ae.baseColors[d] = d.Color
+			end
+		end
 		ae.model = rig
 		ae.humanoid = humanoid
 		ae.rootPart = root
@@ -105,66 +159,224 @@ function avatarrender.ready(ae: AvatarEnt): boolean
 	return ae.model ~= nil
 end
 
--- position + yaw from the Quake entity; anim by measured speed
-function avatarrender.update(ae: AvatarEnt, origin: vector, angles: vector, time: number)
+-- brief red flash on the rig: quake's pain frames have no Roblox
+-- animation counterpart, so hit feedback is a decaying highlight
+function avatarrender.flashPain(ae: AvatarEnt, time: number)
+	ae.painUntil = time + PAIN_FLASH_TIME
+end
+
+-- persistent tint in the player's Quake pants color (the teamplay
+-- signal the alias skin translation carries); nil clears it
+function avatarrender.setTeamColor(ae: AvatarEnt, color: Color3?)
+	ae.teamColor = color
+end
+
+-- R_AliasSetupLighting for rigs: same lightmap-sample scalar the alias
+-- renderer gets (entrender.setLight math), applied by scaling every
+-- part's original color. SurfaceAppearance clothing won't darken —
+-- body parts and classic clothing do, which carries the read.
+function avatarrender.setLight(ae: AvatarEnt, light: number)
+	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
+	l = l ^ 0.7 -- match the world lighting gamma
+	if math.abs(l - ae.lightFactor) < 0.02 then
+		return
+	end
+	ae.lightFactor = l
+	for part, c0 in ae.baseColors do
+		part.Color = Color3.new(c0.R * l, c0.G * l, c0.B * l)
+	end
+end
+
+local function stopAllTracks(ae: AvatarEnt, fade: number)
+	for _, track in ae.tracks do
+		if track.IsPlaying then
+			track:Stop(fade)
+		end
+	end
+	if ae.toolTrack and ae.toolTrack.IsPlaying then
+		ae.toolTrack:Stop(fade)
+	end
+end
+
+-- position + yaw from the Quake entity; animation state from motion.
+-- dead: entity frame is in player.mdl's death/corpse band — scripted
+-- tip-over, held as the corpse pose. swimming: entity origin (mid-body)
+-- is in water contents. velocity (optional, qu/s): the replicated
+-- velocity when the protocol carries it (QW playerstate); when absent
+-- (NQ), motion is measured from interpolated origin deltas.
+function avatarrender.update(
+	ae: AvatarEnt,
+	origin: vector,
+	angles: vector,
+	time: number,
+	dead: boolean?,
+	swimming: boolean?,
+	velocity: vector?
+)
 	local model = ae.model
 	local root = ae.rootPart
 	local humanoid = ae.humanoid
 	if not model or not root or not humanoid then
 		return
 	end
-	-- measured speed (NQ does not replicate velocity)
-	local last = ae.lastOrigin
-	if last and time > ae.lastMoveTime then
-		local dt = time - ae.lastMoveTime
-		if dt < 0.5 then
-			local d = origin - last
-			local horiz = math.sqrt(d.x * d.x + d.y * d.y)
-			ae.speed = ae.speed * 0.6 + (horiz / dt) * 0.4
+
+	-- death state transitions. A corpse first seen already dead (bodyque
+	-- corpses left behind after respawn, corpses entering the PVS) lies
+	-- down instantly instead of replaying the fall.
+	if dead and not ae.dead then
+		ae.dead = true
+		ae.deathT0 = if ae.lastOrigin == nil then time - DEATH_FALL_TIME else time
+		ae.swimTilt = 0
+		ae.painUntil = 0
+		stopAllTracks(ae, 0.1)
+	elseif not dead and ae.dead then
+		ae.dead = false -- respawned
+		ae.speed = 0
+		ae.vspeed = 0
+		ae.lastOrigin = nil
+	end
+
+	if not ae.dead then
+		if velocity then
+			-- replicated velocity (QW): tick-rate origins make per-frame
+			-- deltas useless (a whole tick's move in one frame reads as a
+			-- teleport, the rest read as standing still), so use the wire
+			-- velocity directly with light smoothing
+			local horiz = math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y)
+			ae.speed = ae.speed * 0.5 + horiz * 0.5
+			ae.vspeed = ae.vspeed * 0.5 + velocity.z * 0.5
+			if horiz > 0.1 then
+				local yawr = math.rad(angles.y)
+				local fdot = (velocity.x * math.cos(yawr) + velocity.y * math.sin(yawr)) / horiz
+				ae.moveDot = ae.moveDot * 0.6 + fdot * 0.4
+			end
+		else
+			-- measured motion: NQ interpolates entity origins every frame
+			-- (CL_RelinkEntities), so smoothed origin deltas track speed
+			local last = ae.lastOrigin
+			if last and time > ae.lastMoveTime then
+				local dt = time - ae.lastMoveTime
+				if dt < 0.5 then
+					local d = origin - last
+					local horiz = math.sqrt(d.x * d.x + d.y * d.y)
+					local hs = horiz / dt
+					if hs < TELEPORT_SPEED then
+						ae.speed = ae.speed * 0.6 + hs * 0.4
+						ae.vspeed = ae.vspeed * 0.6 + (d.z / dt) * 0.4
+						if horiz > 0.1 then
+							local yawr = math.rad(angles.y)
+							local fdot = (d.x * math.cos(yawr) + d.y * math.sin(yawr)) / horiz
+							ae.moveDot = ae.moveDot * 0.6 + fdot * 0.4
+						end
+					end
+					-- teleport spike: keep the previous smoothed motion
+				end
+			end
 		end
 	end
 	ae.lastOrigin = origin
 	ae.lastMoveTime = time
 
+	-- pose
 	local feet = qcoords.toRoblox(origin) - Vector3.new(0, FEET_BELOW_ORIGIN, 0)
-	local rootY = feet.Y + humanoid.HipHeight + root.Size.Y / 2
+	local rootOffset = humanoid.HipHeight + root.Size.Y / 2
 	-- quake yaw: 0 = +x; roblox -Z forward
 	local yaw = math.rad(angles.y)
-	model:PivotTo(CFrame.new(feet.X, rootY, feet.Z) * CFrame.Angles(0, yaw - math.pi / 2, 0))
+	local base = CFrame.new(feet) * CFrame.Angles(0, yaw - math.pi / 2, 0)
+	if ae.dead then
+		-- tip over backward about the feet, accelerating like a fall, and
+		-- hold the lying pose as the corpse until the frame leaves the band
+		local k = math.clamp((time - ae.deathT0) / DEATH_FALL_TIME, 0, 1)
+		local ease = k * k
+		local tilt = ease * math.rad(84)
+		local lift = 0.45 * ease -- half body thickness: rest on the floor, not in it
+		model:PivotTo((base * CFrame.Angles(tilt, 0, 0) * CFrame.new(0, rootOffset, 0)) + Vector3.new(0, lift, 0))
+	else
+		-- swimming: pitch the body toward the travel direction (Roblox
+		-- swim tracks assume physics tilts the character; ours is anchored)
+		local tiltTarget = 0
+		if swimming and (ae.speed > RUN_SPEED or math.abs(ae.vspeed) > RUN_SPEED) then
+			tiltTarget = math.clamp(math.atan2(ae.speed, ae.vspeed), 0, math.rad(110))
+		end
+		ae.swimTilt += (tiltTarget - ae.swimTilt) * 0.2
+		model:PivotTo(base * CFrame.new(0, rootOffset, 0) * CFrame.Angles(-ae.swimTilt, 0, 0))
+	end
 
-	local running = ae.speed > 40 -- quake units/s
-	local runTrack, idleTrack = ae.runTrack, ae.idleTrack
-	if runTrack then
-		if running and not runTrack.IsPlaying then
-			runTrack:Play(0.15)
-		elseif not running and runTrack.IsPlaying then
-			runTrack:Stop(0.15)
+	-- animation state machine
+	if not ae.dead then
+		local state: MoveState
+		if swimming then
+			state = if ae.speed > RUN_SPEED or math.abs(ae.vspeed) > RUN_SPEED then "swim" else "swimidle"
+		elseif ae.vspeed > JUMP_VSPEED then
+			state = "jump"
+		elseif ae.vspeed < FALL_VSPEED then
+			state = "fall"
+		elseif ae.speed > RUN_SPEED then
+			state = "run"
+		else
+			state = "idle"
+		end
+		local desired = ae.tracks[state]
+		for _, track in ae.tracks do
+			if track ~= desired and track.IsPlaying then
+				track:Stop(0.15)
+			end
+		end
+		if desired and not desired.IsPlaying then
+			if state == "jump" then
+				-- one-shot; don't restart it every frame after it finishes
+				if time - ae.lastJumpPlay > 0.5 then
+					ae.lastJumpPlay = time
+					desired:Play(0.1)
+				end
+			else
+				desired:Play(0.15)
+			end
+		end
+		if state == "run" and desired then
+			-- scale foot speed to measured speed; reversed for backpedal
+			local rate = math.clamp(ae.speed / RUN_REFERENCE, 0.55, 1.7)
+			if ae.moveDot < -0.25 then
+				rate = -rate * 0.85
+			end
+			desired:AdjustSpeed(rate)
+		end
+		local toolTrack = ae.toolTrack
+		if toolTrack and not toolTrack.IsPlaying then
+			toolTrack:Play(0.15) -- right forearm raised: weapon reads as held
 		end
 	end
-	if idleTrack then
-		if not running and not idleTrack.IsPlaying then
-			idleTrack:Play(0.15)
-		elseif running and idleTrack.IsPlaying then
-			idleTrack:Stop(0.15)
+
+	-- one Highlight per rig (Roblox caps enabled highlights at 31):
+	-- pain flash takes priority, then the steady team tint
+	local flashing = ae.painUntil > time and not ae.dead
+	local highlight = ae.highlight
+	if flashing or ae.teamColor then
+		if not highlight then
+			highlight = Instance.new("Highlight")
+			highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+			highlight.OutlineTransparency = 1
+			highlight.Enabled = false
+			highlight.Parent = model
+			ae.highlight = highlight
 		end
-	end
-	local toolTrack = ae.toolTrack
-	if toolTrack and not toolTrack.IsPlaying then
-		toolTrack:Play(0.15) -- right forearm raised: weapon reads as held
+		if flashing then
+			highlight.FillColor = Color3.fromRGB(210, 25, 25)
+			highlight.FillTransparency = 0.35 + 0.65 * (1 - (ae.painUntil - time) / PAIN_FLASH_TIME)
+		else
+			highlight.FillColor = ae.teamColor :: Color3
+			highlight.FillTransparency = 0.7
+		end
+		highlight.Enabled = true
+	elseif highlight and highlight.Enabled then
+		highlight.Enabled = false
 	end
 end
 
 -- world CFrame of the right hand (weapon attach point); nil until loaded
 function avatarrender.rightHandCFrame(ae: AvatarEnt): CFrame?
-	local model = ae.model
-	if not model then
-		return nil
-	end
-	local hand = model:FindFirstChild("RightHand")
-	if hand and hand:IsA("BasePart") then
-		return hand.CFrame
-	end
-	return nil
+	local hand = ae.rightHand
+	return if hand then hand.CFrame else nil
 end
 
 function avatarrender.setVisible(ae: AvatarEnt, on: boolean)
@@ -175,17 +387,17 @@ function avatarrender.setVisible(ae: AvatarEnt, on: boolean)
 	local model = ae.model
 	if model and not on then
 		model:PivotTo(CFrame.new(0, -100000, 0))
-		if ae.runTrack and ae.runTrack.IsPlaying then
-			ae.runTrack:Stop(0)
-		end
-		if ae.idleTrack and ae.idleTrack.IsPlaying then
-			ae.idleTrack:Stop(0)
-		end
-		if ae.toolTrack and ae.toolTrack.IsPlaying then
-			ae.toolTrack:Stop(0)
-		end
+		stopAllTracks(ae, 0)
 		ae.speed = 0
+		ae.vspeed = 0
+		ae.moveDot = 1
+		ae.swimTilt = 0
 		ae.lastOrigin = nil
+		ae.dead = false
+		ae.painUntil = 0
+		if ae.highlight then
+			ae.highlight.Enabled = false
+		end
 	end
 end
 
@@ -196,8 +408,11 @@ function avatarrender.destroy(ae: AvatarEnt)
 	end
 	ae.humanoid = nil
 	ae.rootPart = nil
-	ae.idleTrack = nil
-	ae.runTrack = nil
+	ae.rightHand = nil
+	ae.tracks = {}
+	ae.toolTrack = nil
+	ae.highlight = nil
+	ae.baseColors = {}
 end
 
 return avatarrender

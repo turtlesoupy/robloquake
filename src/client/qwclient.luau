@@ -25,6 +25,7 @@ local qwview = require(engine.qw.qwview)
 local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
 
+local avatarlayer = require(script.Parent.render.avatarlayer)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
@@ -327,6 +328,7 @@ return function()
 	local beamPool: { [string]: { entrender.RenderEnt } } = {}
 	local updateBeams: () -> ()
 	local handleTempEntity: (te: any) -> ()
+	local muzzleFlashUntil: { [number]: number } = {} -- 1-based player ent num
 
 	local styleValues: { [number]: number } = {}
 	local function styleValueFor(style: number): number
@@ -384,6 +386,61 @@ return function()
 		modelDefs[modelindex] = def
 		return def
 	end
+
+	----------------------------------------------------------------------
+	-- Roblox avatars mode (product layer, live-flippable via the
+	-- roblox_avatars attribute the server mirrors onto QuakeClientFS).
+	-- All rules live in the SHARED avatarlayer module (same code as the
+	-- NQ boot); this block only adapts QW data shapes. The alias renderer
+	-- remains the fallback (rig loading, toggle off).
+	local avatarLocalFolder = Instance.new("Folder")
+	avatarLocalFolder.Name = "QuakeAvatarRigs"
+	avatarLocalFolder.Parent = Workspace
+
+	local function avatarsOn(): boolean
+		return clientAssets:GetAttribute("roblox_avatars") == true
+	end
+
+	-- R_AliasSetupLighting: lightmap sample under the entity plus dynamic
+	-- light adds (rigs + hand weapons; QW alias ents keep their own path)
+	local function entityLight(origin: vector): number
+		if not cl.worldmodel then
+			return 255
+		end
+		local elight = lightpoint.at(cl.worldmodel, origin, styleValueFor)
+		for _, dl in cl.dlights do
+			if dl.die >= cl.time and dl.radius > 0 then
+				local add = dl.radius - vector.magnitude(origin - dl.origin)
+				if add > 0 then
+					elight += add
+				end
+			end
+		end
+		return elight
+	end
+
+	local avatarLayer = avatarlayer.new({
+		rigFolder = avatarLocalFolder,
+		entFolder = entFolder,
+		getModelDef = getModelDef,
+		modelIndexByName = function(name: string): number?
+			for i, n in cl.model_name do
+				if n == name then
+					return i
+				end
+			end
+			return nil
+		end,
+		entityLight = entityLight,
+		worldHull = function(): any?
+			local wm = cl.worldmodel
+			return if wm then wm.hulls[1] else nil
+		end,
+		time = function(): number
+			return cl.time
+		end,
+		palette = pal,
+	})
 
 	local function buildWorld()
 		if worldBuilt or not cl.worldmodel then
@@ -567,7 +624,10 @@ return function()
 		local t = te.type
 		if t == -1 then
 			-- svc_muzzleflash: dlight 18 units forward of the shooter
+			-- (QW signals the flash here, not via entity effects — mark it
+			-- so the avatar layer's weapon flash/recoil/burst still fires)
 			local entnum = te.entity or 0
+			muzzleFlashUntil[entnum] = cl.time + 0.1
 			local org, ang
 			if entnum == cl.playernum + 1 then
 				org, ang = cl.simorg, cl.viewangles
@@ -687,10 +747,42 @@ return function()
 
 	local function relinkEntities(time: number)
 		table.clear(liveKeys)
+		local seenAvatars: { [number]: boolean } = {}
 		local frame: qwcl.Frame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_MASK)]
 
 		for _, es in frame.packet_entities do
-			linkEnt(`e{es.number}`, es.modelindex, es.origin, es.angles, es.frame, es.skinnum, time)
+			local key = `e{es.number}`
+			-- bodyque corpses (CopyToBodyQue): player.mdl packet entities in
+			-- the death band keep the owner's avatar — colormap carries the
+			-- owner's slot, exactly like the NQ boot
+			local corpsePlayer: Player? = nil
+			if
+				avatarsOn()
+				and es.modelindex == cl.playerindex
+				and avatarLayer.isDeathFrame(es.frame)
+				and es.colormap > 0
+				and es.colormap <= qwp.MAX_CLIENTS
+			then
+				corpsePlayer = avatarLayer.playerForSlot(es.colormap)
+			end
+			if
+				corpsePlayer
+				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, nil, true)
+			then
+				seenAvatars[1000 + es.number] = true
+			else
+				-- projectile muzzle blend: tag fresh projectiles near an
+				-- avatar's gun; render blended toward the true origin
+				local re0 = renderEnts[key]
+				local org = if re0 and avatarsOn() then avatarLayer.blendOrigin(re0, es.origin) else es.origin
+				linkEnt(key, es.modelindex, org, es.angles, es.frame, es.skinnum, time)
+				if not re0 and avatarsOn() then
+					local re1 = renderEnts[key]
+					if re1 then
+						avatarLayer.tagMuzzle(re1, cl.model_name[es.modelindex], es.origin)
+					end
+				end
+			end
 
 			-- EF_ effects dlights (quad/pent glow, brightlight/dimlight)
 			if bit32.band(es.effects, 12) ~= 0 then -- EF_BRIGHTLIGHT|EF_DIMLIGHT
@@ -736,8 +828,15 @@ return function()
 		-- extrapolated forward by half the elapsed move (CL_LinkPlayers)
 		-- with the V_CalcRoll strafe lean
 		local predicted = qwcl.predictedPlayerOrigins(cl)
+		-- RQDBG_QWSelfAvatar: render your OWN avatar too (normally skipped,
+		-- since it is the first-person camera) so avatar behaviour —
+		-- especially the velocity-driven walk animation — can be verified
+		-- solo without a second client
+		local drawSelf = workspace:GetAttribute("RQDBG_QWSelfAvatar") == true
+		local velProbe = workspace:GetAttribute("RQDBG_QWVelProbe") == true
+		local peakPeerVel, peakPeerNum = 0, -1
 		for num, ps in frame.playerstate do
-			if ps.messagenum ~= cl.parsecount or num == cl.playernum then
+			if ps.messagenum ~= cl.parsecount or (num == cl.playernum and not drawSelf) then
 				continue
 			end
 			-- Cam_DrawPlayer: don't draw the target we are chase camming
@@ -757,7 +856,39 @@ return function()
 				local bottom = tonumber(info.userinfo.bottomcolor) or 0
 				colors = top * 16 + bottom
 			end
-			linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+			-- Roblox avatars mode: wire playernum is slot-1, so RQSlot maps
+			-- num+1 -> Player. Death band renders the rig's scripted corpse.
+			local avatarDrawn = false
+			if avatarsOn() and ps.modelindex == cl.playerindex then
+				local aplayer = avatarLayer.playerForSlot(num + 1)
+				if aplayer then
+					local effects = ps.effects
+					if (muzzleFlashUntil[num + 1] or 0) > time then
+						effects = bit32.bor(effects, 2) -- EF_MUZZLEFLASH for the layer
+					end
+					-- QW replicates velocity — drives the run/idle/jump/fall
+					-- animation state directly (tick-rate origins can't).
+					-- RQDBG_QWVelProbe: record the fastest rendered peer's
+					-- horizontal wire speed so a 2-client test shows whether
+					-- velocity actually arrives for other players
+					if velProbe then
+						local v = ps.velocity
+						local vh = math.sqrt(v.x * v.x + v.y * v.y)
+						if vh > peakPeerVel then
+							peakPeerVel = vh
+							peakPeerNum = num
+						end
+					end
+					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, ps.frame, effects, colors, nil, nil, ps.velocity) then
+						seenAvatars[num + 1] = true
+						avatarDrawn = true
+					end
+					-- rig still loading: alias fallback below
+				end
+			end
+			if not avatarDrawn then
+				linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+			end
 
 			-- CL_AddFlagModels: CTF flag riding on the carrier's back
 			-- (placement math offline-tested in test_qwview)
@@ -766,6 +897,10 @@ return function()
 				local forg, fang = qwview.flagPlacement(ps.frame, angles, porigin)
 				linkEnt(`pf{num}`, cl.flagindex, forg, fang, 0, if bit32.band(ps.effects, 32) ~= 0 then 1 else 0, time)
 			end
+		end
+		if velProbe then
+			workspace:SetAttribute("RQDBG_QWPeerVel", peakPeerVel)
+			workspace:SetAttribute("RQDBG_QWPeerNum", peakPeerNum)
 		end
 
 		-- CL_UpdateExplosions: s_explod.spr at 10 Hz until frames run out
@@ -806,6 +941,7 @@ return function()
 				renderDefs[key] = nil
 			end
 		end
+		avatarLayer.hideExcept(seenAvatars)
 	end
 
 	----------------------------------------------------------------------
@@ -1453,6 +1589,8 @@ return function()
 				entrender.destroy(re)
 			end
 			table.clear(staticRes)
+			avatarLayer.destroyWeapons() -- weapon defs are per-level
+			avatarLayer.hideAll() -- rigs persist across levels
 			particleslib.clear(psys) -- R_ClearParticles on the map change
 			-- CL_ClearTEnts: beams + explosions zeroed on level start; the
 			-- pooled beam render instances are port-side and released too
@@ -1665,6 +1803,18 @@ return function()
 		end
 
 		local fwd, right, up = mathlib.angleVectors(angles)
+		-- RQDBG_QWSelfAvatar: pull the camera back into third person so the
+		-- self avatar (rendered at the eye) is visible; suppress the
+		-- 1st-person viewmodel gun (it would float at the camera). Debug
+		-- preview only — the self avatar holds the world weapon anyway.
+		if workspace:GetAttribute("RQDBG_QWSelfAvatar") == true then
+			local back = workspace:GetAttribute("RQDBG_QWSelfChaseDist")
+			local d = if typeof(back) == "number" then back else 210
+			-- pull back far enough that the whole body clears the HUD in a
+			-- level view; only a small rise (camera looks horizontally)
+			eye = eye - fwd * d + up * 34
+			gunVisible = false
+		end
 		camera.CFrame = qcoords.cframe(eye, fwd, right, up)
 		viewmodellib.update(vmgun, camera)
 

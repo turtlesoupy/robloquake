@@ -65,7 +65,7 @@ modepresets.PRESETS = {
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		-- roblox_avatars omitted: QW avatar parity pending
+		roblox_avatars = true,
 	},
 	-- Threewave CTF on QW (the verified mod path: tests/test_scenario_ctf
 	-- + qw-ctf2m3 evidence); pak ships ctf1..ctf8

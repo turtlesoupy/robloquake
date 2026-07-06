@@ -83,6 +83,11 @@ return function(ctx: Ctx)
 	bundle.clientFS:SetAttribute("engine", "qw")
 	bundle.publishAll(svr)
 
+	-- Roblox avatars mode (product layer, SHARED module with the NQ boot):
+	-- publishes rigs + mirrors the roblox_avatars toggle; this boot also
+	-- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
+	local publishAvatarRig = require(script.Parent.avatarrigs)(ctx.assets, bundle.clientFS)
+
 	-- ===== match director (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/director.luau for the REMOVAL note =====
 	local function playerIsHost(player: Player): boolean
@@ -178,6 +183,10 @@ return function(ctx: Ctx)
 		qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
 			ctx.reliable:FireClient(player, packet)
 		end)
+		-- avatars mode plumbing: clients map QW player number -> Player by
+		-- slot (wire playernum = slot - 1)
+		player:SetAttribute("RQSlot", slot)
+		publishAvatarRig(player)
 		print(`[robloquake] {player.Name} connected as qw client {slot}`)
 		return slot
 	end
@@ -305,6 +314,17 @@ return function(ctx: Ctx)
 		diagAccum += dt
 		if diagAccum > 0.5 then
 			diagAccum = 0
+			-- avatars mode: mirror each player's held weapon (v_ viewmodel
+			-- name) so clients can attach the matching world model to rigs
+			for player, slot in slotByPlayer do
+				local cl = svr.clients[slot]
+				if cl and cl.spawned and cl.edict then
+					local wm = vmlib.edString(svr.vm, cl.edict, svr.qdefs.ent.weaponmodel)
+					if player:GetAttribute("RQWeaponModel") ~= wm then
+						player:SetAttribute("RQWeaponModel", wm)
+					end
+				end
+			end
 			local ServerStorage = game:GetService("ServerStorage")
 			ServerStorage:SetAttribute("SV_Time", svr.time)
 			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
