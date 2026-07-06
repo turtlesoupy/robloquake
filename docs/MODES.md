@@ -28,6 +28,21 @@ maplist="dm3 dm4 dm6 dm2 dm5"}` · Threewave CTF = `{gamedir="threewave",
 teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 `deathmatch`, no `maplist` — nothing below activates.
 
+## Dev mode presets (state as code)
+
+Dev state is NOT hand-edited in Roblox: `src/server/modepresets.luau`
+defines complete named states (campaign, nq-dm, qw-dm, ctf, arena,
+instagib) and `src/server/modeconfig.luau` selects the active one. The
+server boot applies the preset onto QuakeAssets attributes before
+anything reads them — every key written, absent keys cleared, so the
+running state always equals the file. Switch/inspect from the terminal:
+
+    lune run tools/mode              # show active + all states
+    lune run tools/mode ctf          # switch (rojo syncs; restart Play)
+    lune run tools/mode off          # place attributes rule (ship mode)
+
+Shipped places run with presets off and own their attributes per-place.
+
 ## The director (rotation · voting · admin control)
 
 Product layer, engine-agnostic, four files/blocks total:

@@ -1,0 +1,120 @@
+--!strict
+-- Mode presets as CODE (dev source of truth; see docs/MODES.md).
+-- A preset is the COMPLETE attribute state for QuakeAssets: applying one
+-- writes every key in KEYS (absent = cleared), so the running state is
+-- always exactly what this file says — no residue from earlier states,
+-- nothing hand-edited in Roblox. Shipped places set modeconfig to nil
+-- and own their attributes per-place instead.
+-- Switch/inspect from the terminal: `lune run tools/mode [preset|off]`.
+
+local modepresets = {}
+
+-- the full parameter set (MODES.md); every preset key must be one of these
+modepresets.KEYS = {
+	"engine",
+	"game",
+	"gamedir",
+	"startmap",
+	"deathmatch",
+	"coop",
+	"skill",
+	"teamplay",
+	"fraglimit",
+	"timelimit",
+	"samelevel",
+	"noexit",
+	"maplist",
+	"votetime",
+	"roblox_avatars",
+}
+
+local DM_RULES = {
+	deathmatch = 1,
+	fraglimit = 15,
+	timelimit = 20,
+	maplist = "dm3 dm4 dm6 dm2",
+	votetime = 30,
+	startmap = "dm3",
+}
+
+modepresets.PRESETS = {
+	-- single player / coop campaign: authentic exit chain, no director
+	campaign = {
+		engine = "nq",
+		game = "id1",
+		startmap = "start",
+		roblox_avatars = true,
+	},
+	["nq-dm"] = {
+		engine = "nq",
+		game = "id1",
+		deathmatch = DM_RULES.deathmatch,
+		fraglimit = DM_RULES.fraglimit,
+		timelimit = DM_RULES.timelimit,
+		maplist = DM_RULES.maplist,
+		votetime = DM_RULES.votetime,
+		startmap = DM_RULES.startmap,
+		roblox_avatars = true,
+	},
+	["qw-dm"] = {
+		engine = "qw",
+		game = "id1",
+		deathmatch = DM_RULES.deathmatch,
+		fraglimit = DM_RULES.fraglimit,
+		timelimit = DM_RULES.timelimit,
+		maplist = DM_RULES.maplist,
+		votetime = DM_RULES.votetime,
+		startmap = DM_RULES.startmap,
+		-- roblox_avatars omitted: QW avatar parity pending
+	},
+	-- Threewave CTF on QW (the verified mod path: tests/test_scenario_ctf
+	-- + qw-ctf2m3 evidence); pak ships ctf1..ctf8
+	ctf = {
+		engine = "qw",
+		game = "id1",
+		gamedir = "threewave",
+		teamplay = 1,
+		deathmatch = 1,
+		fraglimit = 15,
+		timelimit = 20,
+		startmap = "ctf1",
+		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5",
+		votetime = 30,
+	},
+	-- Rocket Arena (QW): manages its own rotation via localinfo — no
+	-- maplist, so the director stays out of its way
+	arena = {
+		engine = "qw",
+		game = "id1",
+		gamedir = "arena",
+		deathmatch = 1,
+		startmap = "dm3",
+	},
+	instagib = {
+		engine = "nq",
+		game = "id1",
+		gamedir = "instagib",
+		deathmatch = DM_RULES.deathmatch,
+		fraglimit = DM_RULES.fraglimit,
+		timelimit = DM_RULES.timelimit,
+		maplist = DM_RULES.maplist,
+		votetime = DM_RULES.votetime,
+		startmap = DM_RULES.startmap,
+		roblox_avatars = true,
+	},
+}
+
+-- apply a preset onto the assets folder: every KEY is written (nil
+-- clears), so state == preset exactly
+function modepresets.apply(assets: Instance, name: string): boolean
+	local preset = modepresets.PRESETS[name]
+	if not preset then
+		return false
+	end
+	for _, key in modepresets.KEYS do
+		assets:SetAttribute(key, (preset :: { [string]: any })[key])
+	end
+	return true
+end
+
+return modepresets

@@ -34,6 +34,22 @@ end
 -- replicated to joining clients (that stalled published-game joins);
 -- a per-map client bundle is published to ReplicatedStorage instead
 local assets = ServerStorage:FindFirstChild("QuakeAssets") or ReplicatedStorage:WaitForChild("QuakeAssets")
+
+-- dev mode presets: state-as-code overrides the place's attributes (see
+-- docs/MODES.md; switch with `lune run tools/mode`). Must run before ANY
+-- attribute read below.
+do
+	local presetName = require(script.modeconfig) :: string?
+	if presetName then
+		local modepresets = require(script.modepresets)
+		if modepresets.apply(assets, presetName) then
+			print(`[robloquake] mode preset applied: {presetName}`)
+		else
+			warn(`[robloquake] unknown mode preset "{presetName}" — using place attributes`)
+		end
+	end
+end
+
 local gameDir = assets:GetAttribute("game")
 if typeof(gameDir) ~= "string" then
 	gameDir = "id1"
