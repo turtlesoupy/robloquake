@@ -234,8 +234,11 @@ return function(ctx: Ctx)
 
 		-- level change requested by qwprogs (fraglimit/timelimit/
 		-- changelevel): respawn the server, republish the bundle, and
-		-- send every connected client a fresh serverdata — they redo
-		-- the soundlist/modellist/prespawn/spawn/begin handshake
+		-- stuff "changing"/"reconnect" like SV_Map_f — the client answers
+		-- with "new" and redoes the soundlist/modellist/prespawn/spawn/
+		-- begin handshake. The serverdata must be the paired reply to
+		-- that "new" packet: an unsolicited push here skews the strict
+		-- 1:1 sequence exchange the delta-frame lookup is keyed by
 		dir.step() -- match director: vote lifecycle + idle expiry
 
 		local nextLevel = svr.changelevelTo
@@ -248,13 +251,12 @@ return function(ctx: Ctx)
 			bundle.publishAll(svr)
 			for i = 1, svr.maxclients do
 				local client = svr.clients[i]
-				if client.active and client.send then
+				if client.active then
 					client.spawned = false
-					qwsv.newF(svr, client)
-					client.send_message = true
-					qwsv.replyToClient(svr, client)
 				end
 			end
+			qwsv.broadcastCommand(svr, "changing\n")
+			qwsv.broadcastCommand(svr, "reconnect\n")
 		end
 
 		-- host commands from Studio / the owner UI: "kick <uid>",
