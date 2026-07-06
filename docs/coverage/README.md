@@ -33,14 +33,18 @@ counterpart, each with its justification.
 |---|---|---|---|---|---|
 | [nq-server.md](nq-server.md) — WinQuake sim/server/shared | 279 | 0 | 25 | 111 | 36 |
 | [nq-client.md](nq-client.md) — WinQuake client/presentation | 131 | 0 | 30 | 78 | 25 |
-| [qw-server.md](qw-server.md) — QuakeWorld server | 172 | 1 | 7 | 41 | 7 |
-| [qw-client.md](qw-client.md) — QuakeWorld client | 119 | 0 | 53 | 51 | 5 |
-| **Total** | **701** | **1** | **115** | **281** | **73** |
+| [qw-server.md](qw-server.md) — QuakeWorld server | 172 | 1 | 14 | 42 | 7 |
+| [qw-client.md](qw-client.md) — QuakeWorld client | 134 | 0 | 42 | 53 | 5 |
+| **Total** | **716** | **1** | **111** | **284** | **73** |
 
-Counts as of 2026-07-05 (post N/A formalization + ruling passes); these are
-column-exact status-cell counts per content row — the naive
-`grep -oE '\| (VERIFIED|...) '` over-counts by matching totals tables and
-reason cells, so count the status COLUMN only. The 1 PENDING is qw-server's
+Counts as of 2026-07-05 (post N/A formalization + ruling passes + the QW
+presentation pass); these are column-exact status-cell counts per content
+row — the naive `grep -oE '\| (VERIFIED|...) '` over-counts by matching
+totals tables and reason cells, so count the status COLUMN only. The
+2026-07-05 presentation pass also corrected two stale per-file totals to
+the mechanical column count (qw-server UNIMPLEMENTED was 14, not 7 — the
+broken-wiring and ruled-IMPLEMENT debug rows; qw-client had one more
+UNIMPLEMENTED row than its table claimed). The 1 PENDING is qw-server's
 SV_Serverinfo/Localinfo honest partial, noted in that file.
 
 Notes on reading the numbers: dead-in-C code (QUAKE2/#if 0/PF_Fixme slots)
@@ -89,6 +93,30 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-05 (QW presentation cluster: burn-down pass 1)
+- New shared module `src/shared/engine/qw/qwview.luau`: the view.c blend
+  pipeline (contents/powerup/damage/bonus/v_cshift + V_CalcBlend + the
+  V_UpdatePalette drops), CL_AddFlagModels placement, the CL_AllocExplosion/
+  CL_UpdateExplosions ring, CL_ClearTEnts, Sbar_SortFrags/SortTeams —
+  extracted from qwclient.luau (which now consumes it) so lune can drive the
+  exact shipped logic. tests/test_qwview.luau: 97 checks against transcribed
+  C truths, including the translatePixels/CL_NewTranslation table build.
+- Newly implemented: Sbar_TeamOverlay + Sbar_ShowTeamScores,
+  Sbar_MiniDeathmatchOverlay, Sbar_FinaleOverlay ("finale" mode; svc_finale
+  crafted-tested in test_qw_cam), CL_ClearTEnts (incl. releasing the pooled
+  beam instances on level change), v_cshift/bf as console commands AND
+  stufftext handlers, teamplay DM-overlay column layout, own-slot brackets
+  in the rankings, client-side "impulse N" (C's IN_Impulse — it previously
+  forwarded to the server, which ignores it), CVAR_SERVERINFO attrs
+  (teamplay et al) mirrored into svr.serverinfo at boot.
+- Five new committed captures: qw-team-overlay, qw-minidm-overlay,
+  qw-cshift-water, qw-vcshift-dead-teamoverlay (v_cshift blend + the
+  authentic dead→TeamOverlay branch in one frame), qw-explosion-sprite
+  (s_explod fireball + particles at a live rocket impact).
+- 15 qw-client rows → VERIFIED, 2 → SUBSTITUTED (Sbar_Changed/Init,
+  Draw_TileClear); stale "no 2D overlay" section notes rewritten. Totals
+  corrected to the mechanical column count in qw-client and qw-server.
 
 ### 2026-07-05 (in-house overlay mod: instagib)
 - mods/instagib = the in-house gamedir mod worked example: ONE modified

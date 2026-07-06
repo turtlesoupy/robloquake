@@ -1,0 +1,17 @@
+Capture context: qw-minidm-overlay.jpg (2026-07-05)
+====================================================
+Engine: QW boot (engine="qw"), dm3, id1 (registered 1.06), teamplay=1
+place attribute (mirrored into serverinfo via the CVAR_SERVERINFO loop
+in qwserver.luau). Solo player "turtlesoupy" at the dm3 spawn.
+
+Shows: Sbar_MiniDeathmatchOverlay — the frags/name strip right of the
+sbar canvas (x=324 canvas space, y = 48 - sb_lines - 1): topcolor/
+bottomcolor Draw_Fill bars, the %3i frag count, own-row [ ] brackets
+(chars 16/17), and the player name. Drawn whenever sb_lines > 0 and the
+window is wide enough (C: vid.width >= 512), windowed around the local
+player in the Sbar_SortFrags(false) order (sorting offline-tested in
+tests/test_qwview.luau). Also the post-qwview-refactor boot sanity
+shot: world + sbar + view weapon all render.
+
+Re-verify: boot engine=qw dm3 (mode preset off, teamplay=1 attr),
+Play solo, look at the right of the status bar.

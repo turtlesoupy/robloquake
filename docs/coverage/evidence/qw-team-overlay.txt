@@ -1,0 +1,18 @@
+Capture context: qw-team-overlay.jpg (2026-07-05)
+==================================================
+Engine: QW boot (engine="qw"), dm3, id1, teamplay=1 place attribute
+(mirrored into serverinfo — the client gate reads
+cl.serverinfo.teamplay). Player set "setinfo team red" through the
+RQDBG_Console exec hook, then "+showteamscores".
+
+Shows: Sbar_TeamOverlay per QW sbar.c — RANKINGS plaque, the
+"low/avg/high team total players" header with its 0x1d/0x1e/0x1f
+separator rows, one team row ("999/999/999 [red ] 0 1" — ping clamp to
+999 with no pings received yet, own-team brackets chars 16/17 around
+the team name), then the appended Sbar_DeathmatchOverlay(y) player
+list in its TEAMPLAY column layout (x=4 base, "ping pl time frags team
+name"). Team aggregation (Sbar_SortTeams) is offline-tested in
+tests/test_qwview.luau.
+
+Re-verify: boot engine=qw dm3 with teamplay=1, exec "setinfo team red"
+then "+showteamscores" via RQDBG_Console, capture.

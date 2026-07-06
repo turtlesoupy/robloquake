@@ -392,11 +392,14 @@ underlying C function count is higher than the row count in the SUBSTITUTED/VERI
 |---|---|
 | VERIFIED | 172 |
 | PENDING | 1 |
-| SUBSTITUTED | 41 |
+| SUBSTITUTED | 42 |
 | N/A | 7 |
-| UNIMPLEMENTED | 7 |
-| N/A | 3 |
+| UNIMPLEMENTED | 14 |
 | Total rows | 236 |
+
+(2026-07-05: corrected to the mechanical status-column count — the previous
+table split N/A across two lines and under-counted UNIMPLEMENTED at 7; the
+"broken wiring" rows and the ruled-IMPLEMENT debug rows are UNIMPLEMENTED.)
 
 Headline: the whole gameplay core (pmove vs verbatim-C ground truth, SV_RunCmd, sv_phys frame loop,
 world/trace, delta entity codec, netchan-lite, handshake, PVS/PHS multicast, stats) is VERIFIED by four

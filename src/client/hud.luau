@@ -9,6 +9,7 @@ local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local wadlib = require(engine.gfx.wad)
 local vfslib = require(engine.common.vfs)
 local cllib = require(engine.client.cl)
+local qwview = require(engine.qw.qwview)
 
 local textures = require(script.Parent.render.textures)
 local confontlib = require(script.Parent.render.confont)
@@ -73,7 +74,11 @@ export type Hud = {
 	pausePlaque: ImageLabel?,
 	interFrame: Frame,
 	interSig: string,
+	miniFrame: Frame,
+	miniSig: string,
+	viewsize: number,
 	showScores: boolean,
+	showTeamScores: boolean,
 	soloRows: { [string]: confontlib.TextRow },
 	sbarBg: ImageLabel,
 	fs: vfslib.Vfs,
@@ -332,7 +337,21 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.interFrame = interFrame
 	h.interSig = ""
 	h.showScores = false
+	h.showTeamScores = false
+	h.viewsize = 100
 	h.fs = fs
+
+	-- Sbar_MiniDeathmatchOverlay: frags/name list right of the sbar
+	-- (canvas-relative x=324, sbar-height rows)
+	local miniFrame = Instance.new("Frame")
+	miniFrame.Name = "minidm"
+	miniFrame.BackgroundTransparency = 1
+	miniFrame.Position = UDim2.fromOffset(324 * SCALE, 0)
+	miniFrame.Size = UDim2.fromOffset(160 * SCALE, 48 * SCALE)
+	miniFrame.Visible = false
+	miniFrame.Parent = canvas
+	h.miniFrame = miniFrame
+	h.miniSig = ""
 
 	-- Sbar_SoloScoreboard rows drawn over the status row (canvas coords)
 	local function soloRow(x: number, y: number, cols: number): confontlib.TextRow
@@ -595,6 +614,7 @@ end
 -- status row only, 120 = none. The boot recomputes the vrect fov with
 -- hud.sbarLinesPx after calling this.
 function hud.setViewsize(h: Hud, viewsize: number)
+	h.viewsize = viewsize
 	local px = hud.sbarLinesPx(viewsize)
 	h.sbarStrip.Size = UDim2.new(1, 0, 0, px)
 	h.sbarStrip.Visible = px > 0
@@ -605,6 +625,11 @@ end
 
 function hud.setShowScores(h: Hud, on: boolean)
 	h.showScores = on
+end
+
+-- Sbar_ShowTeamScores / Sbar_DontShowTeamScores (+showteamscores keys)
+function hud.setShowTeamScores(h: Hud, on: boolean)
+	h.showTeamScores = on
 end
 
 function hud.updateOverlays(h: Hud, c: cllib.Client)
@@ -643,24 +668,33 @@ function hud.updateOverlays(h: Hud, c: cllib.Client)
 end
 
 -- Sbar_DeathmatchOverlay (QW sbar.c): ping/pl/time/frags/name columns,
--- x=16 base, color fill at +104, frags at +112, name at +152
-local function buildQWRankings(h: Hud, c: any)
-	interLmp(h, "gfx/ranking.lmp", 0, 0, true)
-	local x, y = 16, 24
-	interText(h, x, y, "ping pl time frags name")
-	y += 8
-	interText(h, x, y, "\29\30\30\31 \29\31 \29\30\30\31 \29\30\30\30\31 \29\30\30\30\30\30\30\30\30\30\30\30\30\30\31")
+-- color fill at +104, frags at +112; teamplay adds the team column and
+-- shifts the base to x=4. `start` ~= 0 skips the ranking plaque (the
+-- team overlay appends the player list below itself, like C).
+local function buildQWRankings(h: Hud, c: any, start: number)
+	local teamplay = (c.teamplay or 0) > 0
+	local x, y
+	if start == 0 then
+		interLmp(h, "gfx/ranking.lmp", 0, 0, true)
+		y = 24
+	else
+		y = start
+	end
+	x = if teamplay then 4 else 16
+	if teamplay then
+		interText(h, x, y, "ping pl time frags team name")
+		y += 8
+		interText(h, x, y, "\29\30\30\31 \29\31 \29\30\30\31 \29\30\30\30\31 \29\30\30\31 \29\30\30\30\30\30\30\30\30\30\30\30\30\30\31")
+	else
+		interText(h, x, y, "ping pl time frags name")
+		y += 8
+		interText(h, x, y, "\29\30\30\31 \29\31 \29\30\30\31 \29\30\30\30\31 \29\30\30\30\30\30\30\30\30\30\30\30\30\30\31")
+	end
 	y += 8
 
-	local order = {}
-	for i, sc in c.scores do
-		if sc.name ~= "" then
-			table.insert(order, i)
-		end
-	end
-	table.sort(order, function(a, b)
-		return c.scores[a].frags > c.scores[b].frags
-	end)
+	-- Sbar_SortFrags(true): spectators included at -999
+	local order = qwview.sortFrags(c.scores, true)
+	local nameX = if teamplay then x + 152 + 40 else x + 152
 
 	for _, k in order do
 		if y > 200 - 10 then
@@ -672,41 +706,207 @@ local function buildQWRankings(h: Hud, c: any)
 		interText(h, x + 32, y, ("%3i"):format(sc.pl or 0))
 		if sc.spectator then
 			interText(h, x + 40, y, "(spectator)")
-			interText(h, x + 152, y, sc.name)
+			interText(h, nameX, y, sc.name)
 		else
 			local total = (if c.intermission ~= 0 then c.completed_time else c.time) - (sc.entertime or 0)
 			interText(h, x + 64, y, ("%4i"):format(math.max(total // 60, 0)))
 			interFill(h, x + 104, y + 1, 40, 4, bit32.band(sc.colors, 0xf0) + 8)
 			interFill(h, x + 104, y + 5, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
 			interText(h, x + 112, y, ("%3i"):format(sc.frags))
-			interText(h, x + 152, y, sc.name)
+			if k == c.playerslot then
+				interText(h, x + 104, y, string.char(16))
+				interText(h, x + 136, y, string.char(17))
+			end
+			if teamplay then
+				interText(h, x + 152, y, (sc.team or ""):sub(1, 4))
+			end
+			interText(h, nameX, y, sc.name)
 		end
 		y += 10
 	end
 end
 
--- QW overlay driver: the DM overlay doubles as the intermission screen
+-- Sbar_TeamOverlay: low/avg/high ping, team, total frags, player count
+-- per team, then the full player list below (C appends
+-- Sbar_DeathmatchOverlay(y))
+local function buildQWTeamOverlay(h: Hud, c: any)
+	local teamplay = c.teamplay or 0
+	if teamplay == 0 then
+		-- C falls through to the plain rankings
+		buildQWRankings(h, c, 0)
+		return
+	end
+	interLmp(h, "gfx/ranking.lmp", 0, 0, true)
+	local x, y = 36, 24
+	interText(h, x, y, "low/avg/high team total players")
+	y += 8
+	interText(h, x, y, "\29\30\30\30\30\30\30\30\30\30\30\31 \29\30\30\31 \29\30\30\30\31 \29\30\30\30\30\30\31")
+	y += 8
+
+	local ownTeam = ""
+	local own = c.scores[c.playerslot]
+	if own then
+		ownTeam = (own.team or ""):sub(1, 16)
+	end
+
+	local teams = qwview.sortTeams(c.scores, teamplay)
+	for _, tm in teams do
+		if y > 200 - 10 then
+			break
+		end
+		local plow = math.clamp(tm.plow, 0, 999)
+		local phigh = math.clamp(tm.phigh, 0, 999)
+		local pavg = if tm.players == 0 then 999 else math.clamp(tm.ptotal // tm.players, 0, 999)
+		interText(h, x, y, ("%3i/%3i/%3i"):format(plow, pavg, phigh))
+		interText(h, x + 104, y, tm.team:sub(1, 4))
+		interText(h, x + 104 + 40, y, ("%5i"):format(tm.frags))
+		interText(h, x + 104 + 88, y, ("%5i"):format(tm.players))
+		if tm.team == ownTeam then
+			interText(h, x + 104 - 8, y, string.char(16))
+			interText(h, x + 104 + 32, y, string.char(17))
+		end
+		y += 8
+	end
+	y += 8
+	buildQWRankings(h, c, y)
+end
+
+-- text/fill helpers targeting the mini overlay frame
+local function miniText(h: Hud, x: number, y: number, text: string)
+	local font = h.font
+	if not font then
+		return
+	end
+	local holder = Instance.new("Frame")
+	holder.BackgroundTransparency = 1
+	holder.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+	holder.Size = UDim2.fromOffset(#text * 8 * SCALE, 8 * SCALE)
+	holder.Parent = h.miniFrame
+	local row = confontlib.newRow(holder, math.max(#text, 1), SCALE)
+	confontlib.setRow(font, row, text)
+end
+
+local function miniFill(h: Hud, x: number, y: number, w: number, hh: number, palIndex: number)
+	local f = Instance.new("Frame")
+	f.BorderSizePixel = 0
+	f.BackgroundColor3 = Color3.fromRGB(h.pal.r[palIndex + 1] or 0, h.pal.g[palIndex + 1] or 0, h.pal.b[palIndex + 1] or 0)
+	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
+	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
+	f.Parent = h.miniFrame
+end
+
+-- Sbar_MiniDeathmatchOverlay: a frags/name strip right of the sbar,
+-- windowed around the local player. Draws only with sb_lines > 0 and a
+-- window wide enough (C: vid.width >= 512).
+local function updateMiniOverlayQW(h: Hud, c: any)
+	local sbLines = if h.viewsize >= 120 then 0 elseif h.viewsize >= 110 then 24 else 48
+	local numlines = sbLines // 8
+	local vidWidth = h.gui.AbsoluteSize.X / SCALE
+	if sbLines == 0 or numlines < 3 or vidWidth < 512 then
+		h.miniFrame.Visible = false
+		h.miniSig = ""
+		return
+	end
+	local teamplay = (c.teamplay or 0) > 0
+
+	-- Sbar_SortFrags(false)
+	local order = qwview.sortFrags(c.scores, false)
+	if #order == 0 then
+		h.miniFrame.Visible = false
+		h.miniSig = ""
+		return
+	end
+
+	-- find us; spectators default to the top
+	local selfAt = 0
+	for i, k in order do
+		if k == c.playerslot then
+			selfAt = i
+			break
+		end
+	end
+	local first = if selfAt == 0 then 1 else selfAt - numlines // 2
+	first = math.clamp(first, 1, math.max(#order - numlines + 1, 1))
+
+	local sig = `mini{first}:{teamplay}`
+	for i = first, math.min(first + numlines - 1, #order) do
+		local sc = c.scores[order[i]]
+		sig ..= ("|%s:%d:%d:%s"):format(sc.name, sc.frags, sc.colors, sc.team or "")
+	end
+	-- y = vid.height - sb_lines - 1 in canvas space (canvas is 48 tall)
+	h.miniFrame.Position = UDim2.fromOffset(324 * SCALE, (48 - sbLines - 1) * SCALE)
+	h.miniFrame.Visible = true
+	if sig == h.miniSig then
+		return
+	end
+	h.miniSig = sig
+	h.miniFrame:ClearAllChildren()
+
+	local y = 0
+	for i = first, #order do
+		if y >= sbLines - 8 + 1 then
+			break
+		end
+		local k = order[i]
+		local sc = c.scores[k]
+		if sc.name == "" then
+			continue
+		end
+		miniFill(h, 0, y + 1, 40, 3, bit32.band(sc.colors, 0xf0) + 8)
+		miniFill(h, 0, y + 4, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+		miniText(h, 8, y, ("%3i"):format(sc.frags))
+		if k == c.playerslot then
+			miniText(h, 0, y, string.char(16))
+			miniText(h, 32, y, string.char(17))
+		end
+		if teamplay then
+			miniText(h, 48, y, (sc.team or ""):sub(1, 4))
+			miniText(h, 48 + 40, y, sc.name:sub(1, 16))
+		else
+			miniText(h, 48, y, sc.name:sub(1, 16))
+		end
+		y += 8
+	end
+end
+
+-- QW overlay driver (Sbar_Draw + Sbar_IntermissionOverlay + finale):
+-- dead or TAB raises the rankings; teamplay routes to the team overlay;
+-- svc_finale (intermission 2) shows the finale plaque
 function hud.updateOverlaysQW(h: Hud, c: any)
+	local teamplay = (c.teamplay or 0) > 0
+	local dead = (c.stats[cllib.STAT_HEALTH] or 100) <= 0 and not c.spectator
 	local mode = ""
-	if c.intermission ~= 0 or h.showScores then
-		mode = "qwdm"
+	if c.intermission == 2 then
+		mode = "finale"
+	elseif c.intermission ~= 0 or dead then
+		mode = if teamplay and not h.showScores then "team" else "dm"
+	elseif h.showScores then
+		mode = "dm"
+	elseif h.showTeamScores then
+		mode = "team"
 	end
 	local sig = mode
-	if mode ~= "" then
+	if mode == "dm" or mode == "team" then
 		for _, sc in c.scores do
 			if sc.name ~= "" then
-				sig ..= ("|%s:%d:%d:%d:%d"):format(sc.name, sc.frags, sc.colors, sc.ping or 0, (sc.entertime or 0) // 60)
+				sig ..= ("|%s:%d:%d:%d:%d:%s"):format(sc.name, sc.frags, sc.colors, sc.ping or 0, (sc.entertime or 0) // 60, sc.team or "")
 			end
 		end
 	end
 	if sig ~= h.interSig then
 		h.interSig = sig
 		h.interFrame:ClearAllChildren()
-		if mode ~= "" then
-			buildQWRankings(h, c)
+		if mode == "dm" then
+			buildQWRankings(h, c, 0)
+		elseif mode == "team" then
+			buildQWTeamOverlay(h, c)
+		elseif mode == "finale" then
+			interLmp(h, "gfx/finale.lmp", 0, 16, true)
 		end
 	end
 	h.interFrame.Visible = mode ~= ""
+
+	updateMiniOverlayQW(h, c)
 end
 
 local WEAPON_NAMES = { "shotgun", "sshotgun", "nailgun", "snailgun", "rlaunch", "srlaunch", "lightng" }

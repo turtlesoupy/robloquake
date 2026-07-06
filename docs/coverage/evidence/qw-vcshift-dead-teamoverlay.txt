@@ -1,0 +1,18 @@
+Capture context: qw-vcshift-dead-teamoverlay.jpg (2026-07-05)
+==============================================================
+Engine: QW boot (engine="qw"), dm3, id1, teamplay=1, team "red" set.
+Sequence: exec "v_cshift 0 0 255 120" through RQDBG_Console while the
+player was drowning; the drown killed him (frags -1 suicide) right
+before the capture.
+
+Shows TWO behaviors in one frame:
+1. V_cshift_f: the whole view blended deep blue — v_cshift edits
+   cshift_empty {0,0,255,120} and V_CalcBlend applies it over the
+   empty-contents view (command parse + blend offline-tested in
+   tests/test_qwview.luau).
+2. The authentic Sbar_Draw dead branch: health <= 0 with teamplay > 0
+   and no +showscores raises Sbar_TeamOverlay AUTOMATICALLY (team
+   header rows + appended player list, frags -1, death corpse view).
+
+Re-verify: boot engine=qw dm3 teamplay=1, exec "v_cshift 0 0 255 120",
+kill (drown or rocket), capture while dead.

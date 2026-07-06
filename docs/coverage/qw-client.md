@@ -70,7 +70,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_ParseStaticSound | `parseStaticSound` + `soundlib.static` | VERIFIED | test_qw_loopback crafted svc_spawnstaticsound: pos/num/vol/atten asserted; playback is the shared soundlib.static path (NQ live-verified). | `lune run tests/test_qw_loopback.luau` |
 | CL_ParseStartSoundPacket | `parseStartSound` | VERIFIED | Loopback: "svc_sound guncock arrived through the PHS multicast" (vol/atten/ent/channel decode). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_ParseClientdata | head of `parseServerMessage` | VERIFIED | test_qw_loopback: parsecount/receivedtime bookkeeping proven by "prediction converged (<1 unit)" and "validsequence tracking" — both fail if the frame ring is misindexed. | `lune run tests/test_qw_loopback.luau` |
-| CL_NewTranslation | — | UNIMPLEMENTED | Colormap skin translation for players journaled open (backlog "STILL OPEN"). | — (implement first) |
+| CL_NewTranslation | `relinkEntities` colors byte → `entrender.updateAlias` → `textures.translatePixels` | VERIFIED | test_qwview translate battery: table build exact vs C (shirt rows from top*16 forward, pants rows >= 128 reversed, identity elsewhere); the topcolor/bottomcolor byte path also drives the scoreboard fills live in [evidence/qw-team-overlay.jpg](evidence/qw-team-overlay.jpg). No .pcx skin substrate (see skin.c) — translation applies to the base player.mdl skin like -noskins QW. | `lune run tests/test_qwview.luau` |
 | CL_ProcessUserInfo | inline in `svc_updateuserinfo`/`svc_setinfo` handlers | VERIFIED | test_scenario_qw: each client resolves the other's name from broadcast userinfo ("alpha's scoreboard lists bravo" and vice versa); loopback "own player info received". | `lune run tests/test_scenario_qw.luau`; `lune run tests/test_qw_loopback.luau` |
 | CL_UpdateUserinfo | `svc_updateuserinfo` handler | VERIFIED | Loopback: "own player info received" (name "looper", userid parse). | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SetInfo | `svc_setinfo` handler | VERIFIED | test_qw_loopback: setinfo updates cross the wire (server-side userinfo check) and the svc_setinfo path feeds the same players table the scenario name checks read. | `lune run tests/test_qw_loopback.luau` |
@@ -84,7 +84,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | KeyDown / KeyUp + the 38 IN_*Down/IN_*Up wrappers | qwclient `keyButtons` map + `input.setButton` | SUBSTITUTED | Roblox UserInputService replaces the bind-driven ± command pairs. Delta: booleans, not the C two-source `kbutton_t` down[2]/impulse tracking — simultaneous bind sources and 0.25/0.75 partial-frame presses are lost. | — (substitution; verify justification still holds) |
-| IN_Impulse | number keys 1–8 → `input.setImpulse` | VERIFIED | exec `impulse 8` selected and fired the freshly picked-up dm3 LG (which discharged underwater for the authentic -99 — [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); impulse 9 correctly refused in DM. Number-key synthesis blocked by CoreGUI (platform note shared with the NQ row). | Battery steps in the evidence file |
+| IN_Impulse | number keys 1–8 + console "impulse N" → `input.setImpulse` (client-side like C — fixed 2026-07-05: it previously forwarded to the server, which ignores it) | VERIFIED | exec `impulse 8` selected and fired the freshly picked-up dm3 LG (which discharged underwater for the authentic -99 — [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); impulse 9 correctly refused in DM. Number-key synthesis blocked by CoreGUI (platform note shared with the NQ row). | Battery steps in the evidence file |
 | CL_KeyState | — | SUBSTITUTED | Digital 0/1 only (see above); QW's fractional key state depended on sub-frame press timing. | — (substitution; verify justification still holds) |
 | CL_AdjustAngles | — | UNIMPLEMENTED | No keyboard turn/look (+left/+right/+lookup/+lookdown); mouse-only via `input.updateTurn`. | ruled: IMPLEMENT (2026-07-05) — NQ parity keyboard turning |
 | CL_BaseMove | `input.sample` | VERIFIED | Real W and RQ_ForceForward both drove forwardmove over the wire (QW_SimOrg deltas in [evidence/qw-input-console-battery.txt](evidence/qw-input-console-battery.txt)); dead-player moves ignored until respawn (authentic). Speeds fixed — noted. | Battery steps in the evidence file |
@@ -110,7 +110,7 @@ C reference: `reference/quake-c/QW/client/`. Port: `src/shared/engine/qw/qwcl.lu
 | CL_LinkProjectiles | nails loop in `relinkEntities` (`spikeindex`) | VERIFIED | The wire half (CL_ParseProjectiles) is bit-exact tested: hand-packed 6-byte nail decodes to origin (100,-200,24) / pitch 90 / yaw 180 in test_qw_loopback; the link loop renders cl.nails through the same shared entrender path as every verified alias capture, spike.mdl slot from model_name like cl_spikeindex. | `lune run tests/test_qw_loopback.luau` |
 | CL_NewTempEntity | — | SUBSTITUTED | entrender pooled RenderEnts replace the cl_visedicts temp array (`beamPool`, keyed render ents). | — (substitution; verify justification still holds) |
 | CL_ParsePlayerinfo | `qwcl` `parsePlayerinfo` | VERIFIED | Loopback: own playerstate feeds prediction which converges; PF_MSEC state_time, PF_COMMAND delta cmd, PF_VELOCITY/MODEL/SKINNUM/EFFECTS/WEAPONFRAME flags all decoded. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
-| CL_AddFlagModels | — | UNIMPLEMENTED | CTF flag attachment; `cl.flagindex` located, attachment journaled open. | — (implement first) |
+| CL_AddFlagModels | `qwview.flagPlacement` + linkEnt in `relinkEntities` (EF_FLAG1/EF_FLAG2, skinnum by team) | VERIFIED | test_qwview flag battery: the full f-offset table exact vs C (axpain/pain/attack frames), the composition (reversed forward z, +22 right, -16 z, roll -45). Wire+carry half: test_scenario_ctf drives a real Threewave flag carrier over the wire; the carried-flag state is live-evidenced in [evidence/qw-ctf2m3-flag-carried.jpg](evidence/qw-ctf2m3-flag-carried.jpg). | `lune run tests/test_qwview.luau`; `lune run tests/test_scenario_ctf.luau` |
 | CL_LinkPlayers | players loop in `relinkEntities` | VERIFIED | Wire + extrapolation halves: the two-client scenario asserts alpha sees bravo's playerstate at the staged duel spot (test_scenario_qw) and predictedPlayerOrigins drives the loop; the lean now delegates to the shared C-truth-tested view.calcRoll (*4). Rendering rides the shared alias path. PF_DEAD/self skip in code. | `lune run tests/test_scenario_qw.luau`; `lune run tests/test_view.luau` |
 | CL_SetSolidEntities | `qwcl` `buildPhysents(false)` | VERIFIED | World + brush-model packet ents as physents; loopback prediction converges against them. | `lune run` full sweep (harness-cited; pin the exact test in the burn-down) |
 | CL_SetUpPlayerPrediction | `qwcl.predictedPlayerOrigins` | VERIFIED | Every loopback predictMove replay assembles predicted player physents (convergence <1 unit depends on it); the scenario adds a second live player to the set. | `lune run tests/test_qw_loopback.luau`; `lune run tests/test_scenario_qw.luau` |
@@ -157,13 +157,13 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | CL_InitTEnts | lazy `beamModelDef` + name-based `teSound` | SUBSTITUTED | Models/sounds resolved on first use instead of precached at init; same assets (bolt/bolt2/bolt3.mdl, tink/ric/exp sounds). | — (substitution; verify justification still holds) |
-| CL_ClearTEnts | — | UNIMPLEMENTED | Beams/pools not cleared on level reset; benign (0.2s beam lifetime) but a leak of pooled instances across maps. | — (implement first) |
-| CL_AllocExplosion | — | UNIMPLEMENTED | The `s_explod.spr` explosion sprite is omitted — TE_EXPLOSION renders particles+dlight+sound only. Visible fidelity delta. | — (implement first) |
+| CL_ClearTEnts | `qwview.clearTEnts` + qwclient levelResets block | VERIFIED | test_qwview: "CL_ClearTEnts: beams + explosions cleared" (the C memset); the port-side pooled beam render instances and prepared beam defs are released in the same levelResets block (code). | `lune run tests/test_qwview.luau` |
+| CL_AllocExplosion | `qwview.allocExplosion` (TE_EXPLOSION in `handleTempEntity`) | VERIFIED | test_qwview ring battery: free slots fill in order, full ring replaces the oldest (start-time scan exact vs C); live composite in [evidence/qw-explosion-sprite.jpg](evidence/qw-explosion-sprite.jpg) (s_explod fireball + particles at a rocket impact). | `lune run tests/test_qwview.luau`; stage per evidence/qw-explosion-sprite.txt |
 | CL_ParseBeam | wire: `qwcl` `parseTempEntity` (ent+start+end); slots: qwclient `parseBeam` | VERIFIED | Live LG beam on the QW boot ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)); entity-keyed reuse/free-slot/0.2s/MAX_BEAMS 8 per C in code. | Stage per the evidence file |
 | CL_ParseTEnt | `qwcl` `parseTempEntity` + qwclient `handleTempEntity` | VERIFIED | [evidence/qw-fire-muzzleflash.jpg](evidence/qw-fire-muzzleflash.jpg): TE_GUNSHOT impact puff at the wall hit point; particle counts/colors for the effect family are offline-tested in test_particles2 (shared particlesim). | Stage per evidence/qw-fire-muzzleflash.txt; `lune run tests/test_particles2.luau` |
 | CL_NewTempEntity | — | SUBSTITUTED | See cl_ents.c row: pooled entrender instances. | — (substitution; verify justification still holds) |
 | CL_UpdateBeams | qwclient `updateBeams` | VERIFIED | The captured bolt shows the 30-unit random-roll segments pinned muzzle-to-impact while held ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)). Delta stands: pooled parts hidden at -10000 z. | Stage per the evidence file |
-| CL_UpdateExplosions | — | UNIMPLEMENTED | Sprite frame animation (goes with CL_AllocExplosion). | — (implement first) |
+| CL_UpdateExplosions | `qwview.explosionFrame` + the explosion loop in `relinkEntities` | VERIFIED | test_qwview frame battery: f = floor(10*(time-start)), frame 0 at start, truncation, expiry at numframes (slot freed); the animated sprite renders live in [evidence/qw-explosion-sprite.jpg](evidence/qw-explosion-sprite.jpg). | `lune run tests/test_qwview.luau` |
 | CL_UpdateTEnts | heartbeat drain (`handleTempEntity` loop + `updateBeams`) | VERIFIED | The drain's outputs are the committed QW tent set: muzzleflash, gunshot puffs, rocket splash, and now the live beam ([evidence/qw-lightning-beam.jpg](evidence/qw-lightning-beam.jpg) + [.txt](evidence/qw-lightning-beam.txt)). | Stage per the evidence files |
 
 ## view.c
@@ -174,9 +174,9 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | V_CalcBob | shared view.calcBob (camera block delegates) | VERIFIED | The inline copy now delegates to the shared, C-truth-tested view.calcBob (test_view: cycle split, blend, clamps). | `lune run tests/test_view.luau` |
 | V_StartPitchDrift / V_StopPitchDrift / V_DriftPitch | — | UNIMPLEMENTED | Pitch drift is keyboard-look-era behavior; mouse-look always on. | ruled: IMPLEMENT (2026-07-05) |
 | BuildGammaTable / V_CheckGamma | shared texture path (gamma 0.7) | SUBSTITUTED | Gamma baked into palette conversion in the shared textures module; no runtime table. | — (substitution; verify justification still holds) |
-| V_ParseDamage | `svc_damage` → `cl.damage` in qwcl | VERIFIED | test_scenario_qw: "svc_damage reached the victim" (save/take/from parsed); the Studio-side kick/cshift application is covered by the punchangle-absence check + the cshift row. | `lune run tests/test_scenario_qw.luau` |
-| V_cshift_f / V_BonusFlash_f | — | UNIMPLEMENTED | Screen color shifts absent. | — (implement first) |
-| V_SetContentsColor / V_CalcPowerupCshift / V_CalcBlend / V_UpdatePalette | — | UNIMPLEMENTED | No underwater/powerup/damage palette blends in the QW boot (NQ fidelity backlog too). | — (implement first) |
+| V_ParseDamage | `svc_damage` → `cl.damage` in qwcl → `qwview.parseDamage` | VERIFIED | Wire: test_scenario_qw "svc_damage reached the victim". Consumer: test_qwview damage battery — count floor 10, 3*count percent with the 150 cap, armor-vs-blood colors {200,100,100}/{220,50,50}/{255,0,0}, kick roll/pitch = count*dot*0.6 with v_kicktime 0.5. | `lune run tests/test_scenario_qw.luau`; `lune run tests/test_qwview.luau` |
+| V_cshift_f / V_BonusFlash_f | `qwview.cshiftCmd` (console cmd + stufftext) / `qwview.bonusFlash` ("bf" stufftext + console cmd) | VERIFIED | test_qwview: v_cshift writes cshift_empty (not the live shift) and empty contents pick it up, atoi zero-fill; bonus {215,186,69,50} with the 100/s drop. Live: [evidence/qw-vcshift-dead-teamoverlay.jpg](evidence/qw-vcshift-dead-teamoverlay.jpg) — "v_cshift 0 0 255 120" blends the whole view blue. | `lune run tests/test_qwview.luau`; stage per the evidence .txt |
+| V_SetContentsColor / V_CalcPowerupCshift / V_CalcBlend / V_UpdatePalette | `qwview` blend pipeline consumed by the qwclient heartbeat (view-leaf contents → cshiftFrame) | VERIFIED | test_qwview batteries: lava/slime/solid/water/empty shift values exact, quad>suit>ring>pent priority + values, the V_UpdatePalette 150/s + 100/s drops, V_CalcBlend hand-derived two-shift anchor + alpha clamp. Live composite: [evidence/qw-cshift-water.jpg](evidence/qw-cshift-water.jpg) (underwater tint over the dm3 water channel). | `lune run tests/test_qwview.luau`; stage per evidence/qw-cshift-water.txt |
 | angledelta / CalcGunAngle | — | UNIMPLEMENTED | Gun yaw/pitch lag not ported; gun uses view angles directly. | — (implement first) |
 | V_BoundOffsets | — | N/A | 14-unit eye clamp vs entity origin; prediction keeps eye on simorg so drift can't occur. N/A: condition structurally impossible in port (eye pinned to simorg). | — (implement first) |
 | V_AddIdle | — | UNIMPLEMENTED | v_idlescale sway (intermission idle) absent. | — (implement first) |
@@ -189,19 +189,22 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 
 ## sbar.c (status bar / scoreboard)
 
-Entire file UNIMPLEMENTED for the QW boot — journaled as "QW sbar/console/scoreboard overlay (biggest remaining UX gap)". The data side is live (`cl.stats`, `cl.players` frags/ping verified in loopback); the NQ boot's `src/client/hud.luau` draws an NQ sbar but is not wired to QW state.
+The QW boot drives the shared sbar.c port (`src/client/hud.luau`) through a qwcl adapter in qwclient.luau (`updateHudAdapter` + `hudlib.updateOverlaysQW`); scoreboard sorting lives in the offline-tested `qwview` module. Main bar, DM rankings, team overlay, and the mini overlay are all live-evidenced.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | Sbar_ShowScores / Sbar_DontShowScores | qwclient execCommand +/-showscores → hudlib.setShowScores | VERIFIED | Implemented 2026-07-04 (the TAB binds); [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) shows the overlay raised via +showscores. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
-| Sbar_ShowTeamScores / Sbar_DontShowTeamScores | — | UNIMPLEMENTED | +showteamscores keys (teamplay overlay absent). | — (implement first) |
-| Sbar_Changed / Sbar_Init | — | UNIMPLEMENTED | | — (implement first) |
-| Sbar_DrawPic / Sbar_DrawSubPic / Sbar_DrawTransPic / Sbar_DrawCharacter / Sbar_DrawString / Sbar_itoa / Sbar_DrawNum | — | UNIMPLEMENTED | Drawing primitives (NQ hud.luau has equivalents to reuse). | — (implement first) |
-| Sbar_SortFrags / Sbar_SortTeams | — | UNIMPLEMENTED | Data available in `cl.players`. | — (implement first) |
-| Sbar_SoloScoreboard / Sbar_DrawInventory / Sbar_DrawFrags / Sbar_DrawFace / Sbar_DrawNormal / Sbar_Draw | — | UNIMPLEMENTED | | — (implement first) |
+| Sbar_ShowTeamScores / Sbar_DontShowTeamScores | qwclient execCommand +/-showteamscores → `hudlib.setShowTeamScores` | VERIFIED | [evidence/qw-team-overlay.jpg](evidence/qw-team-overlay.jpg): the team overlay raised via "+showteamscores" (RQDBG battery per the .txt). | Console "+showteamscores" per evidence/qw-team-overlay.txt, capture, compare |
+| Sbar_Changed / Sbar_Init | sig-diff rebuild in `updateOverlaysQW` + lazy `getPic` loads (hud.create) | SUBSTITUTED | Sbar_Changed's dirty-flag redraw is replaced by the signature-diff overlay rebuild plus retained-mode GUI widget updates (no framebuffer to re-blit); Sbar_Init's pic precache is replaced by lazy gfx.wad pic loads on first draw through the shared image page. Both serve the same purpose: draw only what changed, have the pics when needed. | code: hud.luau updateOverlaysQW sig / getPic |
+| Sbar_DrawPic / Sbar_DrawSubPic / Sbar_DrawTransPic / Sbar_DrawCharacter / Sbar_DrawString / Sbar_itoa / Sbar_DrawNum | hudlib `setPic`/`charPic`/`drawNum`/`interText`/`interFill` + confont rows | VERIFIED | Every committed QW sbar capture renders through these primitives: main bar pics/nums ([evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg)), conchars strings + Draw_Fill bars ([evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg), [evidence/qw-team-overlay.jpg](evidence/qw-team-overlay.jpg)). | Any QW sbar capture procedure (S4 anchor / scoreboard evidence files) |
+| Sbar_SortFrags / Sbar_SortTeams | `qwview.sortFrags` / `qwview.sortTeams` (hudlib consumes) | VERIFIED | test_qwview: frags descending with the C bubble-sort tie stability, spectator exclusion + the includespec -999 quirk; team aggregation (frags/players), ping low/high/total, teamplay-0 early-out. | `lune run tests/test_qwview.luau` |
+| Sbar_SoloScoreboard / Sbar_DrawInventory / Sbar_DrawFace / Sbar_DrawNormal / Sbar_Draw | hudlib `update` via the qwcl adapter | VERIFIED | The full main-bar composite is the committed S4 anchor ([evidence/qw-dm3-stairs.jpg](evidence/qw-dm3-stairs.jpg): sbar + ibar with live stats) and every subsequent QW capture (face pain/dead states visible across the burn-down set); solo scoreboard fields are the same shared hudlib rows evidenced by nq-solo-scoreboard.jpg. | S4 anchor procedure; `lune run tests/test_qw_loopback.luau` (stats wire) |
+| Sbar_DrawFrags | — | UNIMPLEMENTED | The 4-cell in-sbar frag row (drawn when sb_lines > 24) is absent in both boots — queued with the NQ HUD odds cluster. | — (implement with nq Sbar_DrawFrags) |
 | Sbar_DeathmatchOverlay | hudlib QW overlay driver ("dm" mode) | VERIFIED | [evidence/qw-dm-scoreboard.jpg](evidence/qw-dm-scoreboard.jpg) + .txt: RANKINGS plaque with the QW ping/pl/time/frags/name columns and self-row highlight. | Console "+showscores" per evidence/qw-dm-scoreboard.txt, capture, compare |
 | Sbar_IntermissionOverlay / Sbar_IntermissionNumber | hudlib driver shows the DM overlay at intermission (authentic QW behaviour) | VERIFIED | svc_intermission inputs crafted-tested (test_qw_cam); the overlay it raises is the visually-verified DM scoreboard (qw-dm-scoreboard evidence) with Draw_Fill bars and the shared number pics. | `lune run tests/test_qw_cam.luau`; qw-dm-scoreboard evidence |
-| Sbar_TeamOverlay / Sbar_MiniDeathmatchOverlay / Sbar_FinaleOverlay | absent | UNIMPLEMENTED | Team overlay needs teamplay contexts, the mini overlay a viewsize<100 side list, finale a QW episode end — none reachable in the current solo-dev loop; implement when those contexts land. | — |
+| Sbar_TeamOverlay | hudlib `buildQWTeamOverlay` (+ the dead/teamplay gate in `updateOverlaysQW`) | VERIFIED | [evidence/qw-team-overlay.jpg](evidence/qw-team-overlay.jpg): low/avg/high header, team row with own-team brackets, appended teamplay-column player list; [evidence/qw-vcshift-dead-teamoverlay.jpg](evidence/qw-vcshift-dead-teamoverlay.jpg) proves the authentic dead→TeamOverlay branch (no TAB held). Aggregation offline-tested (test_qwview sortTeams). | Stage per evidence/qw-team-overlay.txt; `lune run tests/test_qwview.luau` |
+| Sbar_MiniDeathmatchOverlay | hudlib `updateMiniOverlayQW` | VERIFIED | [evidence/qw-minidm-overlay.jpg](evidence/qw-minidm-overlay.jpg): the frags/name strip right of the sbar (color fills, %3i frags, own-row brackets, name; team column in the teamplay captures), windowed around self in the sortFrags(false) order. C gates preserved: sb_lines > 0, numlines >= 3, vid.width >= 512. | Stage per evidence/qw-minidm-overlay.txt, capture, compare |
+| Sbar_FinaleOverlay | "finale" mode in `updateOverlaysQW` (gfx/finale.lmp centered, y=16) | VERIFIED | Wire half: test_qw_cam crafted svc_finale (intermission=2 + finale text into the centerprint sink). Draw half is the shared interLmp path live-evidenced by the NQ finale capture ([evidence/nq-finale-overlay.jpg](evidence/nq-finale-overlay.jpg)) — same code, same pic family. | `lune run tests/test_qw_cam.luau`; nq-finale-overlay evidence (shared path) |
 
 ## screen.c
 
@@ -344,13 +347,15 @@ Base MSG_Read/Write* live in the shared `src/shared/engine/common/msg.luau` (cov
 
 ## wad.c / draw.c (2D assets & drawing — as relevant)
 
-The QW boot currently has **no 2D overlay** (sbar/console/menu all above). The shared NQ modules (`render/textures.luau`, `render/confont.luau`, `hud.luau`, `console.luau`; wad parsing verified by `tests/test_wad.luau`) are the planned substrate.
+The QW boot's 2D overlay runs on the shared modules (`render/textures.luau`, `render/confont.luau`, `hud.luau`, `console.luau`; wad parsing verified by `tests/test_wad.luau`) — sbar, scoreboards, console, chat line and cshift blends all live-evidenced above.
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
 | W_CleanupName / W_LoadWadFile / W_GetLumpName / W_GetLumpNum / SwapPic | shared wad module (both boots via hudlib) | VERIFIED | Stale row: the QW boot's sbar/HUD pics come from gfx.wad through the same shared wad module (every committed QW sbar capture shows them); the module itself is test-covered. | `lune run tests/test_wad.luau`; any QW sbar capture |
-| Draw_Init / Draw_Character / Draw_String / Draw_Alt_String / Draw_Pic / Draw_SubPic / Draw_TransPic / Draw_TransPicTranslate / Draw_ConsoleBackground / Draw_TileClear / Draw_Fill / Draw_FadeScreen | NQ confont/hud equivalents | UNIMPLEMENTED (QW boot) | Awaits the QW sbar/console overlay. |
-| Draw_Pixel / Draw_Crosshair | — | UNIMPLEMENTED | No crosshair in the QW boot. | — (implement first) |
+| Draw_Init / Draw_Character / Draw_String / Draw_Alt_String / Draw_Pic / Draw_SubPic / Draw_TransPic / Draw_TransPicTranslate / Draw_ConsoleBackground / Draw_Fill | shared confont rows + hudlib pics/fills + consolelib conback (TransPicTranslate via `textures.translatePixels`) | VERIFIED | The committed QW capture set renders through every one of them: conchars strings + alt (bronze) text and the conback ([evidence/qw-console-open.jpg](evidence/qw-console-open.jpg)), wad pics/subpics + palette fills across the sbar/scoreboard captures, translated pixels tested in test_qwview. | qw-console-open + scoreboard evidence procedures; `lune run tests/test_wad.luau` |
+| Draw_TileClear | opaque `sbarStrip` frame (hudlib) | SUBSTITUTED | TileClear's job in the sbar path is erasing the world behind the bar area; the port parks an opaque full-width strip there instead (viewsize-driven), so there is never anything to clear. | code: hud.luau sbarStrip; viewsize captures |
+| Draw_FadeScreen | — | UNIMPLEMENTED | Menu backdrop dim; lands with the QW menu.c work. | — (implement with menu.c) |
+| Draw_Pixel / Draw_Crosshair | — | UNIMPLEMENTED | No crosshair in the QW boot (the NQ boot draws the conchars '+'; port that block). | — (implement first) |
 | Draw_DebugChar / Draw_CharToConback / R_DrawRect8 / R_DrawRect16 / Draw_BeginDisc / Draw_EndDisc | — | SUBSTITUTED | Software-framebuffer plumbing (disc = disk-access icon); no framebuffer exists. | — (substitution; verify justification still holds) |
 
 ## Rasterizer files — substituted groups (Roblox EditableMesh renderer)
@@ -404,19 +409,21 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 
 | Status | Rows |
 |---|---|---|
-| VERIFIED | 119 |
+| VERIFIED | 134 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 53 |
-| SUBSTITUTED | 51 |
+| UNIMPLEMENTED | 42 |
+| SUBSTITUTED | 53 |
 | N/A | 5 |
-| **Total rows** | **226** |
+| **Total rows** | **234** |
 
-Highest-impact gaps (all journaled in the backlog):
-1. **sbar.c/console.c live proof** — HUD, console and chat line are wired (hudlib + consolelib) but all rows sit at PENDING until a Studio screenshot verifies them.
-2. **cl_cam.c flyby search** — spectator autocam is chase-lock only (InitFlyby/Cam_TryFlyby camera positioning not ported); needs live spectator verification.
-3. **CL_AllocExplosion / CL_UpdateExplosions** — `s_explod.spr` explosion sprite omitted (particles/dlight/sound only).
-4. **V_ParseDamage consumers + cshifts** — damage parsed but no view kick or screen blends (`V_Calc*Cshift`, `V_UpdatePalette` family).
-5. **CL_NewTranslation / skin colormaps + CL_AddFlagModels** — no player color translation or CTF flag attachment (flagindex ready).
-Also noteworthy: PM_WaterMove/CheckWaterJump are ported verbatim but the C ground-truth course never enters water; S_UpdateAmbientSounds and sound clearing on level change are unwired in the QW boot.
+Counts are the mechanical status-column count (2026-07-05 presentation pass;
+the previous 53-UNIMPLEMENTED total under-counted by one vs the same method).
+
+Remaining gaps (burn-down queue):
+1. **cl_cam.c flyby search** — spectator autocam is chase-lock only (InitFlyby/Cam_TryFlyby camera positioning not ported).
+2. **menu.c / keys.c binds / demo file I/O** — no QW menus, bind system, or .qwd record/playback.
+3. **Console command odds** — version/users/userinfo editing, tab completion (ruled IMPLEMENT set).
+4. **Sbar_DrawFrags** — the in-sbar 4-cell frag row (shared with the NQ HUD odds cluster).
+Also noteworthy: S_UpdateAmbientSounds is unwired in the QW boot (no water/sky ambients).
 
 > Evidence reset 2026-07-04: VERIFIED now means re-runnable evidence only (a cited test/harness). 10 rows demoted to PENDING with their prior claims preserved inline (marked DEMOTED); re-earn via tests or checked-in screenshots under docs/coverage/evidence/.

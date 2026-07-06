@@ -1,0 +1,16 @@
+Capture context: qw-cshift-water.jpg (2026-07-05)
+==================================================
+Engine: QW boot (engine="qw"), dm3, id1. Player teleported into the
+dm3 water channel (SVDBG_SetOrigin 1060 -380 -330; settled at z=-392,
+eye z=-370, CONTENTS_WATER — the deep-water point was located by an
+offline BSP pointInLeaf scan).
+
+Shows: V_SetContentsColor's CONTENTS_WATER shift {130,80,50,128}
+blended over the whole view by V_CalcBlend (both offline-tested in
+tests/test_qwview.luau; this capture is the live composite through
+qwclient's cshiftFrame). The b_shell ammo box and world geometry are
+visible THROUGH the tint — a blend, not an opaque overlay. The mini
+DM overlay row (team column "RED") rides the sbar at right.
+
+Re-verify: boot engine=qw dm3, SVDBG_SetOrigin 1060 -380 -330,
+capture underwater.

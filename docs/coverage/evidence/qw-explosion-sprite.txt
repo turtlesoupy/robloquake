@@ -1,0 +1,18 @@
+Capture context: qw-explosion-sprite.jpg (2026-07-05)
+======================================================
+Engine: QW boot (engine="qw"), dm3, id1. Player picked up the dm3
+rocket launcher (walk-over at 1520 496 -112), impulse 7 through the
+new client-side IN_Impulse path, sustained fire against the gold
+pillar beside the RL platform (survivable splash: health 22 after).
+
+Shows: TE_EXPLOSION's full client composite mid-animation —
+1. CL_AllocExplosion / CL_UpdateExplosions: the s_explod.spr sprite
+   fireball rendered at the impact point at its 10 Hz frame (ring +
+   frame math offline-tested in tests/test_qwview.luau).
+2. R_ParticleExplosion's ramp particles flying (offline-tested in
+   tests/test_particles2.luau).
+The explosion dlight + r_exp3 sound ride the same event (dlight pair
+evidenced separately under NQ).
+
+Re-verify: boot engine=qw dm3, grab the RL (1520 496 -112), fire at a
+wall ~150+ units away, capture within 0.6s of impact.

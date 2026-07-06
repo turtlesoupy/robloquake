@@ -146,4 +146,18 @@ do
 	t.check(math.abs(S.cl.simangles.y - 90) < 1.5, "intermission pins simangles")
 end
 
+-- svc_finale: intermission 2 (Sbar_FinaleOverlay's gate) + the finale
+-- text riding the centerprint sink
+do
+	local msg = require("../src/shared/engine/common/msg")
+	local sb = msg.newBuf(64)
+	msg.writeByte(sb, qwp.svc_finale)
+	msg.writeString(sb, "the end")
+	local pkt = buffer.create(sb.cursize)
+	buffer.copy(pkt, 0, sb.data, 0, sb.cursize)
+	qwcl.parseServerMessage(S.cl, msg.reader(pkt))
+	t.eq(S.cl.intermission, 2, "svc_finale sets intermission 2")
+	t.eq(S.cl.centerprints[#S.cl.centerprints], "the end", "finale text rides centerprints")
+end
+
 t.finish("test_qw_cam")

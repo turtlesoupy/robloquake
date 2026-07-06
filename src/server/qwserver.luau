@@ -66,6 +66,10 @@ return function(ctx: Ctx)
 		local v = ctx.assets:GetAttribute(name)
 		if typeof(v) == "number" then
 			cvarlib.setValue(svr.cvars, name, v)
+			-- these are CVAR_SERVERINFO cvars in C (sv_main.c SV_InitLocal):
+			-- setting one mirrors into the serverinfo string the clients
+			-- read (teamplay gates Sbar_TeamOverlay client-side)
+			svr.serverinfo[name] = tostring(v)
 			print(`[robloquake] {name} = {v}`)
 		end
 	end
