@@ -16,7 +16,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_EstablishConnection | clc_nop hello over RemoteEvent | SUBSTITUTED | no sockets; server connects the client when it first hears from it | — (substitution; verify justification still holds) |
 | CL_SignonReply | cl.luau signonReply | VERIFIED | tests/test_loopback.luau: "client fully signed on" (prespawn/name/color/spawn/begin) | `lune run tests/test_loopback.luau` |
 | CL_NextDemo | — | UNIMPLEMENTED | no startdemos attract-loop cycling; playdemo is manual | — (implement first) |
-| CL_PrintEntities_f | — | UNIMPLEMENTED | RQ_VisEnts workspace attribute is the debug substitute | — (implement first) |
+| CL_PrintEntities_f | — | SUBSTITUTED | RQ_VisEnts workspace attribute is the debug substitute. SUBSTITUTED: RQ_VisEnts workspace attribute + the RQDBG hook family serve entity inspection (ruling 2026-07-05). | — (implement first) |
 | SetPal | — | SUBSTITUTED | no hardware palette; cshift Frame tint covers the visible effect | — (substitution; verify justification still holds) |
 | CL_AllocDlight | init.client allocDlight | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the rocket explosion allocates a dlight whose radial wash re-lights the floor mid-flash. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
 | CL_DecayLights | heartbeat decay pass | VERIFIED | [evidence/nq-explosion-dlight.jpg](evidence/nq-explosion-dlight.jpg) + [decayed pair](evidence/nq-explosion-decayed.jpg) + .txt: the wash is gone 1.2s after unpause — radius decay + die gate. | Pause-freeze procedure per evidence/nq-explosion-dlight.txt, capture pair, compare |
@@ -63,8 +63,8 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | CL_Stop_f | `stop` command | VERIFIED | test_demo: stop closes the blob; live: "Completed demo (N bytes, ...)". Delta: demo kept in memory, not a file. | `lune run tests/test_demo.luau` |
 | CL_Record_f | `record` command | VERIFIED | test_demo (writer); live: bare `record` while connected now REFUSES with C's exact message (was silently producing signon-less demos that play back frozen — 2026-07-04 fix), and `record <name> <map>` runs the map first so the fresh signon is captured, as C. | `lune run tests/test_demo.luau`; RQDBG_Console: `record x` while connected shows the refusal |
 | CL_PlayDemo_f | `playdemo` command | VERIFIED | test_demo: track-line skip + signon replay from a recorded blob (fresh and reused clients); demo1.dem plays live in Studio (camera runs the recorded course, pickup prints replay). Same open Studio-glue note as CL_GetMessage for self-recorded demos. | `lune run tests/test_demo.luau` |
-| CL_FinishTimeDemo | — | UNIMPLEMENTED | no timedemo benchmarking | — (implement first) |
-| CL_TimeDemo_f | — | UNIMPLEMENTED | no timedemo benchmarking | — (implement first) |
+| CL_FinishTimeDemo | — | N/A | no timedemo benchmarking. N/A: timedemo premise (fixed-timestep benchmark) void under the 60Hz substitution; Studio profiler covers perf. | — (implement first) |
+| CL_TimeDemo_f | — | N/A | no timedemo benchmarking. N/A: as CL_FinishTimeDemo. | — (implement first) |
 
 ## cl_tent.c
 
@@ -173,7 +173,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | Con_Init | console.create | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: conback + id watermark drawn (Draw_ConsoleBackground). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_Linefeed | implicit in print | SUBSTITUTED | | — (substitution; verify justification still holds) |
 | Con_Print | console.print | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: scrollback renders the battery lines. Delta: hard wrap at 64 cols, 200-line scrollback vs 16K text buffer. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Con_DebugLog | — | UNIMPLEMENTED | | — (implement first) |
+| Con_DebugLog | — | N/A | N/A: file logging without a writable filesystem; Studio output log covers it. | — (implement first) |
 | Con_Printf | c.print → console + notify + output | VERIFIED | [evidence/nq-console-open.jpg](evidence/nq-console-open.jpg) + .txt: c.print output (VERSION banner, cvar prints) lands in the console. | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
 | Con_DPrintf | plain print() | UNIMPLEMENTED | no developer cvar gate | — (implement first) |
 | Con_SafePrintf | — | UNIMPLEMENTED | no screen-disable variant needed | — (implement first) |
@@ -233,7 +233,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 |---|---|---|---|---|
 | Draw_Init | confont/textures lazy init | VERIFIED | conchars/wad pic pipelines feed every committed capture (console text, sbar pics, menu plaques); lazy init is the only delta from C. FIDELITY FIX 2026-07-04 (playtest "more dark textures"): editable-asset bindings draw from a session-limited pool and creations past its state render BLACK with healthy CPU pixels — the font is now ONE 128x128 sheet addressed by ImageRectOffset (was one image per glyph, 40 live) and sbar/intermission pics pack into one shared 512 page (textures.newImagePage/pageAlloc); e1m1 steady state dropped 140 -> 77 distinct images. The pool trigger is CUMULATIVE, not live count (black seen at 87 live; dynamic-EM canary REFUSED at 47k live verts) — investigation open, see tools/verify_editablepool.luau. | Any Play capture with the console open |
 | Draw_Character / Draw_String | confont glyph labels (color 0 transparent) | VERIFIED | Confont glyph rendering across all three captures (console text, scoreboard fields, plaque). | RQDBG_Console battery per evidence/nq-console-open.txt, capture, compare |
-| Draw_DebugChar | — | UNIMPLEMENTED | | — (implement first) |
+| Draw_DebugChar | — | N/A | N/A: dev tooling ruled out 2026-07-05 (Studio profiler/debugger is this port's equivalent). | — (implement first) |
 | Draw_Pic / Draw_TransPic | textures.createImage + ImageLabel (255 transparent) | VERIFIED | Transparent-pic compositing is visible in the committed menu/help/plaque captures (MAIN plaque, QUAKE sidebar and spinner cursor drawn over the 3D view with index-255 holes — nq-menu-cursor-help.jpg, nq-help-page1/2.jpg). | Open the menu, capture, compare |
 | Draw_TransPicTranslate | — | UNIMPLEMENTED | only the setup menu used it | — (implement first) |
 | Draw_CharToConback | — | UNIMPLEMENTED | no version string stamped on conback | — (implement first) |
@@ -343,7 +343,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 
 | Function | Port | Status | Evidence / Delta | How to verify |
 |---|---|---|---|---|
-| R_CheckVariables / Show / R_TimeRefresh_f / R_LineGraph / R_TimeGraph / R_PrintTimes / R_PrintDSpeeds / R_PrintAliasStats | — | UNIMPLEMENTED | developer profiling/graph tools | — (implement first) |
+| R_CheckVariables / Show / R_TimeRefresh_f / R_LineGraph / R_TimeGraph / R_PrintTimes / R_PrintDSpeeds / R_PrintAliasStats | — | N/A | developer profiling/graph tools. N/A: dev tooling ruled out 2026-07-05 (Studio profiler/debugger is this port's equivalent). | — (implement first) |
 | WarpPalette | — | SUBSTITUTED | no palette; underwater cshift handled by V_SetContentsColor tint | — (substitution; verify justification still holds) |
 | R_TransformFrustum / TransformVector / R_TransformPlane / R_SetUpFrustumIndexes | — | SUBSTITUTED | GPU frustum | — (substitution; verify justification still holds) |
 | R_SetupFrame | heartbeat refdef + diag attributes | SUBSTITUTED | per-frame software state replaced by camera CFrame set | — (substitution; verify justification still holds) |
@@ -356,7 +356,7 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 | R_DarkFieldParticles | — | N/A | dead code in WinQuake (QUAKE2 #ifdef) — justified omission. N/A: dead in C (QUAKE2 ifdef). | — (implement first) |
 | R_EntityParticles | particles.entityParticles (renders the verified particlesim core) | VERIFIED | test_particles2: 162 anorm particles, color 0x6f, die +0.01, orgs on the 64±16 shell (real anorms.h table). | `lune run tests/test_particles2.luau` |
 | R_ClearParticles | — | UNIMPLEMENTED | no explicit clear on map change; particles age out by die time (masks it) | — (implement first) |
-| R_ReadPointFile_f | — | UNIMPLEMENTED | dev leak-hunting tool | — (implement first) |
+| R_ReadPointFile_f | — | N/A | dev leak-hunting tool. N/A: needs compile-time .pts files that never exist here. | — (implement first) |
 | R_ParseParticleEffect | cl.luau svc_particle → particles.runEffect | VERIFIED | test_particles2 wire-parse battery: org coords, dir chars * 1/16, color byte, plain count pass-through, and the 255→1024 rocket-explosion escape. FIDELITY FIX 2026-07-04: the escape was MISSING (255 spawned 255 slowgrav sparks instead of a 1024-particle explosion); now applied in cl.luau exactly where C does it. | `lune run tests/test_particles2.luau` |
 | R_ParticleExplosion | particles.explosion | VERIFIED | test_particles2 explosion battery: 1024 particles, 512/512 pt_explode/pt_explode2 on i&1, color ramp1[0]=0x6f, die +5, ramp rand&3, org ±16, vel ±256. Noted delta: C interleaves org/vel rand() draws per axis, port draws org's three then vel's three (same distribution). | `lune run tests/test_particles2.luau` |
 | R_ParticleExplosion2 | particlesim.particleExplosion2 | VERIFIED | tests/test_particles2.luau: 512 particles, color colorStart+(i%colorLength), die +0.3, all pt_blob, ±16 org / ±256 vel | `lune run tests/test_particles2.luau` |
@@ -461,9 +461,9 @@ Evidence for VERIFIED cites `tests/*` or a FIDELITY.md record; nothing is invent
 - Rows: 264 (grouped stub/family rows counted once; d_* group = 12 rows, gl_* group = 1 row)
 - VERIFIED: 131
 - PENDING: 0
-- UNIMPLEMENTED: 43
-- SUBSTITUTED: 71
-- N/A: 19
+- UNIMPLEMENTED: 36
+- SUBSTITUTED: 72
+- N/A: 25
 - Port-side additions: 18 (all justified; RQ_LightTick has only a weak/implied justification)
 
 

@@ -230,7 +230,7 @@ parses (test_bsp/test_models headers).
 | Mod_LoadSpriteFrame (model.c:1669) | models/spr.luau:loadFrame | VERIFIED | test_models: s_explod frame origin/size/pixels exact | `lune run tests/test_models.luau` |
 | Mod_LoadSpriteGroup (model.c:1726) | spr.luau:load (group branch) | VERIFIED | test_models: grouped sprites load (s_bubble/s_light) | `lune run tests/test_models.luau` |
 | Mod_LoadSpriteModel (model.c:1778) | spr.luau:load | VERIFIED | test_models: type/maxwidth/numframes | `lune run tests/test_models.luau` |
-| Mod_Print (model.c:1857) | — | UNIMPLEMENTED | debug console command | — (implement first) |
+| Mod_Print (model.c:1857) | — | N/A | debug console command. N/A: dev tooling ruled out 2026-07-05 (Studio profiler/debugger is this port's equivalent). | — (implement first) |
 
 ## world.c
 
@@ -632,9 +632,9 @@ socket entries), so the rows cover ~490 C function definitions.
 |---|---|---|
 | VERIFIED | 279 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 27 |
+| UNIMPLEMENTED | 26 |
 | SUBSTITUTED | 110 |
-| N/A | 35 |
+| N/A | 36 |
 
 Notes on the UNIMPLEMENTED bucket: 13 of the 49 are dead code in the WinQuake NQ build
 (QUAKE2/FPS_20/#if 0 ifdefs or PF_Fixme slots); most of the rest are console/debug

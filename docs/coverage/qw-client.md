@@ -150,7 +150,7 @@ All demo functionality is out of scope for the milestone (fidelity backlog lists
 | CL_GetMessage | `qwcl.processPacket` | SUBSTITUTED | The demo-vs-net dispatch collapses to the remote packet queue. | — (substitution; verify justification still holds) |
 | CL_Stop_f / CL_Record_f / CL_ReRecord_f / CL_PlayDemo_f | — | UNIMPLEMENTED | | — (implement first) |
 | CL_WriteRecordDemoMessage / CL_WriteSetDemoMessage | — | UNIMPLEMENTED | | — (implement first) |
-| CL_FinishTimeDemo / CL_TimeDemo_f | — | UNIMPLEMENTED | | — (implement first) |
+| CL_FinishTimeDemo / CL_TimeDemo_f | — | N/A | N/A: as the NQ timedemo rows. | — (implement first) |
 
 ## cl_tent.c
 
@@ -406,9 +406,9 @@ Rows count grouped one-liner families (IN_* wrappers, menu triads, upload/downlo
 |---|---|---|
 | VERIFIED | 119 |
 | PENDING | 0 |
-| UNIMPLEMENTED | 54 |
+| UNIMPLEMENTED | 53 |
 | SUBSTITUTED | 51 |
-| N/A | 4 |
+| N/A | 5 |
 | **Total rows** | **226** |
 
 Highest-impact gaps (all journaled in the backlog):
