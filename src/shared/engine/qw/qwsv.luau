@@ -63,6 +63,7 @@ export type Client = {
 	lossage: number,
 	connection_started: number,
 	userid: number,
+	sendinfo: boolean, -- at end of frame, send info to all (new connect)
 	send_message: boolean, -- reply owed: one datagram per received packet
 	send: ((packet: buffer) -> ())?, -- transport hook (remote/loopback)
 }
@@ -144,6 +145,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			lossage = 0,
 			connection_started = 0,
 			userid = i,
+			sendinfo = false,
 			send_message = false,
 			send = nil,
 		}
@@ -528,6 +530,7 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	end
 	svr.usercount = (svr.usercount or 0) + 1
 	client.userid = svr.usercount
+	client.sendinfo = true
 	return client
 end
 
@@ -2151,6 +2154,10 @@ function qwsv.updateToReliableMessages(svr: any)
 		local hc: Client = svr.clients[i]
 		if not (hc.active and hc.spawned) then
 			continue
+		end
+		if hc.sendinfo then
+			hc.sendinfo = false
+			qwsv.fullClientUpdate(svr, hc, svr.reliable_datagram)
 		end
 		local frags = trunc(vmlib.edFloat(hc.edict, ent.frags))
 		if (hc :: any).old_frags ~= frags then

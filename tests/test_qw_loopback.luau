@@ -415,6 +415,20 @@ do
 	t.check(out.cursize > size0, "fullClientUpdateToClient writes the update onto the target netchan")
 end
 
+-- late joiner announced to already-connected clients: SVC_DirectConnect
+-- sets sendinfo, SV_UpdateToReliableMessages flushes the full client
+-- update into sv.reliable_datagram (the playtest bug: player 2's name
+-- never reached player 1's scoreboard)
+do
+	t.check(cl.players[1] == nil or (cl.players[1].name or "") == "", "slot 1 empty before the late join")
+	qwsv.connectClient(svr, 2, { name = "latecomer" })
+	t.check(svr.clients[2].sendinfo, "connect sets sendinfo (SVC_DirectConnect)")
+	tick(0)
+	tick(0)
+	t.check(not svr.clients[2].sendinfo, "sendinfo consumed by SV_UpdateToReliableMessages")
+	t.check(cl.players[1] ~= nil and cl.players[1].name == "latecomer", "existing client received the joiner's userinfo (name on the scoreboard)")
+end
+
 
 -- CL_Disconnect (svc_disconnect handler)
 do
