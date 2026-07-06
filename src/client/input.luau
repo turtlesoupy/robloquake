@@ -90,6 +90,15 @@ function input.updateTurn(dt: number)
 	pitch = math.clamp(pitch, -70, 80)
 end
 
+-- IN_MouseMove's `(in_mlook.state & 1) && !(in_strafe.state & 1)` gate:
+-- this port is always-mouselook, so mlook is "held" whenever input owns
+-- the mouse. C calls V_StopPitchDrift every frame this is true (even
+-- with zero mouse delta), which is what keeps V_DriftPitch from ever
+-- arming under mouselook — the drift-to-center is keyboard-look behavior.
+function input.mlookActive(): boolean
+	return enabled and not buttons.strafe
+end
+
 function input.centerview()
 	pitch = 0
 end

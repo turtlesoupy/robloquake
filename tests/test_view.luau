@@ -250,6 +250,20 @@ t.check(d.nodrift, "startPitchDrift: refused when stopped the same frame")
 view.startPitchDrift(d, 2.1)
 t.check(not d.nodrift and d.pitchvel == 500, "startPitchDrift: arms on a later frame")
 
+-- mouselook suppression (C IN_MouseMove): under +mlook, StopPitchDrift
+-- fires every frame even with zero mouse delta, so the driftmove re-arm
+-- path hits the laststop==time guard and the view NEVER recenters while
+-- running forward — regression test for the keyboard-look port breaking
+-- mouselook by only stopping on actual pitch changes
+d = view.newPitchDrift()
+local mp = 7
+for i = 1, 10 do
+	local mt = 3.0 + i * 0.1
+	view.stopPitchDrift(d, mt) -- per-frame, as IN_MouseMove does under mlook
+	mp = view.driftPitch(d, mt, mp, 0, 0.1, true, 400)
+end
+t.check(mp == 7 and d.nodrift, "drift under mlook: per-frame stop keeps pitch pinned despite running")
+
 --------------------------------------------------------------------------
 -- V_AddIdle (view.c cvar defaults: cycles 1/2/0.5, levels 0.3/0.3/0.1)
 local ip, iy, ir = view.addIdle(1.0, 1)

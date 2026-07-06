@@ -1939,14 +1939,16 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- V_DriftPitch: glide the view pitch toward cl.idealpitch. Demo
 	-- playback resets like C; manual pitch motion (mouse or look keys)
-	-- stops the drift until forward running re-arms it.
+	-- stops the drift until forward running re-arms it. Active mouselook
+	-- stops it every frame like C's IN_MouseMove, so the drift never
+	-- re-arms under mlook (the laststop==time guard in startPitchDrift).
 	if demoPlaying then
 		pitchDrift.driftmove = 0
 		pitchDrift.pitchvel = 0
 		lastDriftPitch = nil
 	else
 		local va = input.viewangles()
-		if lastDriftPitch ~= nil and va.x ~= lastDriftPitch then
+		if input.mlookActive() or (lastDriftPitch ~= nil and va.x ~= lastDriftPitch) then
 			viewlib.stopPitchDrift(pitchDrift, c.time)
 		end
 		local drifted = viewlib.driftPitch(pitchDrift, c.time, va.x, c.idealpitch, dt, c.onground, lastForwardmove)

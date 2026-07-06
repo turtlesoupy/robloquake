@@ -1577,12 +1577,15 @@ return function()
 		end
 
 		-- V_DriftPitch (QW view.c): glide pitch toward 0 while running;
-		-- any manual pitch motion stops the drift like C's IN_MouseMove
+		-- any manual pitch motion stops the drift like C's IN_MouseMove,
+		-- and active mouselook stops it every frame (C calls
+		-- V_StopPitchDrift under +mlook even with zero delta) so the
+		-- drift never re-arms and recenters the view under mouselook
 		do
 			local ownPs = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
 			if cl.intermission == 0 and ownPs then
 				local vp = cl.viewangles.x
-				if lastDriftPitch ~= nil and vp ~= lastDriftPitch then
+				if input.mlookActive() or (lastDriftPitch ~= nil and vp ~= lastDriftPitch) then
 					viewlib.stopPitchDrift(pitchDrift, cl.time)
 				end
 				local drifted = viewlib.driftPitch(pitchDrift, cl.time, vp, 0, dt, ownPs.onground ~= -1, st.forwardmove)
