@@ -53,10 +53,7 @@ end
 -- signals, so a teardown that relies on it still holds the mesh budget
 -- while the next map builds — which starves that build into skipped
 -- batches (missing world geometry).
-local lastTeardownAt = -math.huge -- feeds the settle gate in build()
-
 function worldmesh.destroyBuild(container: Instance)
-	lastTeardownAt = os.clock()
 	local held = liveMeshes[container]
 	liveMeshes[container] = nil
 	if held then
@@ -225,49 +222,13 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 	local data = model.brush
 
-	-- the editable budget refunds ASYNCHRONOUSLY after a teardown: a
-	-- shortage during a build right after changelevel resolves within
-	-- seconds, and a skipped batch is PERMANENTLY missing geometry.
-	-- Batches share one per-build deadline so a genuine wall (not lag)
-	-- still degrades to skipping instead of hanging the build forever.
-	local budgetDeadline = os.clock() + 15
-
-	-- settle gate: prefer waiting HERE, behind the loading plaque, over
-	-- stumbling through mid-build retries. Two layers, both applying only
-	-- when a teardown just happened (boot loads and mid-play brush
-	-- template builds skip them entirely):
-	--   1. a MINIMUM settle window after the teardown — refunds land over
-	--      a couple of seconds, and one successful allocation only proves
-	--      60k of headroom, not that the refund finished;
-	--   2. an allocation probe loop for refunds slower than the window.
-	-- The per-batch retry below remains the backstop: no API exposes the
-	-- budget level, so no gate can guarantee a whole level fits on
-	-- device-dependent ceilings.
-	local SETTLE_AFTER_TEARDOWN = 2
-	local settleLeft = SETTLE_AFTER_TEARDOWN - (os.clock() - lastTeardownAt)
-	if settleLeft > 0 then
-		print(`[robloquake] settle gate holding the {name} build {string.format("%.1f", settleLeft)}s post-teardown`)
-		task.wait(settleLeft)
-	end
-	do
-		local probeDelay = 0.1
-		local waited = false
-		while os.clock() < budgetDeadline do
-			local ok, probe = pcall(function()
-				return AssetService:CreateEditableMesh()
-			end)
-			if ok and probe then
-				probe:Destroy()
-				break
-			end
-			waited = true
-			task.wait(probeDelay)
-			probeDelay = math.min(probeDelay * 2, 1)
-		end
-		if waited then
-			print(`[robloquake] budget probe held the {name} build further`)
-		end
-	end
+	-- EMPIRICAL (storm testing 2026-07-05): budget refunds after a
+	-- teardown take ~15-25s under sustained allocation pressure, and no
+	-- API forces or measures reclamation — settle gates and probes just
+	-- slowed loads without preventing degradation (tried, reverted). The
+	-- short per-batch retry below catches only BRIEF lag; the real
+	-- protection is not churning (sane round lengths / map residency).
+	local budgetDeadline = os.clock() + 5
 
 	-- group surfaces by texture
 	local byTexture: { [number]: { bsp.Surface } } = {}
