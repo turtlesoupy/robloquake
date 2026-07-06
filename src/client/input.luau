@@ -99,6 +99,12 @@ function input.lockMouse()
 	UserInputService.MouseIconEnabled = false
 end
 
+-- release the cursor for clickable product UI (admin menu)
+function input.freeMouse()
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	UserInputService.MouseIconEnabled = true
+end
+
 -- returns viewangles (quake pitch/yaw/roll degrees)
 function input.viewangles(): vector
 	return vector.create(pitch, yaw, 0)

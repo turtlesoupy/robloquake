@@ -141,18 +141,6 @@ cshiftFrame.ZIndex = 1
 cshiftFrame.Parent = overlayGui
 
 local con = consolelib.create(fs, pal, overlayGui)
-
--- ===== match director UI (PRODUCT layer): vote panel + admin menu.
--- REMOVAL: delete this block, src/client/directorui.luau, and the
--- server-side twin (see src/server/director.luau). =====
-require(script.directorui).attach({
-	playerGui = playerGui,
-	net = net,
-	isTyping = function()
-		return con.open
-	end,
-})
--- ===== end match director UI =====
 local mnu = menulib.create(fs, pal, overlayGui)
 
 -- SCR_DrawCrosshair: the conchars '+' glyph, gated by the crosshair cvar
@@ -1478,10 +1466,31 @@ input.lockMouse()
 
 local UserInputService = game:GetService("UserInputService")
 
+local directorUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu)
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen
 	input.setEnabled(not uiOpen)
+	if directorUiOpen then
+		input.freeMouse() -- the admin menu is clickable UI
+	end
 end
+
+-- ===== match director UI (PRODUCT layer): vote panel + admin menu.
+-- REMOVAL: delete this block, src/client/directorui.luau, and the
+-- server-side twin (see src/server/director.luau). Placed after
+-- refreshInputMode's assignment so onUiToggle can drive input mode. =====
+require(script.directorui).attach({
+	playerGui = playerGui,
+	net = net,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		directorUiOpen = open
+		refreshInputMode()
+	end,
+})
+-- ===== end match director UI =====
 
 -- console text entry straight from key codes (no TextBox: Roblox chat and
 -- CoreGui focus never get involved). GetStringForKeyCode gives the layout

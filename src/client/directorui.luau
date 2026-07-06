@@ -46,6 +46,9 @@ export type Opts = {
 	playerGui: Instance,
 	net: Instance,
 	isTyping: () -> boolean,
+	-- fired when the admin menu opens/closes so the boot can free the
+	-- mouse cursor (the vote panel stays keyboard-first and never locks)
+	onUiToggle: ((open: boolean) -> ())?,
 }
 
 function directorui.attach(opts: Opts)
@@ -189,6 +192,19 @@ function directorui.attach(opts: Opts)
 		menu.BackgroundTransparency = 0.06
 		menu.Visible = false
 		menu.Parent = gui
+		local refreshMenuRef: () -> () = function() end
+		local function setMenuVisible(open: boolean)
+			if menu.Visible == open then
+				return
+			end
+			menu.Visible = open
+			if open then
+				refreshMenuRef()
+			end
+			if opts.onUiToggle then
+				opts.onUiToggle(open)
+			end
+		end
 		corner(menu, 12)
 		stroke(menu, Color3.new(1, 1, 1), 0.85)
 		local menuSize = Instance.new("UISizeConstraint")
@@ -425,14 +441,12 @@ function directorui.attach(opts: Opts)
 			rebuildMapGrid()
 		end
 
+		refreshMenuRef = refreshMenu
 		gear.Activated:Connect(function()
-			menu.Visible = not menu.Visible
-			if menu.Visible then
-				refreshMenu()
-			end
+			setMenuVisible(not menu.Visible)
 		end)
 		closeBtn.Activated:Connect(function()
-			menu.Visible = false
+			setMenuVisible(false)
 		end)
 
 		------------------------------------------------------------------
@@ -445,7 +459,7 @@ function directorui.attach(opts: Opts)
 				state = msg
 				gear.Visible = state.isAdmin == true
 				if not state.isAdmin then
-					menu.Visible = false
+					setMenuVisible(false)
 				end
 				if menu.Visible then
 					refreshMenu()
@@ -476,10 +490,7 @@ function directorui.attach(opts: Opts)
 				end
 			end
 			if input.KeyCode == Enum.KeyCode.P and state.isAdmin then
-				menu.Visible = not menu.Visible
-				if menu.Visible then
-					refreshMenu()
-				end
+				setMenuVisible(not menu.Visible)
 			end
 		end)
 

@@ -199,19 +199,6 @@ return function()
 	local chatTeam = false -- chat_team
 	local chatBuffer = "" -- chat_buffer
 
-	-- ===== match director UI (PRODUCT layer) — twin of the NQ block;
-	-- see src/server/director.luau for the REMOVAL note. (Placed after
-	-- chatOpen's declaration: closures capture pre-declaration locals as
-	-- globals forever.) =====
-	require(script.Parent.directorui).attach({
-		playerGui = player:WaitForChild("PlayerGui"),
-		net = net,
-		isTyping = function()
-			return con.open or chatOpen
-		end,
-	})
-	-- ===== end match director UI =====
-
 	-- CL_AllocExplosion ring: s_explod.spr animated at 10 Hz
 	local explosions: { { origin: vector, start: number } } = {}
 	local explosionIndex: number? = nil
@@ -915,10 +902,30 @@ return function()
 	-- Key_Event: console first, chat line second, game keys last)
 	local UserInputService = game:GetService("UserInputService")
 
+	local directorUiOpen = false
 	local function refreshInputMode()
 		-- while the console or chat line is up the player stops moving
-		input.setEnabled(not (con.open or chatOpen))
+		input.setEnabled(not (con.open or chatOpen or directorUiOpen))
+		if directorUiOpen then
+			input.freeMouse() -- the admin menu is clickable UI
+		end
 	end
+
+	-- ===== match director UI (PRODUCT layer) — twin of the NQ block;
+	-- see src/server/director.luau for the REMOVAL note. Placed after
+	-- refreshInputMode so onUiToggle can drive input mode. =====
+	require(script.Parent.directorui).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		net = net,
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+		onUiToggle = function(open: boolean)
+			directorUiOpen = open
+			refreshInputMode()
+		end,
+	})
+	-- ===== end match director UI =====
 
 	-- Cmd_ExecuteString subset: the client commands the QW boot handles
 	-- locally; everything else is forwarded verbatim (Cmd_ForwardToServer:
