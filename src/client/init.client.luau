@@ -638,9 +638,11 @@ c.onServerInfo = function()
 end
 
 c.print = function(s: string)
-	hudlib.print(hud, s, c.time)
-	consolelib.print(con, s)
-	print("[q] " .. s)
+	-- wire prints arrive in pieces (QC sprints "You got the " and
+	-- "nails\n" separately): the Con_Print append path joins them
+	hudlib.printCon(hud, s, c.time)
+	consolelib.printCon(con, s)
+	print("[q] " .. s:gsub("\n$", ""))
 end
 
 -- Chat compliance: player speech must pass Roblox text filtering, so

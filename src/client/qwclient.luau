@@ -2091,8 +2091,10 @@ return function()
 				if p.level == qwp.PRINT_CHAT then
 					soundlib.localSound(sndsys, "misc/talk.wav") -- S_LocalSound
 				end
-				hudlib.print(hud, p.text, cl.time)
-				consolelib.print(con, p.text)
+				-- wire prints arrive in pieces (QC sprints "You got the "
+				-- and "nails\n" separately): Con_Print append joins them
+				hudlib.printCon(hud, p.text, cl.time)
+				consolelib.printCon(con, p.text)
 				print("[qw] " .. p.text:gsub("\n$", ""))
 			end
 		end

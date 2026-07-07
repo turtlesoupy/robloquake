@@ -39,6 +39,7 @@ export type Console = {
 	rows: { confont.TextRow },
 	cols: number, -- con_linewidth (Con_CheckResize tracks the viewport)
 	rowHolders: { Frame },
+	lineOpen: boolean, -- Con_Print: the last line has no \n yet
 	lines: { string }, -- scrollback
 	inputText: string,
 	history: { string },
@@ -146,6 +147,7 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	c.cols = cols
 	c.rows = {}
 	c.rowHolders = {}
+	c.lineOpen = false
 	buildRows(c)
 	c.lines = {}
 	c.inputText = ""
@@ -164,18 +166,44 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	return c
 end
 
-function console.print(c: Console, s: string)
-	for line in s:gmatch("[^\n]+") do
-		-- wrap long lines at the live console width (con_linewidth)
-		while #line > c.cols do
-			table.insert(c.lines, line:sub(1, c.cols))
-			line = line:sub(c.cols + 1)
+-- Con_Print: append to the OPEN line; only '\n' (or width overflow)
+-- advances. Server messages arrive in pieces — QC sprints
+-- "You got the " and "nails\n" separately and they must join — so the
+-- wire paths call this directly. Local UI messages use console.print,
+-- which terminates its argument.
+function console.printCon(c: Console, s: string)
+	local pieces = s:split("\n")
+	for j, piece in pieces do
+		if #piece > 0 then
+			if c.lineOpen and #c.lines > 0 then
+				c.lines[#c.lines] ..= piece
+			else
+				table.insert(c.lines, piece)
+			end
+			c.lineOpen = true
+			-- wrap at the live console width (con_linewidth)
+			while #c.lines[#c.lines] > c.cols do
+				local full = table.remove(c.lines) :: string
+				table.insert(c.lines, full:sub(1, c.cols))
+				table.insert(c.lines, full:sub(c.cols + 1))
+			end
 		end
-		table.insert(c.lines, line)
+		if j < #pieces then
+			if not c.lineOpen and #piece == 0 then
+				table.insert(c.lines, "") -- bare \n = blank line (Con_Linefeed)
+			end
+			c.lineOpen = false
+		end
 	end
 	while #c.lines > 200 do
 		table.remove(c.lines, 1)
 	end
+end
+
+-- one call = one finished line (the local-command convenience the
+-- console/boot code is written against)
+function console.print(c: Console, s: string)
+	console.printCon(c, s .. "\n")
 end
 
 -- Con_DPrintf: only prints when the developer cvar is set

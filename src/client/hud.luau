@@ -75,6 +75,7 @@ export type Hud = {
 	notifyCols: number,
 	notifyHolders: { Frame },
 	notifyY: number,
+	notifyOpen: boolean, -- Con_Print: the last notify line has no \n yet
 	loadingPlaque: ImageLabel?,
 	loadingCurtain: GuiObject?,
 	pausePlaque: ImageLabel?,
@@ -340,6 +341,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.notifyY = inset.Y
 	h.notifyHolders = {}
 	h.notifyCols = notifyColsFor(gui)
+	h.notifyOpen = false
 	buildNotifyRows(h)
 
 	-- SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet: status icons at the
@@ -594,6 +596,7 @@ function hud.setLoading(h: Hud, on: boolean)
 	if on then
 		-- Con_ClearNotify + centertime_off = 0
 		table.clear(h.notifyLines)
+		h.notifyOpen = false
 		refreshNotify(h)
 		h.centerFrame.Visible = false
 		h.centerTime = 0
@@ -607,19 +610,42 @@ function hud.setPaused(h: Hud, on: boolean)
 end
 
 -- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs.
--- Wraps at the live column count like Con_Print filling the text buffer.
-function hud.print(h: Hud, s: string, time: number?)
-	for line in s:gmatch("[^\n]+") do
-		while #line > h.notifyCols do
-			table.insert(h.notifyLines, { text = line:sub(1, h.notifyCols), expire = (time or 0) + 3 })
-			line = line:sub(h.notifyCols + 1)
+-- Appends to the OPEN line — server messages arrive in pieces
+-- ("You got the " .. "nails\n") — closing only on '\n'; wraps at the
+-- live column count like Con_Print filling the text buffer. Appending
+-- refreshes the line's con_notifytime window like C's con_times stamp.
+function hud.printCon(h: Hud, s: string, time: number?)
+	local expire = (time or 0) + 3 -- con_notifytime
+	local pieces = s:split("\n")
+	for j, piece in pieces do
+		if #piece > 0 then
+			if h.notifyOpen and #h.notifyLines > 0 then
+				local last = h.notifyLines[#h.notifyLines]
+				last.text ..= piece
+				last.expire = expire
+			else
+				table.insert(h.notifyLines, { text = piece, expire = expire })
+			end
+			h.notifyOpen = true
+			while #h.notifyLines[#h.notifyLines].text > h.notifyCols do
+				local last = table.remove(h.notifyLines) :: { text: string, expire: number }
+				table.insert(h.notifyLines, { text = last.text:sub(1, h.notifyCols), expire = last.expire })
+				table.insert(h.notifyLines, { text = last.text:sub(h.notifyCols + 1), expire = last.expire })
+			end
 		end
-		table.insert(h.notifyLines, { text = line, expire = (time or 0) + 3 }) -- con_notifytime
+		if j < #pieces then
+			h.notifyOpen = false -- blank lines are not worth a notify row
+		end
 	end
 	while #h.notifyLines > 4 do
 		table.remove(h.notifyLines, 1)
 	end
 	refreshNotify(h)
+end
+
+-- one call = one finished line (chat and product-layer messages)
+function hud.print(h: Hud, s: string, time: number?)
+	hud.printCon(h, s .. "\n", time)
 end
 
 --------------------------------------------------------------------------
