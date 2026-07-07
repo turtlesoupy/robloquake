@@ -507,6 +507,9 @@ function avatarrender.setVisible(ae: AvatarEnt, on: boolean)
 	ae.visible = on
 	local model = ae.model
 	if model and not on then
+		if workspace:GetAttribute("RQDBG_AvParkTrace") then
+			print("[avpark]", model.Name, debug.traceback("", 2))
+		end
 		model:PivotTo(CFrame.new(0, -100000, 0))
 		stopAllTracks(ae, 0)
 		ae.speed = 0

@@ -1144,6 +1144,11 @@ return function()
 			workspace:SetAttribute("RQDBG_QWPeerVel", peakPeerVel)
 			workspace:SetAttribute("RQDBG_QWPeerNum", peakPeerNum)
 		end
+		if peakPeerLagMs > 0 then
+			workspace:SetAttribute("QW_PeerLagMs", math.floor(peakPeerLagMs + 0.5))
+			workspace:SetAttribute("QW_TimeNoiseMs", math.floor(peakTimeNoiseMs + 0.5))
+		end
+		netDiagFlush(time)
 
 		-- CL_UpdateExplosions: s_explod.spr at 10 Hz until frames run out
 		if not explosionIndex then
@@ -2201,6 +2206,7 @@ return function()
 			Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
 			Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
 			Workspace:SetAttribute("QW_Valid", cl.validsequence)
+			Workspace:SetAttribute("QW_NetDrops", cl.netDrops or 0)
 		end
 
 		-- sounds

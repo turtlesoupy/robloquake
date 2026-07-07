@@ -1311,6 +1311,8 @@ function qwcl.processPacket(cl: any, packet: buffer)
 	if not r then
 		return -- stale packet
 	end
+	-- cumulative wire loss (each accepted packet reports its gap)
+	cl.netDrops = (cl.netDrops or 0) + cl.netchan.drop_count
 	-- CL_ReadPackets records only ACCEPTED packets (after Netchan_Process)
 	-- — a recorded stale packet would double-apply at playback
 	if cl.recording then
@@ -1381,7 +1383,32 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	local buf = msg.newBuf(128)
 	msg.writeByte(buf, qwp.clc_move)
 	msg.writeByte(buf, 0) -- checksum: transport is authenticated
-	msg.writeByte(buf, 0) -- lossage: transport is reliable
+	-- CL_CalcNet lossage: percent of recent cmds never answered
+	-- (datagrams ride the unreliable remote, so this is real now; the
+	-- server rebroadcasts it as the PL column via svc_updatepl).
+	-- Unlike C — which counts still-in-flight frames as dropped, diluted
+	-- by a 256 window so a clean LAN reads ~1% — count only frames the
+	-- server's acks have already passed by, so PL is TRUE loss and a
+	-- clean link reads 0. The window also stops short of ring slots
+	-- already reused by in-flight sends.
+	local inflight = chan.outgoing_sequence - chan.incoming_acknowledged
+	local window = UPDATE_BACKUP - inflight - 1
+	local lost = 0
+	if window > 0 then
+		for j = chan.incoming_acknowledged - window + 1, chan.incoming_acknowledged do
+			if j >= 0 then
+				local f = cl.frames[bit32.band(j, UPDATE_MASK)]
+				-- senttime > 0 skips never-sent slots (C's memset leaves
+				-- receivedtime 0 there; this port initializes it to -1)
+				if f.receivedtime == -1 and f.senttime > 0 then
+					lost += 1
+				end
+			end
+		end
+		msg.writeByte(buf, math.clamp(lost * 100 // window, 0, 100))
+	else
+		msg.writeByte(buf, 100) -- nothing acked in a whole ring: dead link
+	end
 
 	-- send this and the previous cmds in the message, so if the last
 	-- packet was dropped, it can be recovered
