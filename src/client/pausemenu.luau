@@ -90,6 +90,8 @@ export type Handle = {
 	isOpen: () -> boolean,
 	setBigFont: (on: boolean) -> (),
 	isBigFont: () -> boolean,
+	setGrainyBg: (on: boolean) -> (),
+	isGrainyBg: () -> boolean,
 }
 
 export type Opts = {
@@ -292,7 +294,14 @@ type Pieces = { [string]: BoxImg }
 -- seam. Every side uses the lit (top-left-bevel) piece -- the right/bottom are
 -- the left/top pieces mirrored (see the box_*_lit_* variants) -- so the shadow
 -- sits at the same depth (native index 5) all round and the inset is uniform.
-local function nineSlice(parent: GuiObject, pieces: Pieces, w: number, h: number, center: boolean)
+local function nineSlice(
+	parent: GuiObject,
+	pieces: Pieces,
+	w: number,
+	h: number,
+	center: boolean,
+	trackFill: ((ImageLabel) -> ())?
+)
 	local cw = pieces.box_tl.w * BOXSCALE
 	local ch = pieces.box_tl.h * BOXSCALE
 	-- every side uses the lit pieces (mirrored onto the right/bottom), so the
@@ -319,29 +328,11 @@ local function nineSlice(parent: GuiObject, pieces: Pieces, w: number, h: number
 		holder.Position = UDim2.fromOffset(ins, ins)
 		holder.Size = UDim2.fromOffset(fw, fh)
 		holder.Parent = parent
-		slice(holder, pieces.box_mm, true, 0, 0, fw, fh)
+		local fill = slice(holder, pieces.box_mm, true, 0, 0, fw, fh)
+		if trackFill then
+			trackFill(fill)
+		end
 	end
-	-- raised-button depth: a soft shadow fading in along the bottom and right
-	-- edges (top/left keep the bright highlight), so the panel reads as raised
-	-- rather than a flat, uniformly-lit frame
-	local function edgeShadow(x: number, y: number, sw: number, sh: number, rot: number)
-		local s = Instance.new("Frame")
-		s.BackgroundColor3 = Color3.new(0, 0, 0)
-		s.BorderSizePixel = 0
-		s.Position = UDim2.fromOffset(x, y)
-		s.Size = UDim2.fromOffset(sw, sh)
-		s.ZIndex = 2
-		s.Parent = parent
-		local g = Instance.new("UIGradient")
-		g.Rotation = rot -- 0 = fade left->right, 90 = fade top->bottom
-		g.Transparency = NumberSequence.new({ -- clear on the inner side, dark at the outer edge
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(1, 0.55),
-		})
-		g.Parent = s
-	end
-	edgeShadow(w - cw, 0, cw, h, 0) -- right edge
-	edgeShadow(0, h - cw, w, cw, 90) -- bottom edge
 end
 
 -- re-anchor a top-left-positioned element to its centre so a UIScale press
@@ -398,6 +389,14 @@ function pausemenu.attach(opts: Opts): Handle
 
 	-- conchars font sheet (shared with the console / HUD)
 	local font: confontlib.Font? = nil
+	-- BUTTON BG tweaks-menu toggle: swap the button/panel fill between the
+	-- box_mm wood tile and the gfx.wad "backtile" grain HUD tiles beside the
+	-- 320px sbar (SCR_TileClear, see hud.luau). Center-fill ImageLabels are
+	-- tracked in fillLabels so an already-built plaque (the top MENU/MAP
+	-- buttons, built once outside showPage) can be re-skinned in place.
+	local grainyFill: BoxImg = { img = nil, w = 8, h = 8 }
+	local fillLabels: { ImageLabel } = {}
+	local grainyBg = false
 	local wadbuf = vfslib.loadFile(fs, "gfx.wad")
 	if wadbuf then
 		local w = wadlib.load(wadbuf)
@@ -405,11 +404,19 @@ function pausemenu.attach(opts: Opts): Handle
 		if ok then
 			font = confontlib.new(conchars, pal)
 		end
+		local okTile, tile = pcall(wadlib.getPic, w, "backtile")
+		if okTile then
+			grainyFill = { img = textures.createImage(tile.pixels, tile.width, tile.height, pal, true), w = tile.width, h = tile.height }
+		end
 	end
 
 	local pieces: Pieces = {}
 	for _, name in BOX_PIECES do
 		pieces[name] = loadPic(fs, pal, name)
+	end
+	local woodFill = pieces.box_mm
+	local function trackFill(l: ImageLabel)
+		table.insert(fillLabels, l)
 	end
 	-- the box art is a top-left-lit bevel: box_ml/box_tm/box_tl carry the soft
 	-- highlight ramp, box_mr/box_bm/box_br only a hard shadow -- so the right and
@@ -929,7 +936,7 @@ function pausemenu.attach(opts: Opts): Handle
 		f.Size = UDim2.fromOffset(cell.w, cell.h)
 		f.Parent = content
 		centerAnchor(f)
-		nineSlice(f, pieces, cell.w, cell.h, true)
+		nineSlice(f, pieces, cell.w, cell.h, true, trackFill)
 		return f
 	end
 
@@ -1439,18 +1446,19 @@ function pausemenu.attach(opts: Opts): Handle
 			local sc = if #name * 8 * style.head <= cell.w - 12 then style.head else 1
 			text(p, 0, 16, name, sc, nil, cell.w, 0.5)
 			weaponView(p, 8, 34, cell.w - 16, cell.h - 34 - (CARD_BTN_H + 14), `{kind}:7`)
+			local function apply()
+				if opts.setWeaponSkin then
+					for _, mdl in VIEWMODELS do
+						opts.setWeaponSkin(mdl, `{kind}:7`)
+					end
+				end
+			end
 			cardButtons(p, cell.w, cell.h, {
-				{
-					label = "APPLY",
-					onClick = function()
-						if opts.setWeaponSkin then
-							for _, mdl in VIEWMODELS do
-								opts.setWeaponSkin(mdl, `{kind}:7`)
-							end
-						end
-					end,
-				},
+				{ label = "APPLY", onClick = apply },
 			})
+			-- whole-card click target (behind the render/button strip), same
+			-- pattern as buildShop's card-wide apply
+			clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, apply)
 		end
 		local ci = 1
 		if skinPage > 0 then
@@ -1921,7 +1929,14 @@ function pausemenu.attach(opts: Opts): Handle
 
 	-- conchars scale only, so the pixel font stays crisp (integer upscales)
 	local TOP_H, TOP_SCALE = 52, 2
-	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	-- touch-only devices get bare labels (no key to hint at). RQDBG_ForceTouchUI
+	-- overrides the device probe, same as controls.luau's touchWanted(), so the
+	-- plaques and the on-screen controls agree and the touch look is testable
+	-- from a desktop Studio session.
+	local force = workspace:GetAttribute("RQDBG_ForceTouchUI")
+	local touchOnly = if type(force) == "boolean"
+		then force
+		else UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 	-- one plaque, right edge at `rightEdge` (offset from the screen's right);
 	-- returns the right edge for the next plaque to its left. `name` renders
@@ -1939,7 +1954,7 @@ function pausemenu.attach(opts: Opts): Handle
 		btn.Position = UDim2.new(1, rightEdge, 0, 8)
 		btn.Size = UDim2.fromOffset(w, TOP_H)
 		btn.Parent = topGui
-		nineSlice(btn, pieces, w, TOP_H, true)
+		nineSlice(btn, pieces, w, TOP_H, true, trackFill)
 		-- centre the ink, not the cells: glyph side margins are uneven (the
 		-- trailing "]" is mostly blank on its right, especially LibreQuake's),
 		-- which reads as extra right padding on the plaque
@@ -1992,6 +2007,30 @@ function pausemenu.attach(opts: Opts): Handle
 		end,
 		isBigFont = function()
 			return style == BIG_FONT
+		end,
+		setGrainyBg = function(on: boolean)
+			grainyBg = on
+			pieces.box_mm = if on then grainyFill else woodFill
+			-- rebuild-able cards pick this up next showPage; the top MENU/MAP
+			-- plaques are built once, so re-skin their tracked fill labels
+			-- in place here
+			for i = #fillLabels, 1, -1 do
+				local l = fillLabels[i]
+				if not l.Parent then
+					table.remove(fillLabels, i)
+				else
+					if pieces.box_mm.img then
+						l.ImageContent = Content.fromObject(pieces.box_mm.img)
+					end
+					l.TileSize = UDim2.fromOffset(pieces.box_mm.w * BOXSCALE, pieces.box_mm.h * BOXSCALE)
+				end
+			end
+			if open then
+				showPage()
+			end
+		end,
+		isGrainyBg = function()
+			return grainyBg
 		end,
 	}
 end

@@ -1712,6 +1712,10 @@ require(script.tweaksui).attach({
 		isBig = pauseHandle.isBigFont,
 		setBig = pauseHandle.setBigFont,
 	},
+	buttonBg = {
+		isGrainy = pauseHandle.isGrainyBg,
+		setGrainy = pauseHandle.setGrainyBg,
+	},
 	setWeaponSkin = prefsHandle.setWeaponSkin,
 	giveAll = function()
 		-- Host_Give_f per weapon (2-8), then ammo for each type; the
@@ -1731,15 +1735,17 @@ require(script.tweaksui).attach({
 })
 -- ===== end tweaks menu =====
 
+local function isUiOpen(): boolean
+	return con.open or menulib.isOpen(mnu) or directorUiOpen or pauseUiOpen or tweaksUiOpen
+end
+
 -- ===== touch + gamepad controls (PRODUCT layer): buttons run console
 -- lines through the bind exec, sticks feed input's analog hooks. See
 -- src/client/controls.luau for the removal note. =====
 require(script.controls).attach({
 	playerGui = playerGui,
 	exec = execLine,
-	isUiOpen = function()
-		return con.open or menulib.isOpen(mnu) or directorUiOpen or pauseUiOpen or tweaksUiOpen
-	end,
+	isUiOpen = isUiOpen,
 	menuKey = function(key: Enum.KeyCode): boolean
 		if not menulib.isOpen(mnu) then
 			return false
@@ -1748,8 +1754,33 @@ require(script.controls).attach({
 		refreshInputMode()
 		return true
 	end,
+	font = hud.font,
 })
 -- ===== end touch + gamepad controls =====
+
+-- ===== tap-to-switch: invisible overlays on the ibar weapon icons so a
+-- touch/click directly on an icon selects that weapon, riding the same
+-- impulse path as the 2-8 keybinds (WEAPON_NAMES[i] -> impulse i+1) =====
+for i, icon in hud.weaponIcons do
+	local tap = Instance.new("TextButton")
+	tap.Name = "WeaponTap"
+	tap.BackgroundTransparency = 1
+	tap.Text = ""
+	tap.AutoButtonColor = false
+	tap.Position = icon.Position
+	tap.Size = icon.Size
+	tap.ZIndex = icon.ZIndex + 1
+	tap.Parent = icon.Parent
+	tap.InputBegan:Connect(function(io: InputObject)
+		if
+			(io.UserInputType == Enum.UserInputType.Touch or io.UserInputType == Enum.UserInputType.MouseButton1)
+			and not isUiOpen()
+		then
+			execLine("impulse " .. (i + 1))
+		end
+	end)
+end
+-- ===== end tap-to-switch =====
 
 -- console text entry straight from key codes (no TextBox: Roblox chat and
 -- CoreGui focus never get involved). GetStringForKeyCode gives the layout

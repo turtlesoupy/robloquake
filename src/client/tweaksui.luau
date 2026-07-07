@@ -81,6 +81,10 @@ export type Opts = {
 	toggleThirdPerson: (() -> boolean)?,
 	-- pause-menu (E) font style: big bronze plaque vs small classic
 	menuFont: { isBig: () -> boolean, setBig: (on: boolean) -> () }?,
+	-- pause-menu/HUD-plaque button background: wood box_mm tile vs the
+	-- gfx.wad "backtile" grain (the tiles SCR_TileClear uses beside the
+	-- 320px sbar)
+	buttonBg: { isGrainy: () -> boolean, setGrainy: (on: boolean) -> () }?,
 }
 
 function tweaksui.attach(opts: Opts)
@@ -216,6 +220,31 @@ function tweaksui.attach(opts: Opts)
 		refresh()
 		fontBtn.Activated:Connect(function()
 			mf.setBig(not mf.isBig())
+			refresh()
+		end)
+	end
+
+	if opts.buttonBg then
+		local bb = opts.buttonBg
+		local bgLabel = label(scroll, "BUTTON BACKGROUND", 12, DIM, true)
+		bgLabel.Size = UDim2.new(1, 0, 0, 16)
+		bgLabel.TextXAlignment = Enum.TextXAlignment.Left
+		bgLabel.LayoutOrder = order
+		order += 1
+
+		local bgBtn = button(scroll, "")
+		bgBtn.Name = "ButtonBg"
+		bgBtn.Size = UDim2.new(1, 0, 0, 44)
+		bgBtn.LayoutOrder = order
+		order += 1
+		local function refresh()
+			local grainy = bb.isGrainy()
+			bgBtn.Text = `BUTTON BG: {if grainy then "GRAINY" else "WOOD"}`
+			bgBtn.TextColor3 = if grainy then ACCENT else TEXT
+		end
+		refresh()
+		bgBtn.Activated:Connect(function()
+			bb.setGrainy(not bb.isGrainy())
 			refresh()
 		end)
 	end

@@ -1349,6 +1349,10 @@ return function()
 			isBig = pauseHandle.isBigFont,
 			setBig = pauseHandle.setBigFont,
 		},
+		buttonBg = {
+			isGrainy = pauseHandle.isGrainyBg,
+			setGrainy = pauseHandle.setGrainyBg,
+		},
 	})
 	-- ===== end tweaks menu =====
 

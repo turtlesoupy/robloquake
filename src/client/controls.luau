@@ -18,6 +18,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local input = require(script.Parent.input)
+local confontlib = require(script.Parent.render.confont)
 
 local controls = {}
 
@@ -30,6 +31,9 @@ export type Deps = {
 	-- feed a synthesized key to the boot's menu (gamepad navigation);
 	-- returns true when the menu was open and consumed it
 	menuKey: (key: Enum.KeyCode) -> boolean,
+	-- the LibreQuake conchars font (shared with hud/menu) for button
+	-- labels; nil falls back to a stock TextLabel
+	font: confontlib.Font?,
 }
 
 -- tuning defaults
@@ -41,9 +45,13 @@ local STICK_RADIUS = 55 -- px of knob travel on the touch stick
 local STICK_DEADZONE = 0.12
 
 -- palette shared with directorui (the modern product-UI look)
-local ACCENT = Color3.fromRGB(255, 178, 60)
-local BG = Color3.fromRGB(16, 16, 20)
 local TEXT = Color3.fromRGB(235, 235, 235)
+
+-- hand-drawn button/joystick art (Document/Buttons: joystick.png,
+-- button-up.png, button-pressed.png)
+local BUTTON_UP = "rbxassetid://125568994803314"
+local BUTTON_PRESSED = "rbxassetid://87094120696594"
+local JOYSTICK_IMG = "rbxassetid://74482359771899"
 
 -- gamepad layout (standard console-FPS): R2 fire, A/L2 jump, R1/Y next
 -- weapon, L1/DPad-down previous, Select hold = scores, Start = menu.
@@ -182,24 +190,6 @@ function controls.attach(deps: Deps)
 	gui.Enabled = false
 	gui.Parent = deps.playerGui
 
-	local function styleCircle(f: GuiObject): UIStroke
-		f.BackgroundColor3 = BG
-		f.BackgroundTransparency = 0.4
-		f.BorderSizePixel = 0
-		local c = Instance.new("UICorner")
-		c.CornerRadius = UDim.new(1, 0)
-		c.Parent = f
-		local s = Instance.new("UIStroke")
-		-- Contextual mode would outline the (empty) text on TextButtons;
-		-- Border rings the circle on Frames and buttons alike
-		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		s.Color = ACCENT
-		s.Thickness = 2
-		s.Transparency = 0.25
-		s.Parent = f
-		return s
-	end
-
 	type ButtonHooks = { down: () -> (), up: () -> () }
 	local namedButtons: { [string]: ButtonHooks } = {}
 
@@ -219,27 +209,49 @@ function controls.attach(deps: Deps)
 		b.Position = pos
 		b.Size = UDim2.fromOffset(size.X, size.Y)
 		b.AutoButtonColor = false
+		b.BackgroundTransparency = 1
 		b.Text = ""
-		local strokeObj = styleCircle(b)
-		local l = Instance.new("TextLabel")
-		l.BackgroundTransparency = 1
-		l.Size = UDim2.fromScale(1, 1)
-		l.Font = Enum.Font.GothamBold
-		l.TextSize = textSize
-		l.TextColor3 = TEXT
-		l.TextTransparency = 0.1
-		l.Text = label
-		l.Parent = b
+
+		local art = Instance.new("ImageLabel")
+		art.Name = "Art"
+		art.BackgroundTransparency = 1
+		art.Size = UDim2.fromScale(1, 1)
+		art.Image = BUTTON_UP
+		art.ScaleType = Enum.ScaleType.Fit
+		art.Parent = b
+
+		-- plain uppercase/space labels (FIRE, JUMP, SCORES) render in the
+		-- LibreQuake conchars font, matching the menu/hud; anything else
+		-- (the "»" weapon-cycle glyph isn't in that charset) falls back
+		if deps.font and label:match("^[%u ]+$") then
+			local scale = textSize / 8
+			local holder = Instance.new("Frame")
+			holder.BackgroundTransparency = 1
+			holder.AnchorPoint = Vector2.new(0.5, 0.5)
+			holder.Position = UDim2.fromScale(0.5, 0.5)
+			holder.Size = UDim2.fromOffset(#label * 8 * scale, 8 * scale)
+			holder.Parent = b
+			local row = confontlib.newRow(holder, #label, scale)
+			confontlib.setRow(deps.font, row, label)
+		else
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Size = UDim2.fromScale(1, 1)
+			l.Font = Enum.Font.GothamBold
+			l.TextSize = textSize
+			l.TextColor3 = TEXT
+			l.TextTransparency = 0.1
+			l.Text = label
+			l.Parent = b
+		end
 
 		local hooks: ButtonHooks = {
 			down = function()
-				b.BackgroundTransparency = 0.12
-				strokeObj.Transparency = 0
+				art.Image = BUTTON_PRESSED
 				onDown()
 			end,
 			up = function()
-				b.BackgroundTransparency = 0.4
-				strokeObj.Transparency = 0.25
+				art.Image = BUTTON_UP
 				if onUp then
 					onUp()
 				end
@@ -261,53 +273,47 @@ function controls.attach(deps: Deps)
 		return b
 	end
 
-	-- right-hand cluster: big FIRE under the thumb, JUMP in the corner,
-	-- next-weapon above it
-	makeButton("Fire", "FIRE", 18, Vector2.new(100, 100), Vector2.new(1, 1), UDim2.new(1, -128, 1, -104), function()
-		deps.exec("+attack")
-	end, function()
-		deps.exec("-attack")
-	end)
-	makeButton("Jump", "JUMP", 15, Vector2.new(74, 74), Vector2.new(1, 1), UDim2.new(1, -28, 1, -28), function()
+	-- right-hand cluster: two equal thumb buttons stacked against the
+	-- right edge and lifted clear of the 96px HUD strip along the bottom
+	-- (hud.luau's sbarStrip). FIRE sits just above the HUD, JUMP stacks
+	-- above FIRE. Weapon switching is the tap-on-the-HUD-icon path, so
+	-- there's no on-screen switch button. Offsets are from the bottom
+	-- edge, so the whole cluster tracks the HUD regardless of screen size.
+	makeButton("Jump", "JUMP", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -280), function()
 		deps.exec("+jump")
 	end, function()
 		deps.exec("-jump")
 	end)
-	makeButton("Weapon", "»", 30, Vector2.new(56, 56), Vector2.new(1, 1), UDim2.new(1, -36, 1, -128), function()
-		if not deps.isUiOpen() then
-			deps.exec("impulse 10")
-		end
+	makeButton("Fire", "FIRE", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -116), function()
+		deps.exec("+attack")
+	end, function()
+		deps.exec("-attack")
 	end)
 
-	-- scoreboard is a toggle on touch (holding is awkward mid-fight);
-	-- top-center keeps clear of Roblox's corner chrome
-	local scoresOn = false
-	makeButton("Scores", "SCORES", 13, Vector2.new(92, 38), Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 12), function()
-		scoresOn = not scoresOn
-		deps.exec(if scoresOn then "+showscores" else "-showscores")
-	end)
-
-	-- dynamic thumbstick: rests bottom-left, re-centers to wherever the
-	-- thumb lands in the left 45% of the screen
-	local stickRest = UDim2.new(0, 128, 1, -140)
-	local stickBase = Instance.new("Frame")
+	-- dynamic thumbstick: rests at the same height as the FIRE button on
+	-- the left edge (its center matches FIRE's center, 186px above the
+	-- bottom), re-centers to wherever the thumb lands in the left half of
+	-- the screen (see the InputBegan handler below), and hides while a
+	-- movement touch is active
+	local stickRest = UDim2.new(0, 115, 1, -186)
+	local stickBase = Instance.new("ImageLabel")
 	stickBase.Name = "Stick"
+	stickBase.BackgroundTransparency = 1
+	stickBase.Image = JOYSTICK_IMG
+	stickBase.ScaleType = Enum.ScaleType.Fit
 	stickBase.AnchorPoint = Vector2.new(0.5, 0.5)
 	stickBase.Position = stickRest
 	stickBase.Size = UDim2.fromOffset(150, 150)
-	local baseStroke = styleCircle(stickBase)
-	stickBase.BackgroundTransparency = 0.55
 	stickBase.Parent = gui
+	-- knob is never seen (stickBase itself hides on touch-down); it just
+	-- carries setStickOffset's position math
 	local knob = Instance.new("Frame")
+	knob.Name = "Knob"
 	knob.AnchorPoint = Vector2.new(0.5, 0.5)
 	knob.Position = UDim2.fromScale(0.5, 0.5)
-	knob.Size = UDim2.fromOffset(62, 62)
-	knob.BackgroundColor3 = TEXT
-	knob.BackgroundTransparency = 0.45
+	knob.Size = UDim2.fromOffset(1, 1)
+	knob.BackgroundTransparency = 1
 	knob.BorderSizePixel = 0
-	local knobCorner = Instance.new("UICorner")
-	knobCorner.CornerRadius = UDim.new(1, 0)
-	knobCorner.Parent = knob
 	knob.Parent = stickBase
 
 	local stickTouch: InputObject? = nil
@@ -327,24 +333,26 @@ function controls.attach(deps: Deps)
 	local function releaseStick()
 		stickTouch = nil
 		stickBase.Position = stickRest
-		stickBase.BackgroundTransparency = 0.55
-		baseStroke.Transparency = 0.25
+		stickBase.Visible = true
 		knob.Position = UDim2.fromScale(0.5, 0.5)
 		input.setAnalogMove(0, 0)
 	end
 
+	-- any touch starting in the left half of the screen drives movement,
+	-- exactly like the resting stick would; the visual hides on touch
+	-- down (the thumb is over it anyway) and reappears on release. Any
+	-- other touch not consumed by a button (see `processed` above) is
+	-- camera look.
 	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
 		if io.UserInputType ~= Enum.UserInputType.Touch or processed or not gui.Enabled then
 			return
 		end
 		local pos = Vector2.new(io.Position.X, io.Position.Y)
 		local vp = gui.AbsoluteSize
-		if stickTouch == nil and pos.X < vp.X * 0.45 and pos.Y > vp.Y * 0.25 then
+		if stickTouch == nil and pos.X < vp.X * 0.5 then
 			stickTouch = io
 			stickCenter = pos
-			stickBase.Position = UDim2.fromOffset(pos.X, pos.Y)
-			stickBase.BackgroundTransparency = 0.4
-			baseStroke.Transparency = 0.15
+			stickBase.Visible = false
 			setStickOffset(Vector2.zero)
 		else
 			lookTouches[io] = true
