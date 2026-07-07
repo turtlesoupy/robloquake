@@ -67,6 +67,7 @@ export type RenderEnt = {
 	lastFrame: number,
 	lastSubframe: any?, -- resolved framegroup subframe last posed
 	lastSkinKey: number?,
+	customSkin: EditableImage?, -- overrides skinnum/colors selection (procedural skins)
 	-- sprite
 	billboardPart: Part?,
 	billboardImage: ImageLabel?,
@@ -377,7 +378,15 @@ function entrender.updateAlias(
 	-- the entity's current light bucket (setLight owns the bucket)
 	local bucket = re.lightBucket or LIGHT_BUCKETS
 	local wantSkinKey = (skinnum + 1) + (if colors then (colors + 1) * 1000 else 0)
-	if re.lastSkinKey ~= wantSkinKey or re.appliedBucket ~= bucket then
+	if re.customSkin then
+		-- procedural override (setSkinOverride) replaces the lit-skin
+		-- bake until cleared; -1 never collides with a real skin key
+		if re.lastSkinKey ~= -1 then
+			re.lastSkinKey = -1
+			part.TextureContent = Content.fromObject(re.customSkin :: EditableImage)
+			re.appliedBucket = nil -- force a rebake once the override clears
+		end
+	elseif re.lastSkinKey ~= wantSkinKey or re.appliedBucket ~= bucket then
 		re.lastSkinKey = wantSkinKey
 		re.skinnum = skinnum
 		re.colors = colors
@@ -392,6 +401,13 @@ function entrender.updateAlias(
 	-- opposite to view pitch.
 	local forward, right, up = mathlib.angleVectors(vector.create(-angles.x, angles.y, angles.z))
 	part.CFrame = qcoords.modelCFrame(origin, forward, right, up) * (re.centerOffset or CFrame.identity)
+end
+
+-- Set (or clear, with nil) a procedural skin on an alias entity; the
+-- caller owns the image's lifetime. Takes effect on the next updateAlias.
+function entrender.setSkinOverride(re: RenderEnt, img: EditableImage?)
+	re.customSkin = img
+	re.lastSkinKey = nil
 end
 
 --------------------------------------------------------------------------

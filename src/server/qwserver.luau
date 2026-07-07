@@ -23,6 +23,7 @@ local prdebug = require(engine.progs.prdebug)
 local assetchunks = require(script.Parent.assetchunks)
 local clientbundle = require(script.Parent.clientbundle)
 local directorlib = require(script.Parent.director)
+local bsplib = require(engine.bsp.bsp)
 
 export type Ctx = {
 	fsys: vfs.Vfs,
@@ -137,6 +138,11 @@ return function(ctx: Ctx)
 		getRule = function(name: string)
 			return cvarlib.value(svr.cvars, name)
 		end,
+		getMapTitle = function(name: string): string?
+			-- worldspawn "message" from the map's BSP (entity lump only)
+			local buf = vfs.loadFile(ctx.fsys, `maps/{name}.bsp`)
+			return if buf then bsplib.readTitle(buf) else nil
+		end,
 		broadcastPrint = function(text: string)
 			-- callvote announcements ride the engine notify surface
 			svr.broadcastPrint(svr, 2, text .. "\n") -- PRINT_HIGH
@@ -235,6 +241,11 @@ return function(ctx: Ctx)
 		competitive = (tonumber(ctx.assets:GetAttribute("deathmatch")) or 1) ~= 0,
 	})
 	-- ===== end stats pipeline =====
+
+	-- ===== prefs persistence (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/prefstore.luau for the REMOVAL note =====
+	require(script.Parent.prefstore)(ctx.reliable.Parent :: Instance)
+	-- ===== end prefs persistence =====
 
 	-- ===== host greeting (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/hostgreeting.luau for the REMOVAL note =====

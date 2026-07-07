@@ -80,11 +80,17 @@ export type Deps = {
 	worldHull: () -> any?, -- bsp hull 0 for water checks; nil before load
 	time: () -> number,
 	palette: textures.Palette,
+	-- optional: the local player's tweaks/pause-menu weapon skin, forged
+	-- from the held world model's own skin sheet (nil = authentic). Called
+	-- per frame, so the boot caches forges (and failures) by (model, spec).
+	localWeaponSkin: ((vmName: string, worldModel: string, def: entrender.ModelDef) -> EditableImage?)?,
 }
 
 type AvatarWeapon = {
 	re: entrender.RenderEnt?,
 	model: string?,
+	def: entrender.ModelDef?, -- kept for forging procedural skins
+	appliedSkin: EditableImage?, -- last texture set on the part
 	light: PointLight?,
 	emitter: ParticleEmitter?,
 	flashUntil: number?,
@@ -333,11 +339,14 @@ function avatarlayer.new(deps: Deps): Layer
 				aw.emitter = nil
 			end
 			aw.model = want
+			aw.def = nil
+			aw.appliedSkin = nil
 			if want then
 				local mi = deps.modelIndexByName(want)
 				local def = if mi then deps.getModelDef(mi) else nil
 				if def and def.kind == "alias" then
 					aw.re = entrender.create(def, deps.entFolder)
+					aw.def = def
 					-- pickup meshes are player-sized: shrink the held copy
 					local newPart = if aw.re then aw.re.part else nil
 					if newPart then
@@ -356,6 +365,21 @@ function avatarlayer.new(deps: Deps): Layer
 			-- pickup's floor-level model origin and floats the gun overhead)
 			local part = re.part :: MeshPart
 			setWeaponVisible(re :: entrender.RenderEnt, true)
+			-- the local player's menu-picked skin carries onto their held
+			-- gun (chase cam / other viewers of this client only — skins
+			-- are client-side). The texture is set directly: hand-posed
+			-- weapons never pass through updateAlias, where setSkinOverride
+			-- applies.
+			local def = aw.def
+			if player == Players.LocalPlayer and deps.localWeaponSkin and vmName and want and def then
+				local img = deps.localWeaponSkin(vmName, want, def)
+				local skinImages = def.skinImages
+				local desired = img or (if skinImages then skinImages[1] else nil) -- nil forge = authentic
+				if desired and aw.appliedSkin ~= desired then
+					aw.appliedSkin = desired
+					part.TextureContent = Content.fromObject(desired)
+				end
+			end
 			-- muzzle flash: the world dlight comes from the caller's entity
 			-- effects; the PointLight lights the RIG (rigs use Roblox
 			-- lighting, not the Quake lightmap), the emitter burst + recoil

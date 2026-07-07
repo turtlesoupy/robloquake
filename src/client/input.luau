@@ -26,8 +26,9 @@ local cl_yawspeed = 140
 local cl_pitchspeed = 150
 local cl_anglespeedkey = 1.5
 local m_yaw = 0.022
-local m_pitch = 0.022
+local m_pitch = 0.022 -- sign flips with INVERT MOUSE (menu.c M_AdjustSliders)
 local sensitivity = 3
+local alwaysRun = false -- ALWAYS RUN: cl_forwardspeed/backspeed 400 vs 200
 
 -- kbutton_t states (down or not; edge latches for attack/jump)
 local buttons: { [string]: boolean } = {}
@@ -169,6 +170,30 @@ end
 
 function input.setSensitivity(v: number)
 	sensitivity = v
+end
+
+function input.getSensitivity(): number
+	return sensitivity
+end
+
+-- menu.c INVERT MOUSE: flip m_pitch's sign (mouse look only, like C)
+function input.setInvertMouse(on: boolean)
+	m_pitch = if on then -0.022 else 0.022
+end
+
+function input.getInvertMouse(): boolean
+	return m_pitch < 0
+end
+
+-- menu.c ALWAYS RUN: cl_forwardspeed/cl_backspeed 400 (run) or 200 (walk)
+function input.setAlwaysRun(on: boolean)
+	alwaysRun = on
+	cl_forwardspeed = if on then 400 else 200
+	cl_backspeed = cl_forwardspeed
+end
+
+function input.getAlwaysRun(): boolean
+	return alwaysRun
 end
 
 function input.setAngles(angles: vector)

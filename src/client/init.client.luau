@@ -5,7 +5,12 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
+
+-- the Quake scoreboard on TAB (default.cfg's bind) replaces the native
+-- player list, so the CoreGui version stays permanently hidden (both boots)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
@@ -23,6 +28,7 @@ local avatarlayer = require(script.render.avatarlayer)
 local avatarrender = require(script.render.avatarrender)
 local entrender = require(script.render.entrender)
 local mildmode = require(script.render.mildmode)
+local skinforge = require(script.render.skinforge)
 local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
 local worldmesh = require(script.render.worldmesh)
@@ -182,6 +188,12 @@ crosshairLabel.Parent = overlayGui
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
+-- worldmesh.build can YIELD (budget backoff in its chunk builder); a
+-- Heartbeat that relinks entities during that yield would re-enter
+-- getModelDef and start ANOTHER build of the same template — each one
+-- re-parses the bsp and leaks fresh light-atlas regions (LibreQuake's
+-- lightmapped ammo boxes rebuilt 700x, filling the atlas with orphans)
+local buildingTemplates: { [string]: boolean } = {}
 local worldModels: { bsplib.Model } = {}
 
 -- animated lightstyle vertices across all built brush geometry
@@ -239,6 +251,74 @@ local staticEnts: { { re: entrender.RenderEnt, se: any, def: entrender.ModelDef 
 local gunEnt: entrender.RenderEnt? = nil
 local gunModelIndex = 0
 
+-- procedural weapon skins: forged per (model, spec) and cached until the
+-- level changes. The tweaks menu (K) picks a spec per viewmodel name; the
+-- RQ_WeaponSkin workspace attribute (e.g. "camo:7") is a debug override
+-- for weapons without a menu selection. nil/empty spec restores the
+-- authentic skin. Twin of the qwclient.luau block.
+local forgedSkins: { [string]: EditableImage } = {}
+local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
+local gunSkinApplied: string? = nil
+local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
+local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
+	local name = c.model_precache[modelindex + 1]
+	local spec: string? = if name then weaponSkins[name] else nil
+	if not spec then
+		local attr = Workspace:GetAttribute("RQ_WeaponSkin")
+		if type(attr) == "string" and attr ~= "" then
+			spec = attr
+		end
+	end
+	local key = if spec then `{name or modelindex}|{spec}` else nil
+	if key == gunSkinApplied then
+		return
+	end
+	gunSkinApplied = key
+	if not key or not spec then
+		entrender.setSkinOverride(re, nil)
+		re.fullbrightSkin = def.fullbrightSkin
+		return
+	end
+	local img = forgedSkins[key]
+	if not img and def.skinPixels then
+		local forged =
+			skinforge.createImage(spec :: string, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+		if forged then
+			forgedSkins[key] = forged
+			img = forged
+		end
+	end
+	entrender.setSkinOverride(re, img)
+	-- saturated skins are marked unlit so setLight keeps them vivid in
+	-- dark rooms (same path as torch flames)
+	re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
+end
+
+-- third-person twin of applyGunSkin for avatarlayer: forge (or fetch) the
+-- picked skin against the held g_ world model's own skin sheet; nil =
+-- authentic. Called per frame, so failed forges are cached to avoid
+-- re-forging every frame.
+local forgeFailed: { [string]: boolean } = {}
+local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+	local spec = weaponSkins[vmName]
+	if not spec or not def.skinPixels then
+		return nil
+	end
+	local key = `{worldModel}|{spec}`
+	local img = forgedSkins[key]
+	if not img and not forgeFailed[key] then
+		local forged =
+			skinforge.createImage(spec, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+		if forged then
+			forgedSkins[key] = forged
+			img = forged
+		else
+			forgeFailed[key] = true
+		end
+	end
+	return img
+end
+
 local function getModelDef(modelindex: number): entrender.ModelDef?
 	local def = modelDefs[modelindex]
 	if def then
@@ -253,8 +333,13 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 		local sub = tonumber(name:sub(2)) :: number
 		local template = brushTemplates[name]
 		if not template and worldModels[sub + 1] then
+			if buildingTemplates[name] then
+				return nil -- build in flight; caller retries next frame
+			end
+			buildingTemplates[name] = true
 			local anim
 			template, anim = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
+			buildingTemplates[name] = nil
 			for _, e in anim do
 				table.insert(lightAnim, e)
 			end
@@ -298,9 +383,14 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			local buf = vfslib.loadFile(fs, name, true)
 			local template = brushTemplates[name]
 			if not template and buf then
+				if buildingTemplates[name] then
+					return nil -- build in flight; caller retries next frame
+				end
+				buildingTemplates[name] = true
 				local models = bsplib.load(name, buf)
 				local anim
 				template, anim = worldmesh.build(models[1], pal, nil :: any, name)
+				buildingTemplates[name] = nil
 				for _, e in anim do
 					table.insert(lightAnim, e)
 				end
@@ -394,6 +484,7 @@ local avatarLayer = avatarlayer.new({
 		return c.time
 	end,
 	palette = pal,
+	localWeaponSkin = localWeaponSkin,
 })
 
 -- RQDBG_AvatarDummy (debug hook family): render a mirror avatar N studs
@@ -542,6 +633,14 @@ c.onServerInfo = function()
 	table.clear(staticEnts)
 	gunEnt = nil
 	gunModelIndex = 0
+	-- model defs were just destroyed, so the forged-skin cache is stale;
+	-- images are ours to release (same budget pressure as destroyDef)
+	for _, img in forgedSkins do
+		img:Destroy()
+	end
+	table.clear(forgedSkins)
+	table.clear(forgeFailed)
+	gunSkinApplied = nil
 	table.clear(beams)
 	table.clear(beamDefs)
 	table.clear(beamPool)
@@ -578,6 +677,23 @@ c.onServerInfo = function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
+		-- prebuild pickup brush templates (maps/b_*.bsp) here, paced: at
+		-- first entity link they otherwise all build in one Heartbeat
+		-- burst, outrunning the engine's ASYNC fixed-mesh budget refunds.
+		-- LibreQuake's lightmapped multi-texture ammo boxes starve the
+		-- whole budget that way — one fixed copy fails, its dynamic mesh
+		-- (full 60k-vertex reservation) is retained, and every later
+		-- build (including the view weapon) drops to box fallback.
+		for mi = 1, #c.model_precache - 1 do
+			local mname = c.model_precache[mi + 1]
+			if mname and mname:sub(1, 7) == "maps/b_" then
+				if gen ~= worldBuildGen then
+					return -- level changed under us
+				end
+				getModelDef(mi)
+				task.wait() -- let the previous template's refund land
+			end
+		end
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create
@@ -946,8 +1062,17 @@ execCommand = function(line: string)
 	elseif cmd == "messagemode" or cmd == "messagemode2" then
 		consolelib.print(con, "use say <text> or the Roblox chat")
 		return
-	elseif cmd == "gamma" or cmd == "volume" then
+	elseif cmd == "gamma" then
 		return -- accepted, fixed on this platform
+	elseif cmd == "volume" then
+		-- the "volume" cvar -> soundbank master (also the settings slider)
+		local v = tonumber(args)
+		if v then
+			soundlib.setMasterVolume(snd, v)
+		else
+			consolelib.print(con, `"volume" is "{soundlib.getMasterVolume(snd)}"`)
+		end
+		return
 	elseif cmd == "sizeup" or cmd == "sizedown" then
 		-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
 		currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
@@ -1488,12 +1613,13 @@ input.lockMouse()
 local UserInputService = game:GetService("UserInputService")
 
 local directorUiOpen = false
-local lbUiOpen = false
+local tweaksUiOpen = false
+local pauseUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen or lbUiOpen then
-		input.freeMouse() -- the admin menu / leaderboard is clickable UI
+	if directorUiOpen or tweaksUiOpen or pauseUiOpen then
+		input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
 	end
 end
 
@@ -1501,7 +1627,7 @@ end
 -- REMOVAL: delete this block, src/client/directorui.luau, and the
 -- server-side twin (see src/server/director.luau). Placed after
 -- refreshInputMode's assignment so onUiToggle can drive input mode. =====
-require(script.directorui).attach({
+local directorHandle = require(script.directorui).attach({
 	playerGui = playerGui,
 	net = net,
 	isTyping = function()
@@ -1514,20 +1640,107 @@ require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
--- ===== leaderboard UI (PRODUCT layer): daily/weekly/all-time boards
--- from the stats pipeline. REMOVAL: see src/server/stats.luau. =====
-require(script.leaderboardui).attach({
-	playerGui = playerGui,
+-- ===== prefs bridge (PRODUCT layer): persisted settings + weapon skin
+-- picks (src/server/prefstore.luau). Wraps the setters below so menu
+-- changes push a snapshot; loads + applies saved prefs at boot; twin of
+-- the qwclient block. REMOVAL: see prefstore.luau — pass the raw
+-- settings/setWeaponSkin tables straight to the menus again. =====
+local prefsHandle = require(script.prefs).attach({
 	net = net,
+	-- SETTINGS page rows (menu.c M_Options): look/run live in input,
+	-- volume is the soundbank master
+	settings = {
+		getSensitivity = input.getSensitivity,
+		setSensitivity = input.setSensitivity,
+		getInvertMouse = input.getInvertMouse,
+		setInvertMouse = input.setInvertMouse,
+		getAlwaysRun = input.getAlwaysRun,
+		setAlwaysRun = input.setAlwaysRun,
+		getVolume = function()
+			return soundlib.getMasterVolume(snd)
+		end,
+		setVolume = function(v: number)
+			soundlib.setMasterVolume(snd, v)
+		end,
+	},
+	setWeaponSkin = function(mdlName: string, spec: string?)
+		weaponSkins[mdlName] = spec
+		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+	end,
+	validSpec = function(spec: string)
+		return skinforge.parse(spec) ~= nil
+	end,
+})
+-- ===== end prefs bridge =====
+
+-- ===== leaderboard data source (PRODUCT layer): resolves the server's
+-- Leaderboards RemoteFunction for the pause menu's RANKINGS page; dormant
+-- when the stats pipeline is absent. REMOVAL: see src/server/stats.luau. =====
+local lbHandle = require(script.leaderboardui).attach({ net = net })
+-- ===== end leaderboard data source =====
+
+-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
+-- top-right MENU plaque, darkens the world 80% without pausing it;
+-- twin of the qwclient block =====
+local pauseHandle = require(script.pausemenu).attach({
+	playerGui = playerGui,
+	fs = fs,
+	pal = pal,
 	isTyping = function()
 		return con.open
 	end,
 	onUiToggle = function(open: boolean)
-		lbUiOpen = open
+		pauseUiOpen = open
 		refreshInputMode()
 	end,
+	playSound = function()
+		soundlib.localSound(snd, "misc/menu2.wav") -- S_LocalSound menu click
+	end,
+	setWeaponSkin = prefsHandle.setWeaponSkin,
+	-- MY SKINS block reads the equipped rocket-launcher pick from the mirror
+	getWeaponSkin = prefsHandle.getWeaponSkin,
+	-- RANKINGS page (L / the RANKINGS block) reads the kill boards from here
+	leaderboards = lbHandle,
+	-- CALL A VOTE page: live state + proposals ride the director bridge
+	callvote = directorHandle.cv,
+	-- SETTINGS page (menu.c M_Options): setters persist via the prefs bridge
+	settings = prefsHandle.settings,
 })
--- ===== end leaderboard UI =====
+-- ===== end pause menu =====
+
+-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (unbound in
+-- the default binds and not Roblox-reserved); twin of the qwclient block =====
+require(script.tweaksui).attach({
+	playerGui = playerGui,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		tweaksUiOpen = open
+		refreshInputMode()
+	end,
+	menuFont = {
+		isBig = pauseHandle.isBigFont,
+		setBig = pauseHandle.setBigFont,
+	},
+	setWeaponSkin = prefsHandle.setWeaponSkin,
+	giveAll = function()
+		-- Host_Give_f per weapon (2-8), then ammo for each type; the
+		-- server's give port has no deathmatch gate (see host.luau)
+		for w = 2, 8 do
+			sendStringCmd(`give {w}`)
+		end
+		sendStringCmd("give s 100")
+		sendStringCmd("give n 200")
+		sendStringCmd("give r 100")
+		sendStringCmd("give c 100")
+	end,
+	toggleThirdPerson = function(): boolean
+		chase_active = not chase_active
+		return chase_active
+	end,
+})
+-- ===== end tweaks menu =====
 
 -- ===== touch + gamepad controls (PRODUCT layer): buttons run console
 -- lines through the bind exec, sticks feed input's analog hooks. See
@@ -1536,7 +1749,7 @@ require(script.controls).attach({
 	playerGui = playerGui,
 	exec = execLine,
 	isUiOpen = function()
-		return con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen
+		return con.open or menulib.isOpen(mnu) or directorUiOpen or pauseUiOpen or tweaksUiOpen
 	end,
 	menuKey = function(key: Enum.KeyCode): boolean
 		if not menulib.isOpen(mnu) then
@@ -1715,8 +1928,9 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 
-	-- the Quake menu lives on M (Escape is reserved by Roblox for its own menu)
-	if key == Enum.KeyCode.M and not menulib.isOpen(mnu) then
+	-- the Quake menu lives on backslash (Escape is reserved by Roblox for
+	-- its own menu; M calls the product map vote, see pausemenu.luau)
+	if key == Enum.KeyCode.BackSlash and not menulib.isOpen(mnu) then
 		menulib.toggle(mnu)
 		refreshInputMode()
 		return
@@ -1762,20 +1976,21 @@ UserInputService.InputEnded:Connect(function(io: InputObject)
 end)
 
 -- quake.rc: the 1996 defaults, then the modern layout as the authentic
--- autoexec mechanism (WASD wasn't the default; arrows were)
+-- autoexec mechanism (WASD wasn't the default; arrows were). E, M and T
+-- are product hotkeys (pause menu / map vote / tweaks, pausemenu.luau
+-- and tweaksui.luau), so they stay unbound here (+jump swims up anyway;
+-- NQ messagemode is a stub), the scoreboard keeps default.cfg's TAB (the
+-- native player list CoreGui is disabled at boot, freeing the key), and
+-- the engine menu takes the freed backslash.
 execLine("exec default.cfg")
 for _, l in {
 	"bind w +forward",
 	"bind s +back",
 	"bind a +moveleft",
 	"bind d +moveright",
-	"bind e +moveup",
 	"bind c +movedown",
-	"bind m togglemenu",
-	-- scoreboard lives on N (next to M's menu): Tab toggles the Roblox
-	-- player list at CoreScript priority and can't be unbound
-	"unbind tab",
-	"bind n +showscores",
+	"bind \\ togglemenu",
+	"unbind t",
 } do
 	execLine(l)
 end
@@ -2195,6 +2410,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 				entrender.destroy(gunEnt)
 				gunEnt = nil
 			end
+			gunSkinApplied = GUN_SKIN_STALE -- fresh RenderEnt: reapply any forged skin
 			gunModelIndex = refdef.gunmodel
 			local def = getModelDef(refdef.gunmodel)
 			if def and def.kind == "alias" then
@@ -2208,7 +2424,16 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 		local ge = gunEnt
 		if ge then
+			-- setEntVisible(gunEnt, false) parents to nil when the chase cam
+			-- or corpse view hides the gun; restore to the viewmodel's
+			-- WorldModel (NOT entFolder — the gun draws through its own
+			-- ViewportFrame projection)
+			local root: Instance? = ge.part or ge.billboardPart or ge.model
+			if root and root.Parent == nil then
+				root.Parent = vmgun.world
+			end
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
+			applyGunSkin(ge, def, refdef.gunmodel)
 			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
 			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)

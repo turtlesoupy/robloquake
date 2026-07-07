@@ -394,24 +394,73 @@ function statstore.new(opts: Options)
 		friendsCache[p.UserId] = nil
 	end)
 
+	--------------------------------------------------------------------
+	-- the caller's own card (pause-menu MAIN page): all-time frags/wins
+	-- from their persisted profile, plus their rank on the GLOBAL kill
+	-- boards for today and all-time. Ranks are present only when the
+	-- player sits inside the fetched top page (BOARD_PAGE) — the same
+	-- top-N limit as the `you` field below; nil means unranked/too-low.
+	local function fetchMyStats(player: Player)
+		local userId = player.UserId
+		local profile = readFriendProfile(userId)
+		local buckets = profile and profile.buckets
+		local allBucket = if type(buckets) == "table" then (buckets :: any)[statscore.bucketKey("all", "global")] else nil
+		local function num(k: string): number
+			return if type(allBucket) == "table" then math.floor(tonumber(allBucket[k]) or 0) else 0
+		end
+		local stat = BOARD_STATS[1] -- "kills": the ranking metric
+		local unix = os.time()
+		local function rankOn(period: string): number?
+			local page = fetchBoard(statscore.boardName(stat, "global", period))
+			if not page then
+				return nil
+			end
+			for i, row in page.entries do
+				if row.userId == userId then
+					return i
+				end
+			end
+			return nil
+		end
+		return {
+			frags = num("frags"),
+			wins = num("wins"),
+			rankDay = rankOn(statscore.dayKey(unix)),
+			rankAll = rankOn("all"),
+			disabled = st.disabled,
+		}
+	end
+
 	local remote = Instance.new("RemoteFunction")
 	remote.Name = "Leaderboards"
 	remote.Parent = opts.net
 	local lastFetch: { [Player]: number } = {}
+	local lastMe: { [Player]: number } = {}
 	Players.PlayerRemoving:Connect(function(p)
 		lastFetch[p] = nil
+		lastMe[p] = nil
 	end)
 
 	-- request: { scope: "global"|"mode", period: "all"|"day"|"week", stat: string? }
+	--   or { kind = "me" } for the caller's own card (fetchMyStats above)
 	remote.OnServerInvoke = function(player: Player, req: any)
+		if typeof(req) ~= "table" then
+			return nil
+		end
 		local now = os.clock()
+		-- the personal card gets its own cooldown so opening the menu (a "me"
+		-- fetch) never eats the RANKINGS page's board-fetch budget
+		if req.kind == "me" then
+			if now - (lastMe[player] or -math.huge) < FETCH_COOLDOWN then
+				return nil
+			end
+			lastMe[player] = now
+			return fetchMyStats(player)
+		end
 		if now - (lastFetch[player] or -math.huge) < FETCH_COOLDOWN then
 			return nil
 		end
 		lastFetch[player] = now
-		if typeof(req) ~= "table" then
-			return nil
-		end
 		local stat = if table.find(BOARD_STATS, req.stat) then req.stat :: string else BOARD_STATS[1]
 		local unix = os.time()
 		local period = if req.period == "day"

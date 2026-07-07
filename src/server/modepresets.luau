@@ -122,6 +122,21 @@ modepresets.PRESETS = {
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
 	},
+	-- LibreQuake (copyright-free content, game=lq1): the NQ DM setup on
+	-- the lqdm* maps; weapon model names match id1 (v_shot.mdl etc.)
+	["lq-dm"] = {
+		engine = "nq",
+		game = "lq1",
+		deathmatch = DM_RULES.deathmatch,
+		fraglimit = DM_RULES.fraglimit,
+		timelimit = DM_RULES.timelimit,
+		-- lightest lqdm maps first: Studio's EditableMesh budget fits
+		-- lqdm11/12/2 comfortably; the big ones (lqdm3/13/6) starve it
+		maplist = "lqdm11 lqdm12 lqdm2 lqdm1",
+		votetime = DM_RULES.votetime,
+		startmap = "lqdm11",
+		roblox_avatars = true,
+	},
 }
 
 -- modifiers: composable overlays that apply over ANY preset as

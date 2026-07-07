@@ -59,6 +59,34 @@ function confont.apply(f: Font, label: ImageLabel, code: number): boolean
 	return true
 end
 
+-- Inked column span of a glyph within its 8x8 cell (color 0 is
+-- transparent): leftmost and rightmost non-blank columns. Glyphs ink from
+-- the cell's left, so edge glyphs like "]" leave blank columns that make
+-- cell-centred labels look off-centre; a fully blank glyph reports the
+-- whole cell (0, 7).
+function confont.inkSpan(f: Font, code: number): (number, number)
+	local row = math.floor(code / 16) % 16
+	local col = code % 16
+	local l, r = 8, -1
+	for y = 0, 7 do
+		local base = (row * 8 + y) * 128 + col * 8
+		for x = 0, 7 do
+			if buffer.readu8(f.conchars, base + x) ~= 0 then
+				if x < l then
+					l = x
+				end
+				if x > r then
+					r = x
+				end
+			end
+		end
+	end
+	if r < 0 then
+		return 0, 7
+	end
+	return l, r
+end
+
 export type TextRow = {
 	labels: { ImageLabel },
 	text: string,
