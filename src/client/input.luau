@@ -168,6 +168,19 @@ function input.setAngles(angles: vector)
 	yaw = angles.y
 end
 
+-- scripted-test hooks (verification harness drives the real input path).
+-- Cached via AttributeChanged so the 60-77Hz sample path doesn't pay 5
+-- reflected GetAttribute reads per call; the harness only ever sets these
+-- through SetAttribute, which fires the signal before the next Heartbeat.
+local FORCE_ATTRS = { "RQ_ForceForward", "RQ_ForceUp", "RQ_ForceYaw", "RQ_ForcePitch", "RQ_ForceAttack" }
+local forceValues: { [string]: any } = {}
+for _, name in FORCE_ATTRS do
+	forceValues[name] = workspace:GetAttribute(name)
+	workspace:GetAttributeChangedSignal(name):Connect(function()
+		forceValues[name] = workspace:GetAttribute(name)
+	end)
+end
+
 -- CL_BaseMove
 function input.sample(): InputState
 	if not enabled then
@@ -175,12 +188,11 @@ function input.sample(): InputState
 		pendingImpulse = 0
 		return { forwardmove = 0, sidemove = 0, upmove = 0, attack = false, jump = false, impulse = imp }
 	end
-	-- scripted-test hooks (verification harness drives the real input path)
-	local forceForward = workspace:GetAttribute("RQ_ForceForward")
-	local forceUp = workspace:GetAttribute("RQ_ForceUp")
-	local forceYaw = workspace:GetAttribute("RQ_ForceYaw")
-	local forcePitch = workspace:GetAttribute("RQ_ForcePitch")
-	local forceAttack = workspace:GetAttribute("RQ_ForceAttack")
+	local forceForward = forceValues.RQ_ForceForward
+	local forceUp = forceValues.RQ_ForceUp
+	local forceYaw = forceValues.RQ_ForceYaw
+	local forcePitch = forceValues.RQ_ForcePitch
+	local forceAttack = forceValues.RQ_ForceAttack
 	if forceYaw then
 		yaw = forceYaw
 	end
