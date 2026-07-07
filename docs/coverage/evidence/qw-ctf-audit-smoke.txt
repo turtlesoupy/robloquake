@@ -1,0 +1,26 @@
+Capture context: audit burn-down Studio smoke (2026-07-06)
+
+Session: Studio Play, mode preset "ctf" (QW engine, gamedir=threewave,
+ctf2m3 "McKinley Base", teamplay 419). All 2026-07-06 audit fixes live
+via Rojo (verified in the synced qwcl source before Play).
+
+Two captures live in this session's transcript (extract like the S3/S4
+anchors were):
+- audit_smoke_spawn: Blue-base spawn — world lit/textured, blue flag
+  model rendered, full sbar (health 100, armor 50, shells 40), view
+  weapon, "Capture The Flag" centerprint, team scoreboard. Proves the
+  full boot through the NEW chunked-signon handshake (D4: McKinley's
+  signon spans multiple 1450B buffers), the E-group client protocol
+  changes, and the G-group scratch/native changes composing correctly.
+- audit_particles_burst: TE_GUNSHOT puff cluster mid-air during a
+  forced shotgun burst (shells 40 -> 23) — the BulkMoveTo particle path
+  (G9) renders and moves particles.
+
+Quantitative measurements taken live (client execute_luau):
+- G1 cmd rate: QW_SeqOut advanced 60.0/s over 3.0s at a measured 60
+  client fps — every >=13ms frame sends (uncapped region identical to
+  C); the >=13ms gate is what caps a 144fps client at ~77/s.
+- G9 particles: during a 1.5s forced burst, max 120 particles visible,
+  1374 particle position updates observed via the BulkMoveTo path.
+- Console output for the whole session: zero errors, zero warnings
+  (boot log + team assignment + MOTD only).

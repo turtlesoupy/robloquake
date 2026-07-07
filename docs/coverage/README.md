@@ -77,12 +77,18 @@ Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
 it enters here in the same commit.
 
-## Release audit burn-down (2026-07-06)
+## Release audit burn-down (2026-07-06) — COMPLETE
 
 [audit-2026-07-06.md](audit-2026-07-06.md) — findings from the six-track
 pre-release audit (movement fidelity, server physics, Lua-vs-C semantics,
 protocol, QuakeC VM, performance), burned down under the same evidence
-rules as the function manifests.
+rules as the function manifests. Final state: 43 VERIFIED / 2
+SUBSTITUTED / 0 UNIMPLEMENTED, all landed 2026-07-06. Headline fixes:
+cl_pushlatency prediction horizon (online movement feel), VM error-state
+unwind + reliable overflow/timeout drops (server resilience), QW
+CL_ClearState memset parity, full QW SV_Push semantics, chunked signon,
+sv_nchan backbuf, and the performance pass (cmd rate cap, scratch
+reuse, --!native, PVS caching, VM dispatch).
 
 ## Scenarios
 

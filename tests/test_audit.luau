@@ -514,4 +514,24 @@ do
 	t.check(x == 4 and y == 5 and z == 0, "F3 short vector zero-fills")
 end
 
+-- G10: framegroup subframe cache can never freeze the animation --------------
+do
+	-- entrender re-poses only when mdl.selectFrame returns a DIFFERENT
+	-- subframe object; prove subframes change over time (so cached
+	-- torches/flames still animate) and repeat within one interval (so
+	-- the cache actually skips work)
+	local modelslib = require("../src/shared/engine/models/models")
+	local mdl = require("../src/shared/engine/models/mdl")
+	local reg = modelslib.newRegistry(gamefs)
+	local m = modelslib.forName(reg, "progs/flame2.mdl", false)
+	assert(m and m.kind == "alias", "flame2.mdl loads as alias")
+	local am = (m :: any).alias
+	t.check(am.frames[1].group ~= nil, "G10 flame2 frame 0 is a framegroup")
+	local f0 = mdl.selectFrame(am, 0, 0, 0.0)
+	local f0b = mdl.selectFrame(am, 0, 0, 0.01)
+	local f1 = mdl.selectFrame(am, 0, 0, 0.15)
+	t.check(f0 == f0b, "G10 same interval resolves the same subframe (pose skipped)")
+	t.check(f0 ~= f1, "G10 later interval resolves a new subframe (pose runs)")
+end
+
 t.finish("test_audit")
