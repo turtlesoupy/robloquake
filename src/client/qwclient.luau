@@ -96,6 +96,7 @@ return function()
 	local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
 	local vmgun = viewmodellib.new(player:WaitForChild("PlayerGui"))
 	hudlib.setLoading(hud, true)
+	input.setLookLocked(true)
 	local hudC: any = {
 		stats = cl.stats,
 		items = 0,
@@ -362,7 +363,8 @@ return function()
 	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
-	local worldBuilt = false
+	local worldBuilt = false -- buildWorld entered (guards re-entry from later frames)
+	local worldReady = false -- buildWorld returned: every mesh batch is up
 	local seenLevelResets = 0
 	local staticsSpawned = 0
 	local staticSoundsSpawned = 0
@@ -480,6 +482,10 @@ return function()
 		for _, ta in worldmesh.takeTextureAnims() do
 			table.insert(textureAnims, ta)
 		end
+		-- worldmesh.build yields on budget backoff, so frames run while it
+		-- streams batches in; worldReady (not worldBuilt, which flips at
+		-- entry as the re-entrancy guard) is what gates the render loop
+		worldReady = true
 		print(`[robloquake] qw world built: {cl.levelname}`)
 	end
 
@@ -1729,7 +1735,12 @@ return function()
 			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
 			-- it looping sounds carry across level changes
 			soundlib.clear(sndsys)
+			-- SCR_BeginLoadingPlaque: curtain up + look frozen until the
+			-- first rendered frame of the new level
+			hudlib.setLoading(hud, true)
+			input.setLookLocked(true)
 			worldBuilt = false
+			worldReady = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
 			for _, def in modelDefs do
@@ -1790,7 +1801,7 @@ return function()
 		end
 
 		buildWorld()
-		if not worldBuilt then
+		if not worldReady then
 			return
 		end
 		spawnPendingStatics()
@@ -2088,6 +2099,7 @@ return function()
 
 		-- Sbar_Draw
 		hudlib.setLoading(hud, false)
+		input.setLookLocked(false)
 		hudlib.setPaused(hud, cl.paused == true)
 		updateHudAdapter()
 		-- request new ping times every two seconds while the board shows

@@ -76,6 +76,7 @@ export type Hud = {
 	notifyHolders: { Frame },
 	notifyY: number,
 	loadingPlaque: ImageLabel?,
+	loadingCurtain: GuiObject?,
 	pausePlaque: ImageLabel?,
 	interFrame: Frame,
 	interSig: string,
@@ -314,7 +315,8 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	for i = 0, 3 do
 		local digits = {}
 		for j = 0, 2 do
-			digits[j + 1] = makeLabel(ibarRow, (6 * i + 1 + j) * 8 - 2, 0, 8, 8)
+			-- C x is (6*i+1+j)*8 - 2, plus Sbar_DrawCharacter's built-in +4
+			digits[j + 1] = makeLabel(ibarRow, (6 * i + 1 + j) * 8 + 2, 0, 8, 8)
 		end
 		h.countDigits[i + 1] = digits
 	end
@@ -399,6 +401,37 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		label.ZIndex = 15
 		label.Parent = gui
 		return label
+	end
+	-- scr_disabled_for_loading analog: Quake freezes the screen under the
+	-- loading plaque (SCR_UpdateScreen returns early), but the Roblox
+	-- viewport keeps rendering the workspace — entities pop in against the
+	-- void while the world mesh builds. An opaque conback curtain stands in
+	-- for the not-updating screen (it's what a first-connect load shows).
+	do
+		local curtain: GuiObject
+		local img: EditableImage? = nil
+		local backbuf = vfslib.loadFile(fs, "gfx/conback.lmp")
+		if backbuf then
+			local pic = wadlib.parseQPic(backbuf)
+			img = textures.createImage(pic.pixels, pic.width, pic.height, pal, false)
+		end
+		if img then
+			local label = Instance.new("ImageLabel")
+			label.ImageContent = Content.fromObject(img :: EditableImage)
+			label.ResampleMode = Enum.ResamplerMode.Pixelated
+			curtain = label
+		else
+			curtain = Instance.new("Frame")
+		end
+		curtain.Name = "loadingCurtain"
+		curtain.BackgroundColor3 = Color3.new(0, 0, 0)
+		curtain.BackgroundTransparency = 0
+		curtain.BorderSizePixel = 0
+		curtain.Size = UDim2.fromScale(1, 1)
+		curtain.Visible = false
+		curtain.ZIndex = 14
+		curtain.Parent = gui
+		h.loadingCurtain = curtain
 	end
 	h.loadingPlaque = plaque("gfx/loading.lmp")
 	h.pausePlaque = plaque("gfx/pause.lmp")
@@ -554,6 +587,9 @@ end
 function hud.setLoading(h: Hud, on: boolean)
 	if h.loadingPlaque then
 		h.loadingPlaque.Visible = on
+	end
+	if h.loadingCurtain then
+		h.loadingCurtain.Visible = on
 	end
 	if on then
 		-- Con_ClearNotify + centertime_off = 0
@@ -888,7 +924,8 @@ end
 
 -- Sbar_DrawFrags: the top-4 frag cells in the ibar row. Both sbar.c
 -- versions share the layout: fills at x*8+10 (28 wide), digits at
--- (x+1..3)*8, own-slot brackets, 4 cells of 32px from x=23*8. The C
+-- (x+1..3)*8+4 (chars get Sbar_DrawCharacter's +4, fills don't),
+-- own-slot brackets, 4 cells of 32px from x=23*8. The C
 -- deathmatch xofs=0 quirk (fills screen-left, digits sbar-relative)
 -- collapses at the 320 reference width the canvas replicates, so both
 -- draw sbar-relative here.
@@ -912,12 +949,13 @@ local function updateFragCells(h: Hud, scores: { any }, playerslot: number, gen:
 			frameFill(h, frame, x * 8 + 10 - 184, 1, 28, 4, bit32.band(sc.colors, 0xf0) + 8)
 			frameFill(h, frame, x * 8 + 10 - 184, 5, 28, 3, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
 			local num = ("%3i"):format(sc.frags)
+			-- chars carry Sbar_DrawCharacter's built-in +4; fills don't
 			for j = 1, 3 do
-				frameText(h, frame, (x + j) * 8 - 184, 0, num:sub(j, j))
+				frameText(h, frame, (x + j) * 8 + 4 - 184, 0, num:sub(j, j))
 			end
 			if k == playerslot then
-				frameText(h, frame, x * 8 + 2 - 184, 0, string.char(16))
-				frameText(h, frame, (x + 4) * 8 - 4 - 184, 0, string.char(17))
+				frameText(h, frame, x * 8 + 2 + 4 - 184, 0, string.char(16))
+				frameText(h, frame, (x + 4) * 8 - 4 + 4 - 184, 0, string.char(17))
 			end
 			x += 4
 		end

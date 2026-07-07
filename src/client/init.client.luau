@@ -488,6 +488,9 @@ c.onServerInfo = function()
 	-- loading plaque holds until the first rendered frame of the new level
 	loadingUp = 1
 	hudlib.setLoading(hud, true)
+	-- no frames present while scr_disabled_for_loading in C, so the mouse
+	-- can't turn the view; svc_setangle still applies through setAngles
+	input.setLookLocked(true)
 	particleslib.clear(psys) -- R_ClearParticles on the map change
 	-- release every mesh from the old level SYNCHRONOUSLY. Destroying
 	-- signals are deferred, so ClearAllChildren alone would still hold the
@@ -2201,6 +2204,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	if loadingUp == 2 then
 		loadingUp = 0
 		hudlib.setLoading(hud, false)
+		input.setLookLocked(false)
 	end
 	hudlib.setPaused(hud, c.paused == true)
 	hudlib.updateOverlays(hud, c)
