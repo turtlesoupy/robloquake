@@ -31,7 +31,7 @@ hud.SBAR_LINES_PX = hud.sbarLinesPx(100) -- default viewsize
 
 -- item flags (quakedef.h)
 local IT_SHOTGUN = 1
-local IT_INVULNERABILITY = 4194304
+local IT_INVULNERABILITY = 1048576 -- quakedef.h:158
 local IT_ARMOR1 = 8192
 local IT_ARMOR2 = 16384
 local IT_ARMOR3 = 32768
@@ -40,7 +40,7 @@ local IT_NAILS = 512
 local IT_ROCKETS = 1024
 local IT_CELLS = 2048
 local IT_INVISIBILITY = 524288
-local IT_QUAD = 2097152
+local IT_QUAD = 4194304 -- quakedef.h:160
 
 -- img is usually the shared page (rect-addressed); dedicated only when
 -- the page is full. One page instead of ~25 pics: live EditableImage

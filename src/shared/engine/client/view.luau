@@ -54,6 +54,35 @@ local function calcBob(c: cllib.Client): number
 	return math.clamp(bob, -7, 4)
 end
 
+-- V_CalcBob (QW view.c): unlike NQ, bobtime accumulates only while on the
+-- ground, and the previous bob is held while airborne — the gun freezes
+-- mid-cycle during jumps instead of continuing to pump
+export type BobState = { bobtime: number, bob: number }
+
+local function newBobState(): BobState
+	return { bobtime = 0, bob = 0 }
+end
+
+local function calcBobQW(state: BobState, frametime: number, onground: boolean, velocity: vector): number
+	if not onground then
+		return state.bob -- just use old value
+	end
+	state.bobtime += frametime
+	local bt = state.bobtime
+	local cycle = (bt - math.floor(bt / cl_bobcycle) * cl_bobcycle) / cl_bobcycle
+	if cycle < cl_bobup then
+		cycle = math.pi * cycle / cl_bobup
+	else
+		cycle = math.pi + math.pi * (cycle - cl_bobup) / (1 - cl_bobup)
+	end
+
+	local bob = math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y) * cl_bob
+	state.bob = math.clamp(bob * 0.3 + bob * 0.7 * math.sin(cycle), -7, 4)
+	return state.bob
+end
+view.newBobState = newBobState
+view.calcBobQW = calcBobQW
+
 -- V_AddIdle: returns the (pitch, yaw, roll) sway additions
 local function addIdle(time: number, idlescale: number): (number, number, number)
 	local pitch = idlescale * math.sin(time * v_ipitch_cycle) * v_ipitch_level
@@ -259,13 +288,13 @@ end
 
 -- V_CalcPowerupCshift: quad > suit > invis > invuln priority chain
 function view.powerupShift(items: number): { number }?
-	if bit32.band(items, 2097152) ~= 0 then -- IT_QUAD
+	if bit32.band(items, 4194304) ~= 0 then -- IT_QUAD (quakedef.h:160)
 		return { 0, 0, 255, 30 }
-	elseif bit32.band(items, 1048576) ~= 0 then -- IT_SUIT
+	elseif bit32.band(items, 2097152) ~= 0 then -- IT_SUIT (quakedef.h:159)
 		return { 0, 255, 0, 20 }
 	elseif bit32.band(items, 524288) ~= 0 then -- IT_INVISIBILITY
 		return { 100, 100, 100, 100 }
-	elseif bit32.band(items, 4194304) ~= 0 then -- IT_INVULNERABILITY
+	elseif bit32.band(items, 1048576) ~= 0 then -- IT_INVULNERABILITY (quakedef.h:158)
 		return { 255, 255, 0, 30 }
 	end
 	return nil

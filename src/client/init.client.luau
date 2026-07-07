@@ -706,6 +706,9 @@ local currentViewsize = 100 -- screen.c viewsize (sb_lines)
 local pitchDrift = viewlib.newPitchDrift()
 local lastDriftPitch: number? = nil
 local lastForwardmove = 0
+-- V_RenderView pause gate: C only recomputes the refdef when not paused
+-- (view.c `if (!cl.paused) V_CalcRefdef()`), freezing bob/drift/kick decay
+local lastRefdef: any = nil
 -- view.c cshift_empty {130,80,50,0}: what CONTENTS_EMPTY looks like;
 -- the v_cshift command edits it
 local cshiftEmpty = { 130, 80, 50, 0 }
@@ -2119,8 +2122,14 @@ RunService.Heartbeat:Connect(function(dt: number)
 	updateBeams()
 	updateAvatarDummy() -- RQDBG debug hook; no-op unless the attr is set
 
-	-- view / camera
-	local refdef = viewlib.calcRefdef(c, dt)
+	-- view / camera (frozen while paused, per the V_RenderView gate)
+	local refdef
+	if c.paused and lastRefdef then
+		refdef = lastRefdef
+	else
+		refdef = viewlib.calcRefdef(c, dt)
+		lastRefdef = refdef
+	end
 	local forward, right, up = mathlib.angleVectors(refdef.viewangles)
 	if chase_active and worldModels[1] then
 		-- Chase_Update: pull back 100, up 16; re-pitch at the traced
