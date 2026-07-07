@@ -642,6 +642,10 @@ local function calcRoll(angles: vector, velocity: vector): number
 end
 
 -- SV_RunCmd
+-- one-shot per modelindex: a SOLID_BSP edict whose model slot isn't a
+-- brush model (C would Sys_Error the server; we omit it from physents)
+local warnedBadPhysentModel: { [number]: boolean } = {}
+
 -- AddLinksToPmove's areanode recursion, hoisted to module scope so runCmd
 -- doesn't allocate a closure per cmd (C: static function over globals)
 local function addLinksToPmove(
@@ -687,6 +691,12 @@ local function addLinksToPmove(
 				if m and m.kind == "brush" then
 					table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
 					table.insert(physentEdicts, ed.num)
+				elseif not warnedBadPhysentModel[mi] then
+					-- C Sys_Errors here ("SOLID_BSP with a non bsp model");
+					-- we stay up but the entity is non-solid to players —
+					-- say so once instead of failing silently
+					warnedBadPhysentModel[mi] = true
+					svr.print(`SOLID_BSP edict {ed.num} has non-brush modelindex {mi}; not solid to players`)
 				end
 			else
 				table.insert(pm.physents, {

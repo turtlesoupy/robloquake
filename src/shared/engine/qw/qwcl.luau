@@ -361,13 +361,19 @@ function qwcl.camTrack(cl: any, buttons: number): string?
 		qwcl.camCheckHighTarget(cl)
 		return nil
 	end
-	-- clc_tmove keeps the spectator entity riding the tracked player
+	-- clc_tmove keeps the spectator entity riding the tracked player: C's
+	-- chasecam branch (cl_cam.c:361) sends on ANY difference from our own
+	-- playerstate origin and moves there locally immediately
 	local ps = qwcl.camTrackedState(cl)
-	if ps and vector.magnitude(ps.origin - cl.simorg) > 16 then
-		msg.writeByte(cl.netchan.message, qwp.clc_tmove)
-		msg.writeCoord(cl.netchan.message, ps.origin.x)
-		msg.writeCoord(cl.netchan.message, ps.origin.y)
-		msg.writeCoord(cl.netchan.message, ps.origin.z)
+	if ps then
+		local selfps = cl.frames[bit32.band(cl.parsecount, 63)].playerstate[cl.playernum]
+		if selfps and ps.origin ~= selfps.origin then
+			msg.writeByte(cl.netchan.message, qwp.clc_tmove)
+			msg.writeCoord(cl.netchan.message, ps.origin.x)
+			msg.writeCoord(cl.netchan.message, ps.origin.y)
+			msg.writeCoord(cl.netchan.message, ps.origin.z)
+			selfps.origin = ps.origin
+		end
 	end
 	if cam.locked then
 		if bit32.band(buttons, BUTTON_JUMP) ~= 0 and bit32.band(cam.oldbuttons, BUTTON_JUMP) ~= 0 then
@@ -1456,7 +1462,7 @@ function qwcl.predictUsercmd(cl: any, from: PlayerState, to: PlayerState, u: qwe
 		velocity = from.velocity,
 		oldbuttons = from.oldbuttons,
 		waterjumptime = from.waterjumptime,
-		dead = (cl.stats[qwp.STAT_HEALTH] or 100) <= 0,
+		dead = (cl.stats[qwp.STAT_HEALTH] or 0) <= 0, -- C's zero-filled stats predict dead until the first update
 		spectator = spectator,
 		physents = cl.predictPhysents or buildPhysents(cl, true),
 		cmd = u :: any,
