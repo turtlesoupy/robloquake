@@ -924,6 +924,7 @@ function sv_phys.physics(svr: any)
 	buffer.writei32(g, glob.self * 4, 0)
 	buffer.writei32(g, glob.other * 4, 0)
 	buffer.writef32(g, glob.time * 4, svr.time)
+	buffer.writef32(g, glob.frametime * 4, svr.frametime)
 	vmlib.exec(vm, svr.qdefs.func.StartFrame)
 
 	-- treat each object in turn

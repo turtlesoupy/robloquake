@@ -200,13 +200,20 @@ end
 qwcl.camVlen = camVlen
 qwcl.camVectoangles = camVectoangles
 
--- Cam_DoTrace: a player-hull trace against the flyby physents
+-- defined in the prediction section below (forward-declared so the cam
+-- can trace against the same solid-entity physents; a bare reference
+-- here would silently resolve as a nil global)
+local buildPhysents: (cl: any, includePlayers: boolean) -> { pmovelib.PhysEnt }
+
+-- Cam_DoTrace: a player-hull trace against the current solid physents —
+-- in C this is pmove.physents as last built by CL_SetSolidEntities
+-- (world + clip-hulled brush ents), so the cam clips against doors/plats
 local function camDoTrace(cl: any, from: vector, to: vector)
 	local pm = {
 		origin = from,
 		velocity = vector.zero,
 		angles = vector.zero,
-		physents = cl.predictPhysents or { { model = cl.worldmodel, origin = vector.zero } },
+		physents = cl.predictPhysents or buildPhysents(cl, false),
 	}
 	return pmovelib.playerTrace(pm :: any, from, to)
 end
@@ -1394,8 +1401,8 @@ end
 --------------------------------------------------------------------------
 -- prediction (cl_pred.c)
 
--- CL_SetSolidEntities + CL_SetSolidPlayers
-local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysEnt }
+-- CL_SetSolidEntities + CL_SetSolidPlayers (forward-declared above for camDoTrace)
+function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysEnt }
 	local physents: { pmovelib.PhysEnt } = { { model = cl.worldmodel, origin = vector.zero } }
 	-- any packet entity whose model has clipping hulls (brush models)
 	local frame: Frame = cl.frames[bit32.band(cl.parsecount, UPDATE_MASK)]

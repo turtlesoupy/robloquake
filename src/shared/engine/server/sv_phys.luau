@@ -858,10 +858,12 @@ function sv_phys.physics(svr: svlib.Server)
 	local vm = svr.vm
 	local g = vm.globals
 
-	-- let the progs know that a new frame has started
+	-- let the progs know that a new frame has started (host.c writes
+	-- pr_global_struct->frametime each Host_ServerFrame before physics)
 	buffer.writei32(g, glob.self * 4, 0)
 	buffer.writei32(g, glob.other * 4, 0)
 	buffer.writef32(g, glob.time * 4, svr.time)
+	buffer.writef32(g, glob.frametime * 4, svr.frametime)
 	vmlib.exec(vm, vmlib.globalInt(vm, glob.StartFrame))
 
 	-- treat each object in turn
