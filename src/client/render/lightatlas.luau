@@ -47,6 +47,12 @@ type Page = {
 	shelfY: number,
 	shelfX: number,
 	shelfH: number,
+	-- dirty rect accumulated by live writeRegion calls; flushDirty uploads
+	-- one WritePixelsBuffer per page per frame instead of one per region
+	dirtyX0: number,
+	dirtyY0: number,
+	dirtyX1: number, -- exclusive; dirtyX1 == 0 means clean
+	dirtyY1: number,
 }
 
 export type Atlas = {
@@ -76,6 +82,10 @@ local function newPage(a: Atlas): Page?
 		shelfY = 0,
 		shelfX = 0,
 		shelfH = 0,
+		dirtyX0 = 0,
+		dirtyY0 = 0,
+		dirtyX1 = 0,
+		dirtyY1 = 0,
 	}
 	table.insert(a.pages, page)
 	return page
@@ -161,6 +171,9 @@ local function addDynamicLights(region: Region, blocklights: { number }, dlights
 	end
 end
 
+local blocklightsScratch: { number } = {}
+local lastLit: { [Region]: boolean } = {} -- regions lit by dlights last frame
+
 -- R_BuildLightMap → alpha bytes, written with a replicated 1px gutter so
 -- bilinear sampling never bleeds a neighbour region
 function lightatlas.writeRegion(a: Atlas, region: Region, styleValue: (style: number) -> number, dlights: { Dlight }?)
@@ -170,7 +183,11 @@ function lightatlas.writeRegion(a: Atlas, region: Region, styleValue: (style: nu
 	local smax, tmax = region.smax, region.tmax
 	local size = smax * tmax
 
-	local blocklights = table.create(size, 0)
+	-- C's static `int blocklights[18*18]` — module scratch, zeroed per call
+	local blocklights = blocklightsScratch
+	for i = 1, size do
+		blocklights[i] = 0
+	end
 	for layer = 1, 4 do
 		local style = surf.styles[layer]
 		if style == 255 then
@@ -209,11 +226,37 @@ function lightatlas.writeRegion(a: Atlas, region: Region, styleValue: (style: nu
 		end
 	end
 	if page.live then
-		local writeBuf = buffer.create(w * h * 4)
-		for py = 0, h - 1 do
-			buffer.copy(writeBuf, py * w * 4, cpu, ((region.y + py) * PAGE + region.x) * 4, w * 4)
+		-- accumulate the page dirty rect; lightatlas.flushDirty (called at
+		-- the end of updateStyles/updateDlights) uploads once per page
+		if page.dirtyX1 == 0 then
+			page.dirtyX0, page.dirtyY0 = region.x, region.y
+			page.dirtyX1, page.dirtyY1 = region.x + w, region.y + h
+		else
+			page.dirtyX0 = math.min(page.dirtyX0, region.x)
+			page.dirtyY0 = math.min(page.dirtyY0, region.y)
+			page.dirtyX1 = math.max(page.dirtyX1, region.x + w)
+			page.dirtyY1 = math.max(page.dirtyY1, region.y + h)
 		end
-		page.img:WritePixelsBuffer(Vector2.new(region.x, region.y), Vector2.new(w, h), writeBuf)
+	end
+end
+
+-- upload accumulated dirty rects, one WritePixelsBuffer per touched page
+-- (WritePixelsBuffer needs an exact-length buffer, so this is the one
+-- remaining alloc: per page per frame, not per region)
+function lightatlas.flushDirty(a: Atlas)
+	for _, page in a.pages do
+		if page.dirtyX1 == 0 then
+			continue
+		end
+		local x0, y0, x1, y1 = page.dirtyX0, page.dirtyY0, page.dirtyX1, page.dirtyY1
+		page.dirtyX1 = 0
+		local w, h = x1 - x0, y1 - y0
+		local out = buffer.create(w * h * 4)
+		local cpu = page.cpu
+		for py = 0, h - 1 do
+			buffer.copy(out, py * w * 4, cpu, ((y0 + py) * PAGE + x0) * 4, w * 4)
+		end
+		page.img:WritePixelsBuffer(Vector2.new(x0, y0), Vector2.new(w, h), out)
 	end
 end
 
@@ -286,6 +329,7 @@ function lightatlas.destroy(a: Atlas)
 	table.clear(a.pages)
 	table.clear(a.regions)
 	table.clear(a.animated)
+	table.clear(lastLit) -- stale regions must not rebake into the next atlas
 end
 
 function lightatlas.pageImage(a: Atlas, pi: number): EditableImage?
@@ -313,6 +357,7 @@ function lightatlas.updateStyles(a: Atlas, styleValue: (style: number) -> number
 			end
 		end
 	end
+	lightatlas.flushDirty(a)
 end
 
 -- R_MarkLights over the world nodes
@@ -348,7 +393,6 @@ end
 
 -- per-frame dynamic light pass: mark, rebake marked, and rebake surfaces
 -- lit last frame so dead lights clear
-local lastLit: { [Region]: boolean } = {}
 function lightatlas.updateDlights(a: Atlas, data: bsp.BspData, dlights: { Dlight }, styleValue: (style: number) -> number)
 	if #dlights == 0 and next(lastLit) == nil then
 		return
@@ -370,6 +414,7 @@ function lightatlas.updateDlights(a: Atlas, data: bsp.BspData, dlights: { Dlight
 		end
 	end
 	lastLit = nowLit
+	lightatlas.flushDirty(a)
 end
 
 return lightatlas

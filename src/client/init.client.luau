@@ -1631,6 +1631,7 @@ dbgAtlas.OnInvoke = function(action: string, arg: string?)
 				lightatlaslib.writeRegion(atlas, r, function()
 					return 264
 				end)
+				lightatlaslib.flushDirty(atlas) -- writes batch to dirty rects now
 				return "rewrote bright"
 			end
 		end
