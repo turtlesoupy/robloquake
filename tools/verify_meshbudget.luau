@@ -70,6 +70,7 @@ print(gauntlet())
 
 --------------------------------------------------------------------------
 -- USER VANTAGE (SERVER datamodel, then capture from the client)
+-- game:GetService("ServerStorage"):SetAttribute("RQDBG", true) -- SVDBG_* hooks are gated (audit H9)
 -- game:GetService("ServerStorage"):SetAttribute("SVDBG_SetOrigin", Vector3.new(523, 314, 24))
 -- CLIENT: workspace:SetAttribute("RQ_ForceYaw", 302.6)
 --         workspace:SetAttribute("RQ_ForcePitch", -8)

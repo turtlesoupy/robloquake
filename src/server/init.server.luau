@@ -367,11 +367,17 @@ RunService.Heartbeat:Connect(function(dt: number)
 				end
 			end
 		end
-		local ServerStorage = game:GetService("ServerStorage")
-		ServerStorage:SetAttribute("SV_Time", svr.time)
-		ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+		-- SV_* / SVDBG_* diagnostics (edict scans + attribute mirror) are
+		-- debug-only: gated behind ServerStorage RQDBG so production ticks
+		-- pay one GetAttribute per 0.5s and nothing else. Verify tools set
+		-- RQDBG=true before using the SVDBG_* hooks.
+		local dbg = ServerStorage:GetAttribute("RQDBG") and true or false
+		if dbg then
+			ServerStorage:SetAttribute("SV_Time", svr.time)
+			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+		end
 		local c1 = svr.clients[1]
-		if c1 and c1.active and c1.edict then
+		if dbg and c1 and c1.active and c1.edict then
 			ServerStorage:SetAttribute("SV_CmdF", c1.cmd.forwardmove)
 			local o = vmlib.edVector(c1.edict, defs.ent.origin)
 			local v = vmlib.edVector(c1.edict, defs.ent.velocity)

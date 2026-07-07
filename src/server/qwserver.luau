@@ -343,12 +343,17 @@ return function(ctx: Ctx)
 					end
 				end
 			end
+			-- SV_*/SVDBG_* diagnostics are debug-only, gated behind RQDBG
+			-- like the NQ boot (audit H9); verify tools set RQDBG first
 			local ServerStorage = game:GetService("ServerStorage")
-			ServerStorage:SetAttribute("SV_Time", svr.time)
-			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
-			ServerStorage:SetAttribute("SV_Engine", "qw")
+			local dbg = ServerStorage:GetAttribute("RQDBG") and true or false
+			if dbg then
+				ServerStorage:SetAttribute("SV_Time", svr.time)
+				ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+				ServerStorage:SetAttribute("SV_Engine", "qw")
+			end
 			local c1 = svr.clients[1]
-			if c1 and c1.spawned then
+			if dbg and c1 and c1.spawned then
 				local vmlib = require(engine.progs.vm)
 				local o = vmlib.edVector(c1.edict, svr.qdefs.ent.origin)
 				ServerStorage:SetAttribute("SV_Origin", Vector3.new(o.x, o.y, o.z))

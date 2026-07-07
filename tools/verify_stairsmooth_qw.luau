@@ -5,7 +5,8 @@
 -- startmap="dm3").
 --
 -- Procedure:
---  1. SERVER: ServerStorage SVDBG_SetOrigin = Vector3.new(-64, 470, 44)
+--  1. SERVER: set ServerStorage RQDBG = true (SVDBG_* hooks are gated,
+--     audit H9), then ServerStorage SVDBG_SetOrigin = Vector3.new(-64, 470, 44)
 --     (bottom of the dm3 staircase at x=-64, risers 56/72/88/104).
 --  2. CLIENT: run this chunk. It locks yaw 90 (straight up the stairs),
 --     forces forwardmove 400 through the real input path, samples the
