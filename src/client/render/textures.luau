@@ -31,7 +31,7 @@ function textures.canUseMeshApi(): boolean
 			(probe :: EditableMesh):Destroy()
 		end
 		if not meshApiAvailable then
-			warn("[robloquake] Mesh & Image APIs are disabled — using fallback rendering. Enable them in Game Settings → Security for full visuals.")
+			warn("[fragparty] Mesh & Image APIs are disabled — using fallback rendering. Enable them in Game Settings → Security for full visuals.")
 		end
 	end
 	return meshApiAvailable :: boolean

@@ -189,7 +189,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	end)
 	em:Destroy()
 	if not okF or not fixedOrErr then
-		warn(`[robloquake] alias fixed copy failed: {fixedOrErr}`)
+		warn(`[fragparty] alias fixed copy failed: {fixedOrErr}`)
 		return buildAliasBoxEnt(def, parent)
 	end
 	em = fixedOrErr :: EditableMesh
@@ -206,7 +206,7 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 	end)
 	if not ok then
 		em:Destroy()
-		warn(`[robloquake] alias mesh failed: {partOrErr}`)
+		warn(`[fragparty] alias mesh failed: {partOrErr}`)
 		return buildAliasBoxEnt(def, parent)
 	end
 	local part = partOrErr :: MeshPart

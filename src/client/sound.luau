@@ -75,7 +75,7 @@ function sound.new(parent: Instance): System
 
 	local enabled = assetId ~= "" and next(regions) ~= nil
 	if not enabled then
-		warn("[robloquake] no soundbank — running silent (see tools/build_soundbank.py)")
+		warn("[fragparty] no soundbank — running silent (see tools/build_soundbank.py)")
 	else
 		-- warm the bank so the first shot isn't late
 		task.spawn(function()
@@ -123,7 +123,7 @@ local function regionFor(sys: System, sample: string): Region?
 	local r = sys.regions[sample]
 	if not r and not sys.missing[sample] then
 		sys.missing[sample] = true
-		warn("[robloquake] soundbank has no region for " .. sample)
+		warn("[fragparty] soundbank has no region for " .. sample)
 	end
 	return r
 end

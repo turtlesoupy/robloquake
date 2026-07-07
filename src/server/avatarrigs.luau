@@ -80,7 +80,7 @@ return function(assets: Instance, clientFS: Instance): (Player) -> ()
 			end)
 			inFlight[player.UserId] = nil
 			if not ok or not rig then
-				warn(`[robloquake] avatar rig fetch failed for {player.Name}`)
+				warn(`[fragparty] avatar rig fetch failed for {player.Name}`)
 				return
 			end
 			-- Neutralize interactions. Anchor ONLY the root: limbs must stay

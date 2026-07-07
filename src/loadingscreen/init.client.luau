@@ -40,7 +40,7 @@ title.BackgroundTransparency = 1
 title.Font = Enum.Font.Arcade
 title.TextScaled = true
 title.TextColor3 = Color3.fromRGB(214, 168, 116)
-title.Text = "ROBLOQUAKE"
+title.Text = "FRAG PARTY"
 title.Parent = back
 
 local status = Instance.new("TextLabel")

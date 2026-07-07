@@ -296,11 +296,11 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				em = AssetService:CreateEditableMesh()
 			end
 			if not em then
-				warn("[robloquake] EditableMesh budget exhausted; skipping batch")
+				warn("[fragparty] EditableMesh budget exhausted; skipping batch")
 				return
 			end
 			if backoff > 0.25 then
-				print("[robloquake] mesh budget recovered after backoff")
+				print("[fragparty] mesh budget recovered after backoff")
 			end
 
 			local mins = Vector3.new(math.huge, math.huge, math.huge)
@@ -338,7 +338,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				em:Destroy()
 				fixed = fixedOrErr :: EditableMesh
 			else
-				warn(`[robloquake] fixed mesh copy failed for {partName} (rendering dynamic): {fixedOrErr}`)
+				warn(`[fragparty] fixed mesh copy failed for {partName} (rendering dynamic): {fixedOrErr}`)
 				fixed = em
 			end
 
@@ -347,7 +347,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			end)
 			if not ok2 then
 				fixed:Destroy()
-				warn(`[robloquake] mesh build failed for {partName}: {partOrErr}`)
+				warn(`[fragparty] mesh build failed for {partName}: {partOrErr}`)
 				return
 			end
 			local part = partOrErr :: MeshPart
@@ -499,7 +499,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 					if not frames[t.name] then
 						local fimg = textures.createImage(t.pixels, t.width, t.height, pal, false)
 						if not fimg then
-							warn(`[robloquake] anim frame image failed for {t.name}; chain stays static`)
+							warn(`[fragparty] anim frame image failed for {t.name}; chain stays static`)
 							return false -- image budget exhausted; stay on the base frame
 						end
 						retainImage(container, fimg)

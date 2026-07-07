@@ -561,7 +561,7 @@ function pausemenu.attach(opts: Opts): Handle
 		end)
 		weaponBuilding = false
 		if not ok then
-			warn(`[robloquake] pause-menu weapon template failed: {err}`)
+			warn(`[fragparty] pause-menu weapon template failed: {err}`)
 		end
 		return weaponTemplate
 	end
@@ -916,7 +916,7 @@ function pausemenu.attach(opts: Opts): Handle
 				return a.name < b.name
 			end)
 			if not ok then
-				warn(`[robloquake] friends list fetch failed: {err}`)
+				warn(`[fragparty] friends list fetch failed: {err}`)
 			end
 			friendsCache = if ok then list else (friendsCache or {})
 			friendsFetchedAt = os.clock()
@@ -944,7 +944,7 @@ function pausemenu.attach(opts: Opts): Handle
 				SocialService:PromptGameInvite(Players.LocalPlayer, inviteOpts)
 			end)
 			if not ok then
-				warn(`[robloquake] game invite prompt failed: {err}`)
+				warn(`[fragparty] game invite prompt failed: {err}`)
 			end
 		end)
 	end

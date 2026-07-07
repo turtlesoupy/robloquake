@@ -815,7 +815,7 @@ task.spawn(function()
 			c.print(`\1{name}: {m.Text}\n`)
 		end)
 	else
-		warn("[robloquake] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
+		warn("[fragparty] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
 	end
 end)
 
@@ -1180,7 +1180,7 @@ execCommand = function(line: string)
 	elseif cmd == "toggleconsole" then
 		consolelib.toggle(con)
 	elseif cmd == "version" then
-		consolelib.print(con, "robloquake — WinQuake 1.09 port")
+		consolelib.print(con, "Frag Party — WinQuake 1.09 port")
 	elseif cmd == "play" or cmd == "playvol" then
 		-- S_Play / S_PlayVol: local test playback; C appends .wav when
 		-- the name has no dot
@@ -2618,4 +2618,4 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 end)
 
-print("[robloquake] client ready")
+print("[fragparty] client ready")

@@ -292,7 +292,7 @@ return function()
 				table.insert(cl.prints, { level = qwp.PRINT_CHAT, text = `{name}: {m.Text}\n` })
 			end)
 		else
-			warn("[robloquake] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
+			warn("[fragparty] TextChatService general channel unavailable — say disabled (filtering is required for player speech)")
 		end
 	end)
 	local function sayViaTextChat(text: string)
@@ -667,7 +667,7 @@ return function()
 		-- streams batches in; worldReady (not worldBuilt, which flips at
 		-- entry as the re-entrancy guard) is what gates the render loop
 		worldReady = true
-		print(`[robloquake] qw world built: {cl.levelname}`)
+		print(`[fragparty] qw world built: {cl.levelname}`)
 	end
 
 	-- statics arrive in the prespawn signon, after the world builds:
@@ -1384,7 +1384,7 @@ return function()
 			reliable:FireServer(packet)
 		end
 	end)
-	print("[robloquake] qw client connecting...")
+	print("[fragparty] qw client connecting...")
 
 	local camera = Workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Scriptable
@@ -1712,7 +1712,7 @@ return function()
 			end
 		elseif cmd == "version" then
 			-- CL_Version_f (exe date replaced by the port identity)
-			consolelib.print(con, "Version 2.40\nrobloquake QuakeWorld port")
+			consolelib.print(con, "Version 2.40\nFrag Party QuakeWorld port")
 		elseif cmd == "users" then
 			-- CL_Users_f: userid frags name for every connected player
 			consolelib.print(con, "userid frags name")

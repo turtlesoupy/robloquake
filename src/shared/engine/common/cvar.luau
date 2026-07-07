@@ -47,7 +47,7 @@ local DEFAULTS: { [string]: string } = {
 	saved4 = "0",
 	-- misc read by QC
 	registered = "0", -- shareware!
-	hostname = "robloquake",
+	hostname = "Frag Party",
 }
 
 function cvar.new(): Cvars

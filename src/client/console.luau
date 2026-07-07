@@ -114,7 +114,7 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	local backbuf = vfslib.loadFile(fs, "gfx/conback.lmp")
 	if backbuf then
 		local pic = wadlib.parseQPic(backbuf)
-		local ver = "(robloquake) 1.09"
+		local ver = "(frag party) 1.09"
 		local destX = pic.width - 11 - 8 * #ver
 		local destY = 186
 		for ci = 1, #ver do

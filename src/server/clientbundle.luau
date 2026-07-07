@@ -105,7 +105,7 @@ function clientbundle.new(
 			soundmap:Clone().Parent = clientFS
 		end
 		clientFS:SetAttribute("ready", true)
-		print(`[robloquake] client bundle: {publishCount} files published`)
+		print(`[fragparty] client bundle: {publishCount} files published`)
 	end
 
 	return {

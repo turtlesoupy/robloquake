@@ -748,7 +748,7 @@ function host.clientCommand(svr: svlib.Server, client: svlib.Client, s: string)
 		host.viewprev(svr)
 	elseif cmd == "version" then
 		-- Host_Version_f (exe date replaced by the port identity)
-		clientPrint(client, "Version 1.09\nrobloquake WinQuake port\n")
+		clientPrint(client, "Version 1.09\nFrag Party WinQuake port\n")
 	elseif cmd == "path" then
 		-- COM_Path_f: the vfs searchpath, newest first
 		local lines = { "Current search path:\n" }

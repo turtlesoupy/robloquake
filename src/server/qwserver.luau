@@ -74,7 +74,7 @@ return function(ctx: Ctx)
 			-- setting one mirrors into the serverinfo string the clients
 			-- read (teamplay gates Sbar_TeamOverlay client-side)
 			svr.serverinfo[name] = tostring(v)
-			print(`[robloquake] {name} = {v}`)
+			print(`[fragparty] {name} = {v}`)
 		end
 	end
 
@@ -88,7 +88,7 @@ return function(ctx: Ctx)
 			svr.localinfo[k] = v
 			n += 1
 		end
-		print(`[robloquake] rotate.cfg: {n} localinfo rotation entries applied`)
+		print(`[fragparty] rotate.cfg: {n} localinfo rotation entries applied`)
 	end
 
 	qwsv.spawnServer(svr, ctx.startMap)
@@ -315,7 +315,7 @@ return function(ctx: Ctx)
 		player:SetAttribute("RQSlot", slot)
 		publishAvatarRig(player)
 		greetHost(player) -- host greeting (PRODUCT layer)
-		print(`[robloquake] {player.Name} connected as qw client {slot}`)
+		print(`[fragparty] {player.Name} connected as qw client {slot}`)
 		return slot
 	end
 
@@ -393,7 +393,7 @@ return function(ctx: Ctx)
 		if nextLevel then
 			svr.changelevelTo = nil
 			nextLevel = dir.resolveChangelevel(nextLevel) -- rotation/vote seam
-			print(`[robloquake] qw changelevel to {nextLevel}`)
+			print(`[fragparty] qw changelevel to {nextLevel}`)
 			qwsv.saveSpawnparms(svr) -- inventory carries across levels
 			qwsv.spawnServer(svr, nextLevel)
 			bundle.publishAll(svr)

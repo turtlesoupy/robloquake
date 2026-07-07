@@ -72,7 +72,7 @@ local function newPage(a: Atlas): Page?
 		return AssetService:CreateEditableImage({ Size = Vector2.new(PAGE, PAGE) })
 	end)
 	if not ok or not img then
-		warn("[robloquake] light atlas page allocation failed")
+		warn("[fragparty] light atlas page allocation failed")
 		return nil
 	end
 	local page: Page = {
@@ -286,7 +286,7 @@ function lightatlas.alloc(a: Atlas, data: bsp.BspData, surf: bsp.Surface, styleV
 	local smax = bit32.rshift(surf.extents[1], 4) + 1
 	local tmax = bit32.rshift(surf.extents[2], 4) + 1
 	if smax + 2 > PAGE or tmax + 2 > PAGE then
-		warn(`[robloquake] lightmap region exceeds atlas page: {smax}x{tmax} (extents {surf.extents[1]}x{surf.extents[2]})`)
+		warn(`[fragparty] lightmap region exceeds atlas page: {smax}x{tmax} (extents {surf.extents[1]}x{surf.extents[2]})`)
 		return nil
 	end
 	local pi, x, y = allocRect(a, smax + 2, tmax + 2)

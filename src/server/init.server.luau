@@ -49,9 +49,9 @@ do
 	if presetName then
 		local modepresets = require(script.modepresets)
 		if modepresets.apply(assets, presetName) then
-			print(`[robloquake] mode preset applied: {presetName}`)
+			print(`[fragparty] mode preset applied: {presetName}`)
 		else
-			warn(`[robloquake] unknown mode preset "{presetName}" — using place attributes`)
+			warn(`[fragparty] unknown mode preset "{presetName}" — using place attributes`)
 		end
 	end
 end
@@ -69,7 +69,7 @@ if not gameFolder then
 		table.insert(have, child.Name)
 	end
 	error(
-		`[robloquake] active mode wants game={gameDir} but QuakeAssets only holds`
+		`[fragparty] active mode wants game={gameDir} but QuakeAssets only holds`
 			.. ` [{table.concat(have, ", ")}] — align the mode with the place's content:`
 			.. ` lune run tools/mode (see docs/PUBLISHING.md)`
 	)
@@ -88,7 +88,7 @@ local function addGameDirectory(dirFolder: Instance)
 			break
 		end
 		vfs.addPack(fsys, pack)
-		print(`[robloquake] loaded {dirFolder.Name}/pak{i}.pak ({pack.numfiles} files)`)
+		print(`[fragparty] loaded {dirFolder.Name}/pak{i}.pak ({pack.numfiles} files)`)
 	end
 end
 addGameDirectory(gameFolder)
@@ -105,7 +105,7 @@ if typeof(gamedirAttr) == "string" and gamedirAttr ~= "" and gamedirAttr ~= game
 		modDir = gamedirAttr
 		addGameDirectory(modFolder :: Instance)
 	else
-		warn(`[robloquake] gamedir "{gamedirAttr}" not found under QuakeAssets — running base game`)
+		warn(`[fragparty] gamedir "{gamedirAttr}" not found under QuakeAssets — running base game`)
 	end
 end
 
@@ -151,7 +151,7 @@ for _, name in { "deathmatch", "coop", "skill", "fraglimit", "timelimit", "teamp
 	local v = assets:GetAttribute(name)
 	if typeof(v) == "number" then
 		cvarlib.setValue(svr.cvars, name, v)
-		print(`[robloquake] {name} = {v}`)
+		print(`[fragparty] {name} = {v}`)
 	end
 end
 
@@ -283,7 +283,7 @@ local function connectPlayer(player: Player)
 	player:SetAttribute("RQSlot", slot)
 	publishAvatarRig(player)
 	greetHost(player) -- host greeting (PRODUCT layer)
-	print(`[robloquake] {player.Name} connected as client {slot}`)
+	print(`[fragparty] {player.Name} connected as client {slot}`)
 end
 
 svr.onDropClient = function(_svr, client)
@@ -652,7 +652,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		sg.loadgameRequest = nil
 		local text = sg.savegames and sg.savegames[loadReq]
 		if text then
-			print(`[robloquake] loading {loadReq}.sav`)
+			print(`[fragparty] loading {loadReq}.sav`)
 			local savegamelib = require(engine.server.savegame)
 			savegamelib.load(svr, text, function(m: string)
 				host.spawnServer(svr, m)
@@ -692,7 +692,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	if nextLevel then
 		svr.changelevelTo = nil
 		nextLevel = dir.resolveChangelevel(nextLevel) -- rotation/vote seam
-		print(`[robloquake] changelevel to {nextLevel}`)
+		print(`[fragparty] changelevel to {nextLevel}`)
 		host.saveSpawnparms(svr) -- inventory carries across levels
 		host.spawnServer(svr, nextLevel)
 		bundle.publishAll(svr) -- new map + newly precached models
@@ -702,4 +702,4 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 end)
 
-print("[robloquake] server running: " .. START_MAP)
+print("[fragparty] server running: " .. START_MAP)
