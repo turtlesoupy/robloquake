@@ -121,20 +121,28 @@ function sv_phys.clipVelocity(vin: vector, normal: vector, overbounce: number): 
 
 	local backoff = vector.dot(vin, normal) * overbounce
 
-	local function comp(inv: number, n: number): number
-		local out = inv - n * backoff
-		if out > -STOP_EPSILON and out < STOP_EPSILON then
-			out = 0
-		end
-		return out
+	local ox = vin.x - normal.x * backoff
+	local oy = vin.y - normal.y * backoff
+	local oz = vin.z - normal.z * backoff
+	if ox > -STOP_EPSILON and ox < STOP_EPSILON then
+		ox = 0
 	end
-	return blocked, vector.create(comp(vin.x, normal.x), comp(vin.y, normal.y), comp(vin.z, normal.z))
+	if oy > -STOP_EPSILON and oy < STOP_EPSILON then
+		oy = 0
+	end
+	if oz > -STOP_EPSILON and oz < STOP_EPSILON then
+		oz = 0
+	end
+	return blocked, vector.create(ox, oy, oz)
 end
 
 --------------------------------------------------------------------------
 -- SV_FlyMove
 
 -- Returns (clipflags, steptrace?): 1 = floor, 2 = wall/step, 4 = dead stop
+-- planes is C's `vec3_t planes[MAX_CLIP_PLANES]` (stack, but flyMove never
+-- nests: no QC path called from impact() re-enters it)
+local flyPlanes: { vector } = {}
 function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantSteptrace: boolean): (number, world.Trace?)
 	local w = svr.world
 	local numbumps = 4
@@ -142,7 +150,8 @@ function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantS
 	local blocked = 0
 	local original_velocity = vmlib.edVector(ed, ent.velocity)
 	local primal_velocity = original_velocity
-	local planes: { vector } = {}
+	local planes = flyPlanes
+	table.clear(planes)
 	local steptrace: world.Trace? = nil
 
 	local time_left = time

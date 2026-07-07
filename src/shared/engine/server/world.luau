@@ -736,6 +736,21 @@ local function moveBounds(start: vector, mins: vector, maxs: vector, endp: vecto
 end
 
 -- SV_Move
+-- clip is C's stack `moveclip_t` — module scratch (every field rewritten
+-- per call; only clip.trace escapes, and that stays freshly allocated)
+local clipScratch: MoveClip = {
+	boxmins = vector.zero,
+	boxmaxs = vector.zero,
+	mins = vector.zero,
+	maxs = vector.zero,
+	mins2 = vector.zero,
+	maxs2 = vector.zero,
+	start = vector.zero,
+	endp = vector.zero,
+	trace = scratchClipTrace,
+	type = 0,
+	passedict = nil,
+}
 function world.move(
 	w: World,
 	start: vector,
@@ -747,19 +762,18 @@ function world.move(
 ): Trace
 	-- clip to world
 	local worldEd = vmlib.edictNum(w.vm, 0)
-	local clip: MoveClip = {
-		boxmins = vector.zero,
-		boxmaxs = vector.zero,
-		mins = mins,
-		maxs = maxs,
-		mins2 = mins,
-		maxs2 = maxs,
-		start = start,
-		endp = endp,
-		trace = world.clipMoveToEntity(w, worldEd, start, mins, maxs, endp),
-		type = movetype,
-		passedict = passedict,
-	}
+	local clip = clipScratch
+	clip.boxmins = vector.zero
+	clip.boxmaxs = vector.zero
+	clip.mins = mins
+	clip.maxs = maxs
+	clip.mins2 = mins
+	clip.maxs2 = maxs
+	clip.start = start
+	clip.endp = endp
+	clip.trace = world.clipMoveToEntity(w, worldEd, start, mins, maxs, endp)
+	clip.type = movetype
+	clip.passedict = passedict
 
 	if movetype == qd.MOVE_MISSILE then
 		clip.mins2 = vector.create(-15, -15, -15)

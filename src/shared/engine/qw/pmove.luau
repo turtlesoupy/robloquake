@@ -403,13 +403,14 @@ local function clipVelocity(inv: vector, normal: vector, overbounce: number): (v
 end
 
 -- PM_FlyMove
+local flyPlanes: { vector } = {} -- C's `vec3_t planes[MAX_CLIP_PLANES]` (static); reads bounded by numplanes
 local function flyMove(pm: PlayerMove): number
 	local numbumps = 4
 	local blocked = 0
 	local original_velocity = pm.velocity
 	local primal_velocity = pm.velocity
 	local numplanes = 0
-	local planes: { vector } = {}
+	local planes = flyPlanes
 	local time_left = frametime
 
 	for _ = 1, numbumps do
