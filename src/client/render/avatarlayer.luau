@@ -120,6 +120,7 @@ export type Layer = {
 	destroyWeapons: () -> (),
 	destroySlot: (slot: number) -> (),
 	isDeathFrame: (frame: number) -> boolean,
+	setFade: (slot: number, alpha: number) -> (),
 	pantsColor: (colors: number) -> Color3,
 	shirtColor: (colors: number) -> Color3,
 	tagMuzzle: (re: entrender.RenderEnt, modelName: string?, origin: vector) -> (),
@@ -192,6 +193,14 @@ function avatarlayer.new(deps: Deps): Layer
 
 	function layer.isDeathFrame(frame: number): boolean
 		return frame >= DEATH_FIRST and frame <= DEATH_LAST
+	end
+
+	-- mild mode corpse fade (call right after updatePlayer; 0 restores)
+	function layer.setFade(slot: number, alpha: number)
+		local ae = ents[slot]
+		if ae then
+			avatarrender.setFade(ae, alpha)
+		end
 	end
 
 	-- representative palette color for a translation row start

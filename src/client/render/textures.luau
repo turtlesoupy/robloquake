@@ -92,6 +92,48 @@ function textures.createImage(pixels: buffer, width: number, height: number, pal
 	return img
 end
 
+-- Lit-variant RGBA: palette colors scaled by a light factor, with the
+-- software colormap's fullbright indices (224-255) kept at full
+-- intensity — the R_AliasSetupLighting equivalent for baked skins.
+function textures.toLitRGBA(pixels: buffer, count: number, pal: Palette, scale: number): buffer
+	local out = buffer.create(count * 4)
+	local pr, pg, pb = pal.r, pal.g, pal.b
+	for i = 0, count - 1 do
+		local p = buffer.readu8(pixels, i)
+		local o = i * 4
+		local s = if p >= 224 then 1 else scale
+		buffer.writeu8(out, o, pr[p + 1] * s // 1)
+		buffer.writeu8(out, o + 1, pg[p + 1] * s // 1)
+		buffer.writeu8(out, o + 2, pb[p + 1] * s // 1)
+		buffer.writeu8(out, o + 3, 255)
+	end
+	return out
+end
+
+-- Lit-variant EditableImage (nil when the image budget is exhausted or
+-- the Mesh & Image APIs are unavailable; callers fall back to unlit)
+function textures.createLitImage(
+	pixels: buffer,
+	width: number,
+	height: number,
+	pal: Palette,
+	scale: number
+): EditableImage?
+	local ok, img = pcall(function(): EditableImage?
+		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		if not image then
+			return nil
+		end
+		local rgba = textures.toLitRGBA(pixels, width * height, pal, scale)
+		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+		return image
+	end)
+	if not ok then
+		return nil
+	end
+	return img
+end
+
 -- Fullbright overlay image: the software colormap keeps palette indices
 -- 224-255 at full intensity regardless of light. Returns an image with
 -- only those pixels opaque (nil when the texture has none), drawn as an

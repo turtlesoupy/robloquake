@@ -175,8 +175,45 @@ missing oscillation for two days) is the precedent; fixed 2026-07-07.
 ## Platform substitutions (cannot be direct ports)
 
 - **Network transport**: sockets → RemoteEvents. The svc/clc byte stream on
-  top is exact; delivery/ordering semantics differ (reliable channel is
-  genuinely reliable; unreliable drops >~900B payloads, worked around).
+  top is exact, and as of 2026-07-07 the QW boot runs the REAL netchan.c
+  protocol (bit-31 reliable flag/ack, reliable_buf copy-out,
+  retransmit-on-evidence, stale/duplicate discard — restored from the
+  earlier "netchan-lite") so datagrams ride the UnreliableRemoteEvent like
+  UDP; reliable RemoteEvent batching/head-of-line blocking was the root
+  cause of chunky remote motion on real networks. Transport-forced
+  deviations from netchan.c, each commented at the site: sequences start
+  at 1 (C sacrifices each side's first packet to the stale guard and heals
+  by retransmit; we cannot, because reliable-bearing packets are sent on
+  BOTH remotes — the guaranteed copy is the delivery guarantee, the
+  duplicate must always discard); packets >~850B go reliable-remote-only
+  (unreliable payload cap); the server withholds pure-keepalive replies
+  while a reliable is in flight (a keepalive's higher sequence racing the
+  reliable-only signon packet across the two channels could starve the
+  handshake — C's single socket has no such race). Client cmd packets flow
+  in every state past disconnected, exactly as C's CL_SendCmd (an earlier
+  port deviation gated them during the handshake); sv_user.c's
+  reply-sequence alignment is ported (its omission skewed the frames ring
+  permanently under any upstream loss).
+- **Remote-player rendering**: 1996 QW extrapolates other players by
+  replaying their last usercmd for half the elapsed move and snapping on
+  each packet (CL_LinkPlayers + CL_SetUpPlayerPrediction — still ported,
+  still driving the spectator cam and solid-player physents). For the
+  RENDERED pose, big Roblox rigs at 60Hz make the snap-and-correct pattern
+  read as warping, so remote players draw on a short delayed interpolated
+  timeline instead (qwplerp — the ezQuake/FTE-style evolution). Segments
+  are timed by displacement against the wire velocity (dt = dP·V̄/|V̄|²)
+  rather than wire state_time: the reconstructed timestamps mix the
+  viewer's cmd send clock with the server's msec byte, so viewer upstream
+  jitter and sv.time frame quantization put ±1 frame of noise on them, and
+  the two clients' unsynchronized cmd clocks alias (some replies duplicate
+  the mover's position, some span two moves). Sim, prediction, camera and
+  wire protocol are untouched; workspace attribute RQDBG_QWNoLerp reverts
+  to the authentic extrapolate-and-snap live.
+- **PL (packet loss) column**: C's CL_CalcNet counts still-in-flight cmds
+  as dropped, diluted across a 256-slot ring (~1% on a clean LAN); over
+  this port's 64-frame ring that artifact read 4% on a lossless link, so
+  PL here counts only cmds the server's acks have passed by — true loss; a
+  clean link reads 0.
 - **Audio output**: no PCM access. The software mixer (`snd_mix.c`) is
   replaced by a soundbank asset + PlaybackRegion slices; spatialization is
   Roblox's rolloff approximating `SND_Spatialize`'s linear curve.

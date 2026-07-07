@@ -27,6 +27,7 @@ local qcoords = require(engine.client.qcoords)
 local avatarlayer = require(script.render.avatarlayer)
 local avatarrender = require(script.render.avatarrender)
 local entrender = require(script.render.entrender)
+local mildmode = require(script.render.mildmode)
 local skinforge = require(script.render.skinforge)
 local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
@@ -48,6 +49,10 @@ local clientAssets = ReplicatedStorage:WaitForChild("QuakeClientFS")
 while clientAssets:GetAttribute("ready") ~= true do
 	clientAssets.AttributeChanged:Wait()
 end
+
+-- mild mode (content softening, display-only) is stamped before ready;
+-- read once here for BOTH engine clients (the QW module requires below)
+mildmode.init(clientAssets)
 
 -- engine selection mirrors the server: campaign/coop places boot the
 -- NetQuake client below; competitive places (engine="qw") boot QuakeWorld
@@ -351,7 +356,13 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			def = { kind = "none", flags = 0 }
 		else
 			local am = mdllib.load(name, buf)
-			def = { kind = "alias", alias = am, flags = am.flags }
+			def = {
+				kind = "alias",
+				alias = am,
+				flags = am.flags,
+				-- mild mode: gibs/heads render untextured white
+				forceWhite = if mildmode.enabled and mildmode.isGibModel(name) then true else nil,
+			}
 			entrender.prepareImages(def, pal)
 		end
 	elseif name:sub(-4) == ".spr" then
@@ -2290,6 +2301,15 @@ RunService.Heartbeat:Connect(function(dt: number)
 		local def = getModelDef(e.modelindex) :: entrender.ModelDef
 		local rr = re :: entrender.RenderEnt
 
+		-- mild mode: bodyque corpses (player.mdl above maxclients in the
+		-- death band) fade out after a hold; a recycled bodyque ent resets
+		-- the timer via its origin jump (see mildmode.corpseAlpha)
+		local mildCorpse = mildmode.enabled
+			and num > c.maxclients
+			and c.model_precache[e.modelindex + 1] == "progs/player.mdl"
+			and avatarLayer.isDeathFrame(e.frame)
+		local corpseFade = if mildCorpse then mildmode.corpseAlpha(`n{num}`, e.origin, c.time) else 0
+
 		-- Roblox avatars mode: a player entity renders as its avatar rig.
 		-- player.mdl death/corpse frames are 41..102 (attacks sit above,
 		-- pain is 29..40): in the death band the rig plays a scripted
@@ -2314,6 +2334,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 				colors = c.scores[e.colormap].colors
 			end
 			if avatarLayer.updatePlayer(num, avatarPlayer :: Player, e.origin, e.angles, e.frame, e.effects, colors, avatarDead) then
+				avatarLayer.setFade(num, corpseFade) -- after update: 0 restores
 				setEntVisible(rr, false)
 				applyEntityEffects(num, e) -- muzzleflash/dlights still fire
 				continue
@@ -2332,6 +2353,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			-- R_AliasSetupLighting: dynamic lights add straight onto the
 			-- lightmap sample
 			entrender.setLight(rr, entityLight(e.origin))
+			mildmode.applyFade(rr, corpseFade) -- no-op unless mild corpse
 
 			-- CL_RelinkEntities: entity effects
 			applyEntityEffects(num, e)
@@ -2425,6 +2447,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if def and def.kind == "alias" then
 				-- the gun renders through its own projection (viewmodel.luau)
 			gunEnt = entrender.create(def, vmgun.world)
+				if gunEnt then
+					-- viewports ignore part/SA tints; light rides the frame
+					gunEnt.lightFrame = vmgun.frame
+				end
 			end
 		end
 		local ge = gunEnt

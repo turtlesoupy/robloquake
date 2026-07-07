@@ -30,4 +30,23 @@ t.check(count >= 5, "expected preset catalog present")
 t.check(modepresets.PRESETS["campaign"].deathmatch == nil, "campaign has no deathmatch")
 t.check(modepresets.PRESETS["campaign"].maplist == nil, "campaign has no maplist (authentic exit chain)")
 
+-- modifiers: every key must be canonical, and resolve composes them
+-- over any preset
+for name, mod in modepresets.MODIFIERS :: { [string]: { [string]: any } } do
+	for key in mod do
+		t.check(keySet[key] == true, `modifier {name}: key "{key}" is in KEYS`)
+	end
+end
+t.check(modepresets.MODIFIERS.original.mildmode == false, "original modifier opts out of mildmode")
+
+local plain = modepresets.resolve("qw-dm") :: { [string]: any }
+t.check(plain ~= nil and plain.mildmode == nil, "qw-dm resolves with mildmode absent (default-on mirror)")
+local original = modepresets.resolve("qw-dm+original") :: { [string]: any }
+t.check(original ~= nil and original.mildmode == false, "qw-dm+original resolves with mildmode=false")
+t.check(original.engine == "qw" and original.maplist == plain.maplist, "modifier keeps the base preset intact")
+local coriginal = modepresets.resolve("campaign+original") :: { [string]: any }
+t.check(coriginal ~= nil and coriginal.mildmode == false, "modifiers compose over any preset")
+t.check(modepresets.resolve("qw-dm+nope") == nil, "unknown modifier resolves nil")
+t.check(modepresets.resolve("nope+original") == nil, "unknown preset resolves nil")
+
 t.finish("modepresets")

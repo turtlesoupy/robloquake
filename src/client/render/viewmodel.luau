@@ -9,9 +9,10 @@
 -- depthRange equivalent (the gun never clips into walls), and the
 -- frame edge clips the gun at the strip top exactly like the C vrect.
 --
--- Platform delta: ViewportFrame shading is Ambient-only — the gun is
--- already flat-lit via entrender.setLight, so Ambient is set to white
--- and the part color carries the R_DrawViewModel light level.
+-- Platform delta: ViewportFrame shading is Ambient-only, and viewports
+-- ignore Part.Color/SurfaceAppearance tints on textured meshes — so
+-- Ambient is white and the R_DrawViewModel light level rides the
+-- frame's ImageColor3 (entrender.setLight via RenderEnt.lightFrame).
 
 local viewmodel = {}
 

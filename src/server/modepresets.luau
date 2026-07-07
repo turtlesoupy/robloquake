@@ -27,6 +27,10 @@ modepresets.KEYS = {
 	"votetime",
 	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
+	-- content softening: white gibs/blood, corpses fade (render-only).
+	-- default ON when absent (clientbundle mirror); set false for the
+	-- original engine presentation
+	"mildmode",
 	-- stats/leaderboard scope label; absent = derived (statscore.deriveModeKey)
 	"modekey",
 }
@@ -135,15 +139,57 @@ modepresets.PRESETS = {
 	},
 }
 
--- apply a preset onto the assets folder: every KEY is written (nil
--- clears), so state == preset exactly
-function modepresets.apply(assets: Instance, name: string): boolean
-	local preset = modepresets.PRESETS[name]
+-- modifiers: composable overlays that apply over ANY preset as
+-- "<preset>+<modifier>" (e.g. qw-dm+original, campaign+original via
+-- tools/mode); every key must be in KEYS
+modepresets.MODIFIERS = {
+	-- the original engine presentation (red gibs/blood, persistent
+	-- corpses): opts out of the mildmode default for parity captures
+	original = { mildmode = false },
+	-- LibreQuake content (copyright-free, game=lq1) over any preset's
+	-- rules, e.g. qw-dm+librequake / nq-dm+librequake. lq1 shares no map
+	-- names with id1 except start.bsp, so the rotation must come along:
+	-- lightest lqdm maps first (Studio's EditableMesh budget fits
+	-- lqdm11/12/2 comfortably; the big ones lqdm3/13/6 starve it). DM
+	-- oriented — campaign+librequake would need its own startmap/exit
+	-- chain and is not a supported combination.
+	librequake = {
+		game = "lq1",
+		maplist = "lqdm11 lqdm12 lqdm2 lqdm1",
+		startmap = "lqdm11",
+	},
+}
+
+-- resolve "<preset>[+modifier...]" into the complete attribute state;
+-- nil when the preset or any modifier is unknown
+function modepresets.resolve(name: string): { [string]: any }?
+	local parts = string.split(name, "+")
+	local preset = modepresets.PRESETS[parts[1]]
 	if not preset then
+		return nil
+	end
+	local state = table.clone(preset :: { [string]: any })
+	for i = 2, #parts do
+		local mod = (modepresets.MODIFIERS :: { [string]: { [string]: any } })[parts[i]]
+		if not mod then
+			return nil
+		end
+		for key, value in mod do
+			state[key] = value
+		end
+	end
+	return state
+end
+
+-- apply a preset (+modifiers) onto the assets folder: every KEY is
+-- written (nil clears), so state == the resolved preset exactly
+function modepresets.apply(assets: Instance, name: string): boolean
+	local state = modepresets.resolve(name)
+	if not state then
 		return false
 	end
 	for _, key in modepresets.KEYS do
-		assets:SetAttribute(key, (preset :: { [string]: any })[key])
+		assets:SetAttribute(key, state[key])
 	end
 	return true
 end

@@ -20,6 +20,7 @@ local vfslib = require(engine.common.vfs)
 local qcoords = require(engine.client.qcoords)
 local qwcl = require(engine.qw.qwcl)
 local qwp = require(engine.qw.qwprotocol)
+local qwplerp = require(engine.qw.qwplerp)
 local qwview = require(engine.qw.qwview)
 
 local bsplib = require(engine.bsp.bsp)
@@ -29,6 +30,7 @@ local avatarlayer = require(script.Parent.render.avatarlayer)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
+local mildmode = require(script.Parent.render.mildmode)
 local lightpoint = require(engine.client.lightpoint)
 local viewlib = require(engine.client.view)
 local particleslib = require(script.Parent.render.particles)
@@ -61,6 +63,93 @@ return function()
 	local cl = qwcl.new(fs)
 	cl.dprint = function(s: string)
 		print("[qwcl] " .. s)
+	end
+
+	-- remote players render on a slightly delayed, interpolated timeline
+	-- (qwplerp) instead of QW's extrapolate-and-snap — every wire state
+	-- is buffered here as it parses, keyed by its state_time
+	local plerpHists: { [number]: qwplerp.Hist } = {}
+	cl.onPlayerState = function(num: number, st: any)
+		local h = plerpHists[num]
+		if not h then
+			h = qwplerp.new()
+			plerpHists[num] = h
+		end
+		qwplerp.push(h, st.messagenum, st.state_time, st.origin, st.viewangles.x, st.viewangles.y, st.velocity, st.frame)
+	end
+
+	-- live net diagnostics: one compact line per rendered remote player
+	-- every 10s to the client log (F9 developer console) — published
+	-- playtests have no attribute access, and these numbers are the
+	-- whole debugging story: rendered step uniformity + which smoothing
+	-- mechanism fired (dups/holds/resyncs) + delay/noise levels
+	type NetDiag = {
+		prev: vector?,
+		n: number,
+		sum: number,
+		sumsq: number,
+		max: number,
+		stalls: number,
+		spikes: number,
+		delayMs: number,
+		pushes: number, -- hist counter baselines (window diffing)
+		dups: number,
+		holds: number,
+		resyncs: number,
+	}
+	local netdiag: { [number]: NetDiag } = {}
+	local lastNetDiagAt = 0
+	local function netDiagStep(num: number, porigin: vector, delay: number)
+		local d = netdiag[num]
+		if not d then
+			d = { n = 0, sum = 0, sumsq = 0, max = 0, stalls = 0, spikes = 0, delayMs = 0, pushes = 0, dups = 0, holds = 0, resyncs = 0 }
+			local h = plerpHists[num]
+			if h then
+				d.pushes, d.dups, d.holds, d.resyncs = h.pushes, h.dups, h.holds, h.resyncs
+			end
+			netdiag[num] = d
+		end
+		d.delayMs = math.max(d.delayMs, delay * 1000)
+		local prev = d.prev
+		d.prev = porigin
+		if prev then
+			local s = vector.magnitude(porigin - prev)
+			d.n += 1
+			d.sum += s
+			d.sumsq += s * s
+			if s > d.max then
+				d.max = s
+			end
+			local m = d.sum / d.n
+			if m > 1 then -- stall/spike shape only means something in motion
+				if s < 0.2 * m then
+					d.stalls += 1
+				elseif s > 2 * m then
+					d.spikes += 1
+				end
+			end
+		end
+	end
+	local function netDiagFlush(now: number)
+		if now - lastNetDiagAt < 10 then
+			return
+		end
+		lastNetDiagAt = now
+		for num, d in netdiag do
+			local h = plerpHists[num]
+			if d.n > 30 and h then
+				local m = d.sum / d.n
+				local sd = math.sqrt(math.max(d.sumsq / d.n - m * m, 0))
+				print(
+					`[qwnet] p{num} snaps={h.pushes - d.pushes}(+{h.dups - d.dups}dup)`
+						.. ` holds={h.holds - d.holds} resyncs={h.resyncs - d.resyncs}`
+						.. ` delay={math.floor(d.delayMs + 0.5)}ms noise={math.floor(math.abs(h.timeErr) * 1000 + 0.5)}ms`
+						.. ` | step qu/frame mean={string.format("%.1f", m)} sd={string.format("%.1f", sd)}`
+						.. ` max={string.format("%.1f", d.max)} stalls={d.stalls} spikes={d.spikes} n={d.n}`
+				)
+			end
+		end
+		table.clear(netdiag)
 	end
 
 	----------------------------------------------------------------------
@@ -387,7 +476,13 @@ return function()
 			return nil
 		end
 		if m.kind == "alias" then
-			def = { kind = "alias" :: "alias", alias = m.alias, flags = m.alias.flags }
+			def = {
+				kind = "alias" :: "alias",
+				alias = m.alias,
+				flags = m.alias.flags,
+				-- mild mode: gibs/heads render untextured white
+				forceWhite = if mildmode.enabled and mildmode.isGibModel(name) then true else nil,
+			}
 			entrender.prepareImages(def, pal)
 		elseif m.kind == "sprite" then
 			def = { kind = "sprite" :: "sprite", sprite = m.sprite, flags = 0 }
@@ -766,7 +861,11 @@ return function()
 		elseif t == qwp.TE_BLOOD then
 			particleslib.runEffect(psys, te.pos, vector.zero, 73, 20 * (te.count or 1), cl.time, true)
 		elseif t == qwp.TE_LIGHTNINGBLOOD then
-			particleslib.runEffect(psys, te.pos, vector.zero, 225, 50, cl.time, true)
+			-- mild mode: 225's palette band is shared with lava splashes
+			-- and knight spikes, so whiten by substituting the regular
+			-- blood color here instead of remapping the band
+			local lbColor = if mildmode.enabled then 73 else 225
+			particleslib.runEffect(psys, te.pos, vector.zero, lbColor, 50, cl.time, true)
 		elseif t == qwp.TE_EXPLOSION or t == qwp.TE_TAREXPLOSION then
 			particleslib.explosion(psys, te.pos, cl.time)
 			if t == qwp.TE_EXPLOSION then
@@ -922,6 +1021,9 @@ return function()
 			renderEnts[key] = re
 			renderDefs[key] = def
 		end
+		-- a pooled/reused ent may carry a mild-mode corpse fade; restore
+		-- it (no-op otherwise; the corpse path re-applies after linking)
+		mildmode.applyFade(re, 0)
 		if def.kind == "alias" then
 			if bit32.band(def.flags, mdllib.EF_ROTATE) ~= 0 then
 				-- items spin: autorotate = anglemod(100*cl.time)
@@ -945,6 +1047,15 @@ return function()
 			-- bodyque corpses (CopyToBodyQue): player.mdl packet entities in
 			-- the death band keep the owner's avatar — colormap carries the
 			-- owner's slot, exactly like the NQ boot
+			-- mild mode: bodyque corpses fade after a hold. Packet entities
+			-- in player.mdl death frames ARE corpses (live players arrive
+			-- via playerinfo); a recycled bodyque slot resets the timer via
+			-- its origin jump (see mildmode.corpseAlpha)
+			local mildCorpse = mildmode.enabled
+				and es.modelindex == cl.playerindex
+				and avatarLayer.isDeathFrame(es.frame)
+			local corpseFade = if mildCorpse then mildmode.corpseAlpha(`e{es.number}`, es.origin, cl.time) else 0
+
 			local corpsePlayer: Player? = nil
 			local corpseColors: number? = nil
 			if
@@ -968,6 +1079,7 @@ return function()
 				corpsePlayer
 				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, corpseColors, true)
 			then
+				avatarLayer.setFade(1000 + es.number, corpseFade) -- after update: 0 restores
 				seenAvatars[1000 + es.number] = true
 			else
 				-- projectile muzzle blend: tag fresh projectiles near an
@@ -975,6 +1087,9 @@ return function()
 				local re0 = renderEnts[key]
 				local org = if re0 and avatarsOn() then avatarLayer.blendOrigin(re0, es.origin) else es.origin
 				linkEnt(key, es.modelindex, org, es.angles, es.frame, es.skinnum, time)
+				if mildCorpse then
+					mildmode.applyFade(renderEnts[key], corpseFade)
+				end
 				if not re0 and avatarsOn() then
 					local re1 = renderEnts[key]
 					if re1 then
@@ -1033,6 +1148,15 @@ return function()
 		-- solo without a second client
 		local drawSelf = workspace:GetAttribute("RQDBG_QWSelfAvatar") == true
 		local velProbe = workspace:GetAttribute("RQDBG_QWVelProbe") == true
+		-- RQDBG_QWNoLerp: fall back to CL_LinkPlayers extrapolate-and-snap.
+		-- RQDBG_QWLerpSelf: route your OWN avatar through the remote-player
+		-- path (its playerstates arrive at wire rate, a faithful solo proxy
+		-- for how other players render — pair with RQDBG_QWSelfAvatar).
+		local noLerp = workspace:GetAttribute("RQDBG_QWNoLerp") == true
+		local lerpSelf = workspace:GetAttribute("RQDBG_QWLerpSelf") == true
+		local playertime = math.min(cl.realtime - cl.latency + 0.02, cl.realtime)
+		local peakPeerLagMs = 0
+		local peakTimeNoiseMs = 0 -- wire-vs-assigned timeline error (jitter gauge)
 		local peakPeerVel, peakPeerNum = 0, -1
 		for num, ps in frame.playerstate do
 			if ps.messagenum ~= cl.parsecount or (num == cl.playernum and not drawSelf) then
@@ -1042,11 +1166,36 @@ return function()
 			if cl.spectator and cl.cam.autocam ~= CAM_NONE and cl.cam.locked and num == cl.cam.spec_track then
 				continue
 			end
-			local angles = vector.create(-ps.viewangles.x / 3, ps.viewangles.y, 0)
-			-- CL_LinkPlayers lean: V_CalcRoll (shared) * 4
-			local roll = viewlib.calcRoll(angles, ps.velocity) * 4
-			angles = vector.create(angles.x, angles.y, roll)
+			-- remote players: interpolated delayed timeline (see qwplerp);
+			-- the local player keeps the live predicted origin
 			local porigin = predicted[num] or ps.origin
+			local ppitch, pyaw = ps.viewangles.x, ps.viewangles.y
+			local pvel = ps.velocity
+			local pframe = ps.frame
+			local remotePath = num ~= cl.playernum or lerpSelf
+			local sampleDelay = 0
+			if remotePath and lerpSelf and num == cl.playernum and noLerp then
+				porigin = ps.origin -- raw wire baseline for the A/B probe
+			elseif remotePath and not noLerp then
+				local h = plerpHists[num]
+				if h then
+					local rt, d = qwplerp.step(h, playertime, cl.realtime)
+					sampleDelay = d
+					peakPeerLagMs = math.max(peakPeerLagMs, d * 1000)
+					peakTimeNoiseMs = math.max(peakTimeNoiseMs, math.abs(h.timeErr) * 1000)
+					local o, pi_, ya, ve, fr = qwplerp.sample(h, rt)
+					if o then
+						porigin, ppitch, pyaw, pvel, pframe = o, pi_, ya, ve, fr
+					end
+				end
+			end
+			if remotePath then
+				netDiagStep(num, porigin, sampleDelay)
+			end
+			local angles = vector.create(-ppitch / 3, pyaw, 0)
+			-- CL_LinkPlayers lean: V_CalcRoll (shared) * 4
+			local roll = viewlib.calcRoll(angles, pvel) * 4
+			angles = vector.create(angles.x, angles.y, roll)
 			-- CL_NewTranslation: shirt/pants byte for the player skin
 			local colors: number? = nil
 			local info = cl.players[num]
@@ -1078,7 +1227,7 @@ return function()
 							peakPeerNum = num
 						end
 					end
-					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, ps.frame, effects, colors, nil, nil, ps.velocity) then
+					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, pframe, effects, colors, nil, nil, pvel) then
 						seenAvatars[num + 1] = true
 						avatarDrawn = true
 					end
@@ -1086,14 +1235,14 @@ return function()
 				end
 			end
 			if not avatarDrawn then
-				linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+				linkEnt(`p{num}`, ps.modelindex, porigin, angles, pframe, ps.skinnum, time, colors)
 			end
 
 			-- CL_AddFlagModels: CTF flag riding on the carrier's back
 			-- (placement math offline-tested in test_qwview)
 			local efFlag = bit32.band(ps.effects, 16 + 32) -- EF_FLAG1|EF_FLAG2
 			if efFlag ~= 0 and cl.flagindex then
-				local forg, fang = qwview.flagPlacement(ps.frame, angles, porigin)
+				local forg, fang = qwview.flagPlacement(pframe, angles, porigin)
 				linkEnt(`pf{num}`, cl.flagindex, forg, fang, 0, if bit32.band(ps.effects, 32) ~= 0 then 1 else 0, time)
 			end
 		end
@@ -1101,6 +1250,11 @@ return function()
 			workspace:SetAttribute("RQDBG_QWPeerVel", peakPeerVel)
 			workspace:SetAttribute("RQDBG_QWPeerNum", peakPeerNum)
 		end
+		if peakPeerLagMs > 0 then
+			workspace:SetAttribute("QW_PeerLagMs", math.floor(peakPeerLagMs + 0.5))
+			workspace:SetAttribute("QW_TimeNoiseMs", math.floor(peakTimeNoiseMs + 0.5))
+		end
+		netDiagFlush(time)
 
 		-- CL_UpdateExplosions: s_explod.spr at 10 Hz until frames run out
 		if not explosionIndex then
@@ -1208,8 +1362,22 @@ return function()
 
 	----------------------------------------------------------------------
 	-- connect + main loop
-	qwcl.connect(cl, function(packet: buffer)
-		reliable:FireServer(packet)
+	-- The per-frame movement stream rides the UnreliableRemoteEvent so
+	-- real-network loss/batching can't head-of-line stall it (netchan
+	-- sequencing absorbs drops and reorders, as over UDP). Packets
+	-- carrying netchan-reliable content must never be lost — the
+	-- handshake is a content-driven lockstep with no retry clock — so
+	-- they ALSO ride the reliable remote; whichever copy arrives second
+	-- is discarded as a stale sequence. Payloads over ~900 bytes are
+	-- silently dropped by unreliable remotes, hence reliable-only.
+	qwcl.connect(cl, function(packet: buffer, hasReliable: boolean?)
+		local fits = buffer.len(packet) <= 850
+		if fits then
+			unreliable:FireServer(packet)
+		end
+		if hasReliable or not fits then
+			reliable:FireServer(packet)
+		end
 	end)
 	print("[robloquake] qw client connecting...")
 
@@ -1902,6 +2070,9 @@ return function()
 		-- level change: rebuild the render world from scratch
 		if (cl.levelResets or 0) ~= seenLevelResets then
 			seenLevelResets = cl.levelResets or 0
+			table.clear(plerpHists) -- state_time restarts with the level
+			table.clear(netdiag)
+			lastNetDiagAt = 0
 			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
 			-- it looping sounds carry across level changes
 			soundlib.clear(sndsys)
@@ -2030,7 +2201,13 @@ return function()
 		-- server does a full pmove + entity encode per packet, so a
 		-- 150fps client would otherwise double the per-client server
 		-- cost (and its own packet volume) for no gameplay benefit.
-		if msec >= 13 and cl.state ~= "connected" and not demoBlocks then
+		-- C's CL_SendCmd runs in every state past ca_disconnected —
+		-- including the handshake, where this steady packet stream is
+		-- the heartbeat that drives netchan retransmit convergence (the
+		-- content exchange is a lockstep with no retry clock; over the
+		-- unreliable remote a dropped keepalive would otherwise stall
+		-- it). The server reads and ignores pre-spawn moves, as in C.
+		if msec >= 13 and cl.state ~= "disconnected" and not demoBlocks then
 			accum -= msec / 1000
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)
@@ -2187,6 +2364,10 @@ return function()
 				if def and def.kind == "alias" then
 					-- the gun renders through its own projection (viewmodel.luau)
 					gunEnt = entrender.create(def, vmgun.world)
+					if gunEnt then
+						-- viewports ignore part/SA tints; light rides the frame
+						gunEnt.lightFrame = vmgun.frame
+					end
 				end
 			end
 			local ge = gunEnt
@@ -2231,6 +2412,7 @@ return function()
 			Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
 			Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
 			Workspace:SetAttribute("QW_Valid", cl.validsequence)
+			Workspace:SetAttribute("QW_NetDrops", cl.netDrops or 0)
 		end
 
 		-- sounds

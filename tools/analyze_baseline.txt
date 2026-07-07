@@ -1,0 +1,218 @@
+src/client/console.luau(268,11): TypeError: Expected this to be 'string', but got 'string?'
+src/client/directorui.luau(156,9): LocalUnused: Variable 'myVote' is never used; prefix with '_' to silence
+src/client/hud.luau(1394,8): LocalShadow: Variable 'font' shadows previous declaration at line 1338
+src/client/hud.luau(261,2): TypeError: Cannot add property 'sbarStrip' to table 'Hud'
+src/client/hud.luau(312,2): TypeError: Cannot add property 'ibarRow' to table 'Hud'
+src/client/hud.luau(809,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
+src/client/hud.luau(810,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
+src/client/hud.luau(811,2): TypeError: Key 'ibarRow' not found in table 'Hud'
+src/client/hud.luau(812,17): TypeError: Key 'ibarRow' not found in table 'Hud'
+src/client/init.client.luau(1009,25): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1012,16): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1060,18): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1086,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1114,12): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1125,24): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1136,29): TypeError: Expected this to be 'number | string', but got 'string?'
+src/client/init.client.luau(1174,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1238,9): TypeError: Expected this to be 'buffer', but got 'buffer?'
+src/client/init.client.luau(1287,3): TypeError: Function only returns 1 value, but 2 are required here
+src/client/init.client.luau(1496,12): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/init.client.luau(1667,26): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(2062,4): TypeError: Function only returns 1 value, but 2 are required here
+src/client/init.client.luau(2251,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'
+src/client/init.client.luau(2258,9): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/init.client.luau(294,45): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
+src/client/init.client.luau(366,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/init.client.luau(375,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/init.client.luau(533,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
+src/client/init.client.luau(847,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
+src/client/menu.luau(530,15): TypeError: Cannot cast 'nil' into 'TextLabel' because the types are unrelated
+src/client/pausemenu.luau(1028,4): TypeError: Expected this to be exactly
+src/client/pausemenu.luau(1029,4): TypeError: Table type '{| go: string, icon: string, label: string |}' not compatible with type '{| go: string, label: string, skin: boolean?, weapon: string |}' because the former is missing field 'weapon'
+src/client/pausemenu.luau(1030,4): TypeError: Table type '{| go: string, icon: string, label: string |}' not compatible with type '{| go: string, label: string, skin: boolean?, weapon: string |}' because the former is missing field 'weapon'
+src/client/pausemenu.luau(1031,4): TypeError: Table type '{| go: string, icon: string, label: string |}' not compatible with type '{| go: string, label: string, skin: boolean?, weapon: string |}' because the former is missing field 'weapon'
+src/client/pausemenu.luau(1032,4): TypeError: Table type '{| go: string, icon: string, label: string |}' not compatible with type '{| go: string, label: string, skin: boolean?, weapon: string |}' because the former is missing field 'weapon'
+src/client/pausemenu.luau(1039,7): TypeError: Key 'icon' not found in table '{| go: string, label: string, skin: boolean?, weapon: string |}'
+src/client/pausemenu.luau(1040,36): TypeError: Key 'icon' not found in table '{| go: string, label: string, skin: boolean?, weapon: string |}'
+src/client/pausemenu.luau(428,11): TypeError: Expected this to be 'string', but got 'unknown'
+src/client/pausemenu.luau(428,54): TypeError: Expected this to be 'string', but got 'unknown'
+src/client/pausemenu.luau(532,3): TypeError: Function only returns 1 value, but 2 are required here
+src/client/prefs.luau(138,21): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(1005,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'
+src/client/qwclient.luau(1013,15): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
+src/client/qwclient.luau(1014,19): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
+src/client/qwclient.luau(1016,10): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/qwclient.luau(108,15): TypeError: Expected type table, got 'nil' instead
+src/client/qwclient.luau(108,23): TypeError: Expected type table, got 'nil' instead
+src/client/qwclient.luau(108,32): TypeError: Expected type table, got 'nil' instead
+src/client/qwclient.luau(108,5): TypeError: Expected type table, got 'nil' instead
+src/client/qwclient.luau(1114,11): LocalShadow: Variable 'key' shadows previous declaration at line 1046
+src/client/qwclient.luau(1389,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
+src/client/qwclient.luau(1459,27): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(18,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
+src/client/qwclient.luau(2048,4): TypeError: Function only returns 1 value, but 2 are required here
+src/client/qwclient.luau(486,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/qwclient.luau(489,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/qwclient.luau(593,46): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
+src/client/qwclient.luau(801,13): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/render/avatarlayer.luau(159,19): TypeError: Expected this to be 'string', but got 'string?'
+src/client/render/avatarlayer.luau(178,18): TypeError: Cannot call a value of type {RBXScriptConnection} in union:
+src/client/render/avatarlayer.luau(321,17): TypeError: Expected this to be 'AvatarEnt', but got 'AvatarEnt?'
+src/client/render/avatarlayer.luau(404,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(405,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(406,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(407,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(408,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(433,7): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarlayer.luau(434,5): TypeError: Value of type 'PointLight?' could be nil
+src/client/render/avatarrender.luau(229,27): TypeError: Expected this to be '"pants" | "shirt"', but got 'string'; none of the union options are compatible
+src/client/render/avatarrender.luau(250,29): TypeError: Expected this to be exactly 'TintTarget', but got '{| color0: any, inst: any, prop: string, region: string |}'
+src/client/render/avatarrender.luau(311,6): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(312,4): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(440,28): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(441,5): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(479,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(480,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(481,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(482,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(486,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(487,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(489,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(490,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(492,3): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/entrender.luau(260,10): TypeError: Expected this to be
+src/client/render/entrender.luau(316,9): TypeError: Expected this to be
+src/client/render/entrender.luau(467,8): LocalUnused: Variable 'model' is never used; prefix with '_' to silence
+src/client/render/textures.luau(198,9): TypeError: Expected this to be 'EditableImage', but got 'nil'
+src/client/sound.luau(184,35): TypeError: Type 'nil' does not have key 'sounds'
+src/client/sound.luau(184,9): TypeError: Type 'nil' does not have key 'sounds'
+src/client/sound.luau(188,7): TypeError: Type 'nil' does not have key 'part'
+src/client/sound.luau(293,5): TypeError: Value of type 'Sound?' could be nil
+src/client/sound.luau(294,5): TypeError: Value of type 'Sound?' could be nil
+src/client/sound.luau(295,5): TypeError: Value of type 'Sound?' could be nil
+src/client/sound.luau(296,5): TypeError: Value of type 'Sound?' could be nil
+src/client/sound.luau(298,4): TypeError: Expected type table, got 'nil' instead
+src/client/sound.luau(302,14): TypeError: Value of type '{{ sound: Sound?, vol: number }}?' could be nil
+src/server/qwserver.luau(409,22): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(429,28): TypeError: Value of type 'string?' could be nil
+src/server/qwserver.luau(438,33): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(469,10): LocalShadow: Variable 'ServerStorage' shadows previous declaration at line 401
+src/server/statstore.luau(124,4): TypeError: Expected type table, got 'nil' instead
+src/shared/engine/client/cl.luau(177,2): TypeError: Expected this to be exactly 'Client', but got '{| cdtrack: number, centerPrint: <T...>(T...) -> (), color: number, completed_time: number, cshift_bonus_percent: number, cshift_damage_color: vector, cshift_damage_percent: number, dmg_pitch: number, dmg_roll: number, dmg_time: number, entities: {ClEntity}, faceanimtime: number, gametype: number, idealpitch: number, intermission: number, inwater: boolean, item_gettime: {number}, items: number, levelname: string, lightstyles: {string}, maxclients: number, message: SizeBuf, model_precache: {string... *TRUNCATED*'
+src/shared/engine/common/cvar.luau(54,2): TypeError: Expected this to be exactly 'Cvars', but got '{| print: <T...>(T...) -> (), vars: { [string]: { string: string, value: number } } |}'
+src/shared/engine/progs/prdebug.luau(43,2): TypeError: Expected this to be 'Def', but got 'nil'
+src/shared/engine/progs/prdebug.luau(52,2): TypeError: Expected this to be 'Def', but got 'nil'
+src/shared/engine/progs/vm.luau(119,2): TypeError: Cannot add property 'stateOffsets' to table 'VM'
+src/shared/engine/progs/vm.luau(405,8): LocalUnused: Variable 'strings' is never used; prefix with '_' to silence
+src/shared/engine/progs/vm.luau(521,16): TypeError: Key 'stateOffsets' not found in table 'VM'
+src/shared/engine/progs/vm.luau(652,2): TypeError: Function only returns 1 value, but 2 are required here
+src/shared/engine/progs/vm.luau(818,41): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(821,36): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(824,20): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(833,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(839,32): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(842,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(850,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(854,51): TypeError: Value of type 'Edict?' could be nil
+src/shared/engine/progs/vm.luau(884,41): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(886,36): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(888,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(893,32): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(896,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(903,19): TypeError: Expected this to be 'Edict', but got 'Edict?'
+src/shared/engine/progs/vm.luau(907,47): TypeError: Value of type 'Edict?' could be nil
+src/shared/engine/progs/vm.luau(91,2): TypeError: Expected this to be exactly 'VM', but got '{| _strcache: {string}, argc: number, builtinNames: {string}, builtins: {(VM) -> ()}, depth: number, dynstrings: {string}, edicts: {Edict}, globals: buffer, localstack: buffer, localstack_used: number, max_edicts: number, maxclients: number, num_edicts: number, print: <T...>(T...) -> (), profcount: number, progs: Progs, serverActive: boolean, stack_f: {number}, stack_s: {number}, startprofile: number, statementPrinter: ((VM, number) -> ())?, time: number, trace: boolean, unlinkEdict: (Edict) -> ()... *TRUNCATED*'
+src/shared/engine/qw/pmove.luau(374,7): LocalUnused: Variable 'up' is never used; prefix with '_' to silence
+src/shared/engine/qw/qwcl.luau(1270,25): TypeError: Table type '{| data: buffer, time: number, type: number |}' not compatible with type '{| angles: vector, cmd: {| angles: vector, buttons: number, forwardmove: number, impulse: number, msec: number, sidemove: number, upmove: number |}, time: number, type: number |}' because the former is missing fields 'angles', and 'cmd'
+src/shared/engine/qw/qwcl.luau(1272,25): TypeError: Table type '{| inseq: number, outseq: number, time: number, type: number |}' not compatible with type '{| angles: vector, cmd: {| angles: vector, buttons: number, forwardmove: number, impulse: number, msec: number, sidemove: number, upmove: number |}, time: number, type: number |}' because the former is missing fields 'angles', and 'cmd'
+src/shared/engine/qw/qwcl.luau(1614,13): TypeError: Value of type 'Frame?' could be nil
+src/shared/engine/qw/qwcl.luau(1615,47): TypeError: Value of type 'Frame?' could be nil
+src/shared/engine/qw/qwcl.luau(1616,6): TypeError: Value of type 'Frame?' could be nil
+src/shared/engine/qw/qwcl.luau(1619,10): TypeError: Expected this to be 'Frame', but got 'Frame?'
+src/shared/engine/qw/qwcl.luau(790,10): TypeError: Expected this to be 'string', but got 'string?'
+src/shared/engine/qw/qwcl.luau(802,8): LocalUnused: Variable 'lastNL' is never used; prefix with '_' to silence
+src/shared/engine/qw/qwphys.luau(608,8): LocalUnused: Variable 'w' is never used; prefix with '_' to silence
+src/shared/engine/qw/qwplerp.luau(128,12): TypeError: Expected this to be 'Snap', but got 'nil'
+src/shared/engine/qw/qwplerp.luau(191,2): TypeError: Expected this to be 'number', but got 'number?'
+src/shared/engine/qw/qwsv.luau(1370,3): TypeError: Key 'dropClient' not found in table 'qwsv'
+src/shared/engine/qw/qwsv.luau(1493,4): TypeError: Cannot add property 'messagelevel' to table 'Client'
+src/shared/engine/qw/qwsv.luau(1975,8): LocalUnused: Variable 'vm' is never used; prefix with '_' to silence
+src/shared/engine/qw/qwsv.luau(347,2): TypeError: Cannot add property 'stateOffsets' to table 'VM'
+src/shared/engine/qw/qwsv.luau(525,2): TypeError: Cannot add property 'messagelevel' to table 'Client'
+src/shared/engine/qw/qwsv.luau(738,3): TypeError: Cannot add property 'impulse' to table 'UserCmd'
+src/shared/engine/qw/qwview.luau(310,24): TypeError: Expected this to be 'TeamScore', but got 'nil'
+src/shared/engine/qw/qwworld.luau(635,8): LocalUnused: Variable 'vm' is never used; prefix with '_' to silence
+src/shared/engine/server/host.luau(697,10): TypeError: Key 'intermission' not found in table 'Server'
+src/shared/engine/server/savegame.luau(11,7): ImportUnused: Import 'progslib' is never used; prefix with '_' to silence
+src/shared/engine/server/sv.luau(861,8): LocalUnused: Variable 'vm' is never used; prefix with '_' to silence
+src/shared/engine/server/sv_phys.luau(590,8): LocalUnused: Variable 'w' is never used; prefix with '_' to silence
+src/shared/engine/server/world.luau(633,8): LocalUnused: Variable 'vm' is never used; prefix with '_' to silence
+tests/test_arena_bundle.luau(65,13): TypeError: Expected this to be 'string', but got 'string?'
+tests/test_audit.luau(206,8): ImportUnused: Import 'qwp' is never used; prefix with '_' to silence
+tests/test_changelevel.luau(11,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
+tests/test_librequake.luau(26,7): LocalUnused: Variable 'maps' is never used; prefix with '_' to silence
+tests/test_loopback.luau(13,7): LocalUnused: Variable 'ent' is never used; prefix with '_' to silence
+tests/test_loopback.luau(9,7): ImportUnused: Import 'vmlib' is never used; prefix with '_' to silence
+tests/test_modepresets.luau(30,9): TypeError: Key 'deathmatch' not found in table '{ engine: string, game: string, modekey: string, startmap: string }'
+tests/test_modepresets.luau(31,9): TypeError: Key 'maplist' not found in table '{ engine: string, game: string, modekey: string, startmap: string }'
+tests/test_nqbuiltins.luau(73,111): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_nqbuiltins.luau(73,144): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_nqbuiltins.luau(73,44): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_nqbuiltins.luau(73,77): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_nqbuiltins.luau(77,5): TypeError: Type number cannot be compared with vector
+tests/test_particles2.luau(210,15): LocalShadow: Variable 'eOk' shadows previous declaration at line 112
+tests/test_particles2.luau(294,16): LocalShadow: Variable 'alive' shadows previous declaration at line 20
+tests/test_prdebug.luau(167,15): LocalUnused: Variable 'name1' is never used; prefix with '_' to silence
+tests/test_qw_demo.luau(8,7): ImportUnused: Import 'vmlib' is never used; prefix with '_' to silence
+tests/test_qw_pmove.luau(110,26): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(111,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(112,26): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(113,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(114,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(115,28): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(116,29): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(142,34): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_qw_pmove.luau(149,28): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(150,26): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(151,31): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(152,23): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(178,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(179,31): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(180,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(181,28): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(47,26): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(48,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(49,29): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(50,27): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(51,28): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(52,30): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(53,29): TypeError: Expected this to be 'number', but got 'boolean'
+tests/test_qw_pmove.luau(87,67): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_qw_pmove.luau(87,74): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_qw_pmove.luau(88,69): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_qw_pmove.luau(88,76): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_qwbuiltins.luau(54,28): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_qwbuiltins.luau(55,29): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_qwbuiltins.luau(56,29): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_qwbuiltins.luau(57,28): TypeError: Expected this to be 'vector', but got 'number'
+tests/test_qwbuiltins.luau(64,5): TypeError: Type number cannot be compared with vector
+tests/test_qwnetchan.luau(16,7): ImportUnused: Import 'qwp' is never used; prefix with '_' to silence
+tests/test_qwsv.luau(419,7): LocalShadow: Variable 'tossEd' shadows previous declaration at line 198
+tests/test_qwsv.luau(448,8): LocalShadow: Variable 'glob' shadows previous declaration at line 178
+tests/test_qwsv.luau(459,10): TypeError: Types vector and nil cannot be compared with ~= because they do not have the same metatable
+tests/test_qwsv.luau(487,8): LocalShadow: Variable 'porg' shadows previous declaration at line 308
+tests/test_qwsv.luau(493,8): LocalShadow: Variable 'moved' shadows previous declaration at line 58
+tests/test_qwsv.luau(514,8): LocalShadow: Variable 'glob' shadows previous declaration at line 178
+tests/test_scenario_ctf.luau(137,29): TypeError: Key 'yaw' is missing from '{|  |}' in the type '{ buttons: number?, forward: number?, impulse: number?, yaw: number? } | {|  |}'
+tests/test_scenario_ctf.luau(138,17): TypeError: Key 'forward' is missing from '{|  |}' in the type '{ buttons: number?, forward: number?, impulse: number?, yaw: number? } | {|  |}'
+tests/test_scenario_ctf.luau(141,13): TypeError: Key 'buttons' is missing from '{|  |}' in the type '{ buttons: number?, forward: number?, impulse: number?, yaw: number? } | {|  |}'
+tests/test_scenario_ctf.luau(142,13): TypeError: Key 'impulse' is missing from '{|  |}' in the type '{ buttons: number?, forward: number?, impulse: number?, yaw: number? } | {|  |}'
+tests/test_server.luau(312,7): LocalUnused: Variable 'tossEnd' is never used; prefix with '_' to silence
+tests/test_server.luau(497,8): LocalUnused: Variable 'captured' is never used; prefix with '_' to silence
+tests/test_server.luau(551,40): TypeError: Value of type 'Model?' could be nil
+tests/test_server.luau(554,40): TypeError: Value of type 'Model?' could be nil
+tests/test_svmove.luau(74,51): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_svmove.luau(74,58): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_svmove.luau(76,70): TypeError: Expected this to be 'number', but got 'number?'
+tests/test_view.luau(308,7): LocalShadow: Variable 'rd' shadows previous declaration at line 66

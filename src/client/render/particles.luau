@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local qcoords = require(engine.client.qcoords)
 
+local mildmode = require(script.Parent.mildmode)
 local textures = require(script.Parent.textures)
 local particlesim = require(script.Parent.particlesim)
 
@@ -32,6 +33,13 @@ function particles.new(pal: textures.Palette, parent: Instance): System
 	local palette = table.create(256)
 	for i = 1, 256 do
 		palette[i] = Color3.fromRGB(pal.r[i], pal.g[i], pal.b[i])
+	end
+	-- mild mode: blood ramp indices display white (the sim's particle
+	-- colors are untouched — this is the D_DrawParticle half only)
+	if mildmode.enabled then
+		for _, ci in mildmode.BLOOD_INDICES do
+			palette[ci + 1] = Color3.new(1, 1, 1)
+		end
 	end
 
 	local parts: { Part } = table.create(particlesim.MAX_PARTICLES)

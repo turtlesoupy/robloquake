@@ -174,6 +174,20 @@ for _ = 1, 40 do
 		while #L.queue > 0 do
 			qwcl.processPacket(L.cl, table.remove(L.queue, 1) :: buffer)
 		end
+		-- live clients keep sending cmds in every connected state
+		-- (CL_SendCmd / the production Heartbeat loop); the acks they
+		-- carry are what let the server clear the delivered reliable and
+		-- copy the fresh serverdata out of netchan.message
+		L.cl.realtime += 0.05
+		qwcl.sendCmd(L.cl, {
+			angles = vector.zero,
+			forwardmove = 0,
+			sidemove = 0,
+			upmove = 0,
+			buttons = 0,
+			impulse = 0,
+			msec = 50,
+		})
 	end
 	qwsv.sendClientMessages(svr)
 	if A.sc.spawned and B.sc.spawned then

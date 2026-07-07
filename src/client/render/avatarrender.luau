@@ -57,9 +57,15 @@ local PAIN_FLASH_TIME = 0.22
 type MoveState = "idle" | "run" | "jump" | "fall" | "swim" | "swimidle"
 
 type Region = "shirt" | "pants"
--- a clothing layer's tintable color (classic clothing Color3,
--- SurfaceAppearance Color) with its original value for restore
-type TintTarget = { inst: Instance, prop: string, color0: Color3 }
+-- a clothing surface that renders OVER BasePart.Color and so takes the
+-- quake team tint through its own (script-writable) color property,
+-- with the original value saved for restore: classic clothing Color3,
+-- SurfaceAppearance Color. Lightmap shading does NOT go through these —
+-- it rides one Highlight fill per rig (see setLight), because most of
+-- a dressed avatar's surfaces have no runtime-writable tint at all
+-- (MeshPart TextureID ignores Part.Color; SurfaceAppearance ColorMap /
+-- ColorMapContent are plugin-gated at runtime).
+type TintTarget = { inst: Instance, prop: string, color0: Color3, region: Region }
 
 -- accessory types that dress the shirt/pants regions (layered clothing);
 -- hats/hair/faces are identity, not clothing, and are never tinted
@@ -96,12 +102,12 @@ export type AvatarEnt = {
 	deathT0: number,
 	painUntil: number,
 	highlight: Highlight?,
+	fadeAlpha: number?, -- mild mode corpse fade (0 visible .. 1 gone)
 	shirtColor: Color3?,
 	pantsColor: Color3?,
 	baseColors: { [BasePart]: Color3 },
 	partRegion: { [BasePart]: Region },
-	shirtTints: { TintTarget },
-	pantsTints: { TintTarget },
+	tints: { TintTarget },
 	lightFactor: number,
 }
 
@@ -131,9 +137,8 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 		pantsColor = nil,
 		baseColors = {},
 		partRegion = {},
-		shirtTints = {},
-		pantsTints = {},
-		lightFactor = -1,
+		tints = {},
+		lightFactor = 1,
 	}
 	task.spawn(function()
 		local folder = ReplicatedStorage:WaitForChild("QuakeAvatars", 15)
@@ -227,25 +232,23 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 				end
 			end
 		end
-		-- wearables stay ON and take the tint through their color
-		-- properties: classic clothing multiplies Color3 into its texture,
-		-- SurfaceAppearance multiplies Color into its ColorMap
+		-- clothing wearables stay ON and take the team tint through their
+		-- own color properties (Part.Color is invisible under them):
+		-- classic clothing multiplies Color3 into its texture,
+		-- SurfaceAppearance multiplies Color into its ColorMap (layered
+		-- clothing). Only region-mapped surfaces are collected — lightmap
+		-- shading is the Highlight fill, not a per-surface tint.
 		for _, d in rig:GetDescendants() do
-			local region: Region? = nil
-			local prop: string? = nil
 			if d:IsA("Shirt") or d:IsA("ShirtGraphic") then
-				region, prop = "shirt", "Color3"
+				table.insert(ae.tints, { inst = d, prop = "Color3", color0 = d.Color3, region = "shirt" :: Region })
 			elseif d:IsA("Pants") then
-				region, prop = "pants", "Color3"
+				table.insert(ae.tints, { inst = d, prop = "Color3", color0 = d.Color3, region = "pants" :: Region })
 			elseif d:IsA("SurfaceAppearance") then
 				local p = d.Parent
-				if p and p:IsA("BasePart") then
-					region, prop = ae.partRegion[p], "Color"
+				local region = if p and p:IsA("BasePart") then ae.partRegion[p] else nil
+				if region then
+					table.insert(ae.tints, { inst = d, prop = "Color", color0 = d.Color, region = region })
 				end
-			end
-			if region and prop then
-				local list = if region == "shirt" then ae.shirtTints else ae.pantsTints
-				table.insert(list, { inst = d, prop = prop, color0 = (d :: any)[prop] })
 			end
 		end
 		ae.model = rig
@@ -266,44 +269,41 @@ function avatarrender.flashPain(ae: AvatarEnt, time: number)
 	ae.painUntil = time + PAIN_FLASH_TIME
 end
 
-local function applyTints(targets: { TintTarget }, tint: Color3?)
-	for _, t in targets do
-		(t.inst :: any)[t.prop] = tint or t.color0
-	end
-end
-
 -- persistent re-skin in the player's Quake shirt/pants colors (the
 -- identity/teamplay signal the alias skin translation carries); nil
 -- clears a region back to the avatar's real look. Body parts are
--- painted solid (via setLight's repaint); wearables stay on and take
--- the tint through their clothing color properties.
+-- painted directly; clothing wearables take the tint through their
+-- color properties. Lightmap darkness composes on top via the
+-- Highlight fill, so no light scaling happens here.
 function avatarrender.setTeamColors(ae: AvatarEnt, shirt: Color3?, pants: Color3?)
 	if ae.shirtColor == shirt and ae.pantsColor == pants then
 		return
 	end
 	ae.shirtColor = shirt
 	ae.pantsColor = pants
-	applyTints(ae.shirtTints, shirt)
-	applyTints(ae.pantsTints, pants)
-	ae.lightFactor = -1 -- force the next setLight to repaint part colors
+	for part, c0 in ae.baseColors do
+		local region = ae.partRegion[part]
+		part.Color = if region == "shirt" then shirt or c0 elseif region == "pants" then pants or c0 else c0
+	end
+	for _, t in ae.tints do
+		local c = if t.region == "shirt" then shirt or t.color0 else pants or t.color0
+		local inst = t.inst :: any
+		inst[t.prop] = c
+	end
 end
 
 -- R_AliasSetupLighting for rigs: same lightmap-sample scalar the alias
--- renderer gets (entrender.setLight math), applied by scaling every
--- part's original color. SurfaceAppearance clothing won't darken —
--- body parts and classic clothing do, which carries the read.
+-- renderer gets (entrender.setLight math). A dressed avatar has no
+-- runtime-writable per-surface tint that covers everything (MeshPart
+-- textures ignore Part.Color; SurfaceAppearance ColorMap is
+-- plugin-gated), so the darkness rides the rig's Highlight fill:
+-- FillColor black at FillTransparency l renders exactly original * l
+-- on every surface — skin, clothing, hair, faces. Applied in update()
+-- (shared with the pain flash); this just stores the factor.
 function avatarrender.setLight(ae: AvatarEnt, light: number)
 	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
 	l = l ^ 0.7 -- match the world lighting gamma
-	if math.abs(l - ae.lightFactor) < 0.02 then
-		return
-	end
 	ae.lightFactor = l
-	for part, c0 in ae.baseColors do
-		local region = ae.partRegion[part]
-		local c = if region == "shirt" then ae.shirtColor or c0 elseif region == "pants" then ae.pantsColor or c0 else c0
-		part.Color = Color3.new(c.R * l, c.G * l, c.B * l)
-	end
 end
 
 local function stopAllTracks(ae: AvatarEnt, fade: number)
@@ -466,11 +466,14 @@ function avatarrender.update(
 		end
 	end
 
-	-- one Highlight per rig (Roblox caps enabled highlights at 31), for
-	-- the pain flash; shirt/pants colors are painted into the parts
+	-- one Highlight per rig (Roblox caps enabled highlights at 31),
+	-- doing double duty: the pain flash (red fill) and the lightmap
+	-- darkness (black fill at FillTransparency = light factor, which
+	-- renders original * l on every surface — see setLight)
 	local flashing = ae.painUntil > time and not ae.dead
+	local dark = ae.lightFactor < 0.98
 	local highlight = ae.highlight
-	if flashing then
+	if flashing or dark then
 		if not highlight then
 			highlight = Instance.new("Highlight")
 			highlight.DepthMode = Enum.HighlightDepthMode.Occluded
@@ -479,11 +482,39 @@ function avatarrender.update(
 			highlight.Parent = model
 			ae.highlight = highlight
 		end
-		highlight.FillColor = Color3.fromRGB(210, 25, 25)
-		highlight.FillTransparency = 0.35 + 0.65 * (1 - (ae.painUntil - time) / PAIN_FLASH_TIME)
+		if flashing then
+			highlight.FillColor = Color3.fromRGB(210, 25, 25)
+			highlight.FillTransparency = 0.35 + 0.65 * (1 - (ae.painUntil - time) / PAIN_FLASH_TIME)
+		else
+			highlight.FillColor = Color3.new(0, 0, 0)
+			highlight.FillTransparency = ae.lightFactor
+		end
 		highlight.Enabled = true
 	elseif highlight and highlight.Enabled then
 		highlight.Enabled = false
+	end
+end
+
+-- mild mode corpse fade: LocalTransparencyModifier on every part. The
+-- rig's Highlight ignores part transparency (it would keep drawing a
+-- solid silhouette), so it stays forced off while any fade is active —
+-- update() re-enables it each frame, so this runs after update().
+function avatarrender.setFade(ae: AvatarEnt, alpha: number)
+	local model = ae.model
+	if not model then
+		return
+	end
+	if alpha > 0 and ae.highlight then
+		(ae.highlight :: Highlight).Enabled = false
+	end
+	if ae.fadeAlpha == alpha or (alpha <= 0 and ae.fadeAlpha == nil) then
+		return
+	end
+	ae.fadeAlpha = if alpha > 0 then alpha else nil
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = alpha
+		end
 	end
 end
 
@@ -500,6 +531,9 @@ function avatarrender.setVisible(ae: AvatarEnt, on: boolean)
 	ae.visible = on
 	local model = ae.model
 	if model and not on then
+		if workspace:GetAttribute("RQDBG_AvParkTrace") then
+			print("[avpark]", model.Name, debug.traceback("", 2))
+		end
 		model:PivotTo(CFrame.new(0, -100000, 0))
 		stopAllTracks(ae, 0)
 		ae.speed = 0
@@ -528,8 +562,7 @@ function avatarrender.destroy(ae: AvatarEnt)
 	ae.highlight = nil
 	ae.baseColors = {}
 	ae.partRegion = {}
-	ae.shirtTints = {}
-	ae.pantsTints = {}
+	ae.tints = {}
 end
 
 return avatarrender
