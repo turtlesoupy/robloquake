@@ -14,6 +14,7 @@
 -- straight to the menus again).
 
 local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -104,6 +105,13 @@ return function(net: Instance)
 		end
 	end
 
+	-- skin picks replicate to every client as a JSON attribute so other
+	-- players' render layers can forge this player's held-gun skin
+	-- (avatarlayer reads RQWeaponSkins; specs are already sanitized here)
+	local function publishSkins(player: Player, skins: { [string]: string })
+		player:SetAttribute("RQWeaponSkins", if next(skins) then HttpService:JSONEncode(skins) else nil)
+	end
+
 	type Entry = {
 		userId: number,
 		prefs: Prefs,
@@ -134,6 +142,9 @@ return function(net: Instance)
 			end
 		end
 		e.loaded = true
+		if player.Parent then
+			publishSkins(player, e.prefs.skins)
+		end
 	end
 
 	local function write(e: Entry)
@@ -214,5 +225,6 @@ return function(net: Instance)
 		e.prefs.settings = sanitizeSettings((raw :: any).settings)
 		e.prefs.skins = sanitizeSkins((raw :: any).skins)
 		e.dirty = true
+		publishSkins(player, e.prefs.skins)
 	end)
 end

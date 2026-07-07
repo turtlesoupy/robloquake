@@ -118,6 +118,17 @@ return function(ctx: Ctx)
 		end
 		return false
 	end
+	-- replicated GLOBAL-admin flag: clients gate dev surfaces (tweaks menu,
+	-- engine menu, console) on this. Deliberately NOT playerIsHost — a
+	-- private-server owner gets match control, not dev tooling.
+	local isGlobalAdmin = require(script.Parent.globaladmins)
+	local function stampAdmin(p: Player)
+		p:SetAttribute("RQAdmin", isGlobalAdmin(p))
+	end
+	Players.PlayerAdded:Connect(stampAdmin)
+	for _, p in Players:GetPlayers() do
+		stampAdmin(p)
+	end
 	local dir = directorlib.attach({
 		assets = ctx.assets,
 		net = ctx.reliable.Parent :: Instance,

@@ -43,15 +43,17 @@ local PAD_PITCH_FRACTION = 0.62 -- pitch speed relative to yaw
 local PAD_DEADZONE = 0.24
 local STICK_RADIUS = 55 -- px of knob travel on the touch stick
 local STICK_DEADZONE = 0.12
+local PRESS_DRAG_CANCEL = 24 -- px of travel that turns a button press into a drag
 
 -- palette shared with directorui (the modern product-UI look)
 local TEXT = Color3.fromRGB(235, 235, 235)
 
--- hand-drawn button/joystick art (Document/Buttons: joystick.png,
--- button-up.png, button-pressed.png)
-local BUTTON_UP = "rbxassetid://125568994803314"
-local BUTTON_PRESSED = "rbxassetid://87094120696594"
-local JOYSTICK_IMG = "rbxassetid://74482359771899"
+-- hand-drawn button/joystick art (source PNGs: art/buttons/; re-upload
+-- via Studio MCP upload_image and paste the new ids here if these ever
+-- 404 — they must be image assets owned by the publishing account)
+local BUTTON_UP = "rbxassetid://81640355917028"
+local BUTTON_PRESSED = "rbxassetid://75651322002225"
+local JOYSTICK_IMG = "rbxassetid://134091978658781"
 
 -- gamepad layout (standard console-FPS): R2 fire, A/L2 jump, R1/Y next
 -- weapon, L1/DPad-down previous, Select hold = scores, Start = menu.
@@ -259,13 +261,43 @@ function controls.attach(deps: Deps)
 		}
 		namedButtons[name] = hooks
 
+		-- touch presses must be DISTINCT: a look-drag sliding over the button
+		-- also delivers InputBegan (state Change, not Begin) and is ignored;
+		-- a press that then travels PRESS_DRAG_CANCEL px releases early
+		-- instead of staying held under a drifting thumb
+		local pressing: InputObject? = nil
+		local pressStart = Vector2.zero
 		b.InputBegan:Connect(function(io: InputObject)
-			if io.UserInputType == Enum.UserInputType.Touch or io.UserInputType == Enum.UserInputType.MouseButton1 then
+			if io.UserInputType == Enum.UserInputType.Touch then
+				if io.UserInputState ~= Enum.UserInputState.Begin or pressing ~= nil then
+					return
+				end
+				pressing = io
+				pressStart = Vector2.new(io.Position.X, io.Position.Y)
+				hooks.down()
+			elseif io.UserInputType == Enum.UserInputType.MouseButton1 then
 				hooks.down()
 			end
 		end)
 		b.InputEnded:Connect(function(io: InputObject)
-			if io.UserInputType == Enum.UserInputType.Touch or io.UserInputType == Enum.UserInputType.MouseButton1 then
+			if io.UserInputType == Enum.UserInputType.MouseButton1 then
+				hooks.up()
+			end
+		end)
+		-- touch release rides UserInputService: GuiObject.InputEnded misses
+		-- touches that end after sliding OFF the button, sticking it down
+		UserInputService.InputChanged:Connect(function(io: InputObject)
+			if io == pressing then
+				local pos = Vector2.new(io.Position.X, io.Position.Y)
+				if (pos - pressStart).Magnitude > PRESS_DRAG_CANCEL then
+					pressing = nil
+					hooks.up()
+				end
+			end
+		end)
+		UserInputService.InputEnded:Connect(function(io: InputObject)
+			if io == pressing then
+				pressing = nil
 				hooks.up()
 			end
 		end)

@@ -891,6 +891,14 @@ function pausemenu.attach(opts: Opts): Handle
 					pages:AdvanceToNextPageAsync()
 				end
 			end)
+			-- GetFriendsAsync's page order is arbitrary; online friends are
+			-- the ones you'd actually invite, so they sort first
+			table.sort(list, function(a, b)
+				if a.online ~= b.online then
+					return a.online
+				end
+				return a.name < b.name
+			end)
 			if not ok then
 				warn(`[robloquake] friends list fetch failed: {err}`)
 			end
@@ -1180,7 +1188,6 @@ function pausemenu.attach(opts: Opts): Handle
 	-- resets them.
 	local cvPending: { [string]: number } = {}
 	local cvMapIdx = 0 -- 1-based maplist index; 0 = re-pick the default
-	local cvAvatars: boolean? = nil -- pending avatars choice; nil = default
 	local cvSelected: string? = nil -- armed row (proposal key); nil = default
 	local cvDeny: string? = nil -- last server deny reason
 	local function buildCallVote()
@@ -1205,7 +1212,7 @@ function pausemenu.attach(opts: Opts): Handle
 		local WHITE = Color3.new(1, 1, 1)
 		local bs = 8 * style.body -- glyph size at body scale
 		local rowH = 46
-		local rows = (if #maps > 0 then 1 else 0) + 3 + 1 -- + rules/avatars + VOTE
+		local rows = (if #maps > 0 then 1 else 0) + 2 + 1 -- + rules + VOTE
 		local y0 = math.floor((cell.h - rows * rowH) / 2)
 		local labelR = math.floor(cell.w / 2) - 12 -- labels right-align here
 		local widgetX = math.floor(cell.w / 2) + 12
@@ -1267,7 +1274,7 @@ function pausemenu.attach(opts: Opts): Handle
 				end
 			end
 			local ry = rowY()
-			label(ry, "MAP")
+			label(ry, "LEVEL")
 			local name = maps[cvMapIdx]
 			-- prefer the level's real name (worldspawn "message"); the raw
 			-- file name is the fallback when the BSP had no title
@@ -1295,18 +1302,6 @@ function pausemenu.attach(opts: Opts): Handle
 		ruleRow("FRAGLIMIT", "fraglimit", 5)
 		ruleRow("TIMELIMIT", "timelimit", 5)
 
-		-- avatars toggle: the stepper flips the proposed value (defaulting to
-		-- the interesting proposal: the opposite of the live state)
-		if cvAvatars == nil then
-			cvAvatars = not st.avatars
-		end
-		local ry = rowY()
-		label(ry, "ROBLOX AVATARS")
-		local flip = function()
-			cvAvatars = not cvAvatars
-		end
-		stepper(ry, "roblox_avatars", if cvAvatars then "ON" else "OFF", false, flip, flip)
-
 		-- the single VOTE line (RESET TO DEFAULTS treatment): fires the
 		-- armed row's proposal; the redraw clears any stale deny text
 		local vy = rowY()
@@ -1316,8 +1311,6 @@ function pausemenu.attach(opts: Opts): Handle
 			cvDeny = nil
 			if cvSelected == "map" and maps[cvMapIdx] then
 				cv.propose("map", maps[cvMapIdx])
-			elseif cvSelected == "roblox_avatars" then
-				cv.propose("roblox_avatars", cvAvatars == true)
 			elseif cvSelected then
 				cv.propose(cvSelected, cvPending[cvSelected])
 			end
@@ -1865,7 +1858,7 @@ function pausemenu.attach(opts: Opts): Handle
 
 	-- MAP plaque / M: straight onto CALL A VOTE with fresh pending values
 	local function openCallVote()
-		cvDeny, cvMapIdx, cvAvatars, cvSelected = nil, 0, nil, nil
+		cvDeny, cvMapIdx, cvSelected = nil, 0, nil
 		table.clear(cvPending)
 		if open then
 			state = "callvote"
@@ -1915,7 +1908,11 @@ function pausemenu.attach(opts: Opts): Handle
 		if input.KeyCode == Enum.KeyCode.E then
 			setOpen(not open)
 		elseif input.KeyCode == Enum.KeyCode.M and opts.callvote then
-			openCallVote()
+			if open then
+				setOpen(false)
+			else
+				openCallVote()
+			end
 		elseif input.KeyCode == Enum.KeyCode.L and opts.leaderboards then
 			openRankings()
 		end
@@ -1989,7 +1986,7 @@ function pausemenu.attach(opts: Opts): Handle
 	-- toggle in controls.luau, so no plaque for it here
 	local rightEdge = -68
 	if opts.callvote then
-		rightEdge = topButton("MAP", if touchOnly then "" else "[M]", rightEdge, function()
+		rightEdge = topButton("LEVEL", if touchOnly then "" else "[M]", rightEdge, function()
 			openCallVote()
 		end)
 	end

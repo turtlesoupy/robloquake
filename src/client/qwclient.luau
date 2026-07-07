@@ -594,13 +594,13 @@ return function()
 	end
 
 	-- third-person twin of applyGunSkin for avatarlayer: forge (or fetch)
-	-- the picked skin against the held g_ world model's own skin sheet;
-	-- nil = authentic. Called per frame, so failed forges are cached to
-	-- avoid re-forging every frame.
+	-- a skin spec against the held g_ world model's own skin sheet; nil =
+	-- authentic. Called per frame, so failed forges are cached to avoid
+	-- re-forging every frame. forgeSkin also serves OTHER players' picks
+	-- (replicated via the RQWeaponSkins attribute prefstore stamps).
 	local forgeFailed: { [string]: boolean } = {}
-	local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
-		local spec = weaponSkins[vmName]
-		if not spec or not def.skinPixels then
+	local function forgeSkin(spec: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+		if not def.skinPixels then
 			return nil
 		end
 		local key = `{worldModel}|{spec}`
@@ -616,6 +616,10 @@ return function()
 			end
 		end
 		return img
+	end
+	local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+		local spec = weaponSkins[vmName]
+		return if spec then forgeSkin(spec, worldModel, def) else nil
 	end
 
 	local avatarLayer = avatarlayer.new({
@@ -640,6 +644,7 @@ return function()
 		end,
 		palette = pal,
 		localWeaponSkin = localWeaponSkin,
+		forgeSkin = forgeSkin,
 	})
 
 	local function buildWorld()
@@ -1839,8 +1844,34 @@ return function()
 			refreshInputMode()
 			return true
 		end,
+		font = hud.font,
 	})
 	-- ===== end touch + gamepad controls =====
+
+	-- ===== tap-to-switch: invisible overlays on the ibar weapon icons so a
+	-- touch/click directly on an icon selects that weapon, riding the same
+	-- impulse path as the 2-8 keybinds (twin of the NQ block) =====
+	for i, icon in hud.weaponIcons do
+		local tap = Instance.new("TextButton")
+		tap.Name = "WeaponTap"
+		tap.BackgroundTransparency = 1
+		tap.Text = ""
+		tap.AutoButtonColor = false
+		tap.Position = icon.Position
+		tap.Size = icon.Size
+		tap.ZIndex = icon.ZIndex + 1
+		tap.Parent = icon.Parent
+		tap.InputBegan:Connect(function(io: InputObject)
+			-- Begin-state check: a look-drag sliding over the icon row must
+			-- not switch weapons (same rule as the FIRE/JUMP buttons)
+			local began = (io.UserInputType == Enum.UserInputType.Touch and io.UserInputState == Enum.UserInputState.Begin)
+				or io.UserInputType == Enum.UserInputType.MouseButton1
+			if began and not (con.open or chatOpen or directorUiOpen or pauseUiOpen or menulib.isOpen(mnu)) then
+				execCommand("impulse " .. (i + 1))
+			end
+		end)
+	end
+	-- ===== end tap-to-switch =====
 
 	-- console text entry straight from key codes (same scheme as the NQ
 	-- boot: no TextBox, GetStringForKeyCode + shifted punctuation)
@@ -1956,8 +1987,12 @@ return function()
 	UserInputService.InputBegan:Connect(function(io, processed)
 		if io.UserInputType == Enum.UserInputType.Keyboard then
 			local key = io.KeyCode
-			-- tilde/backquote toggles the console from anywhere
+			-- tilde/backquote toggles the console from anywhere (dev surface:
+			-- admins only, like the engine menu below)
 			if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
+				if player:GetAttribute("RQAdmin") ~= true then
+					return
+				end
 				if chatOpen then
 					chatOpen = false
 					chatBuffer = ""
@@ -1979,9 +2014,10 @@ return function()
 				refreshInputMode()
 				return
 			end
-			if key == Enum.KeyCode.BackSlash then
+			if key == Enum.KeyCode.BackSlash and player:GetAttribute("RQAdmin") == true then
 				-- M_ToggleMenu_f (Escape is platform-reserved; M calls the
-				-- product map vote, see pausemenu.luau)
+				-- product map vote, see pausemenu.luau). Admin-only: players
+				-- get the product pause menu on E instead.
 				menulib.toggle(mnu)
 				refreshInputMode()
 				return

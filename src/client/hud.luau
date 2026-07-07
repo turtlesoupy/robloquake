@@ -479,6 +479,19 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	interFrame.Visible = false
 	interFrame.ZIndex = 12
 	interFrame.Parent = gui
+	-- the 640x400 virtual canvas overflows phone viewports (~390 logical px
+	-- tall in landscape): shrink-to-fit, never enlarge
+	local interScale = Instance.new("UIScale")
+	interScale.Parent = interFrame
+	local function fitIntermission()
+		local vs = gui.AbsoluteSize
+		if vs.X <= 0 or vs.Y <= 0 then
+			return
+		end
+		interScale.Scale = math.min(1, vs.X / (320 * SCALE + 16), vs.Y / (200 * SCALE + 16))
+	end
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitIntermission)
+	fitIntermission()
 	h.interFrame = interFrame
 	h.interSig = ""
 	h.showScores = false

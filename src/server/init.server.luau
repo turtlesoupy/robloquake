@@ -220,6 +220,18 @@ end;
 	return false
 end
 
+-- replicated GLOBAL-admin flag: clients gate dev surfaces (tweaks menu,
+-- engine menu, console) on this. Deliberately NOT playerIsHost — a
+-- private-server owner gets match control, not dev tooling.
+local isGlobalAdmin = require(script.globaladmins)
+local function stampAdmin(p: Player)
+	p:SetAttribute("RQAdmin", isGlobalAdmin(p))
+end
+Players.PlayerAdded:Connect(stampAdmin)
+for _, p in Players:GetPlayers() do
+	stampAdmin(p)
+end
+
 -- ===== host greeting (PRODUCT layer): MOTD-style console print telling
 -- the host about the match-control menu. REMOVAL: this block + the
 -- greetHost call in connectPlayer + src/server/hostgreeting.luau. =====

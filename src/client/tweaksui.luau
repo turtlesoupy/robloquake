@@ -6,6 +6,7 @@
 -- Quake renderer/HUD stay untouched and this file can be deleted at any
 -- time. Selections are local to this client and session.
 
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
 local tweaksui = {}
@@ -367,7 +368,8 @@ function tweaksui.attach(opts: Opts)
 		if gameProcessed or opts.isTyping() then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.T then
+		-- dev surface: admins only (server stamps RQAdmin from its host rules)
+		if input.KeyCode == Enum.KeyCode.T and Players.LocalPlayer:GetAttribute("RQAdmin") == true then
 			setMenuVisible(not menu.Visible)
 		end
 	end)

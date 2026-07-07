@@ -9,6 +9,7 @@
 -- and the wire protocol are untouched, and the alias renderer remains
 -- the fallback (rig loading, roblox_avatars off).
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -84,6 +85,10 @@ export type Deps = {
 	-- from the held world model's own skin sheet (nil = authentic). Called
 	-- per frame, so the boot caches forges (and failures) by (model, spec).
 	localWeaponSkin: ((vmName: string, worldModel: string, def: entrender.ModelDef) -> EditableImage?)?,
+	-- optional: forge an arbitrary recipe spec against a world model's skin
+	-- sheet — used for OTHER players' held guns, whose picks replicate via
+	-- the RQWeaponSkins player attribute (same boot-side forge cache)
+	forgeSkin: ((spec: string, worldModel: string, def: entrender.ModelDef) -> EditableImage?)?,
 }
 
 type AvatarWeapon = {
@@ -142,6 +147,7 @@ function avatarlayer.new(deps: Deps): Layer
 	-- scan GetPlayers()×GetAttribute (O(players²) reflected calls at 60Hz)
 	local playerBySlot: { [number]: Player } = {}
 	local weaponAttr: { [Player]: string } = {} -- RQWeaponModel cache, same discipline
+	local skinsAttr: { [Player]: { [string]: string } } = {} -- RQWeaponSkins (decoded), same discipline
 	local slotConns: { [Player]: { RBXScriptConnection } } = {}
 	local function reindexPlayer(p: Player)
 		for slot, q in playerBySlot do
@@ -158,6 +164,23 @@ function avatarlayer.new(deps: Deps): Layer
 		local v = p:GetAttribute("RQWeaponModel")
 		weaponAttr[p] = if typeof(v) == "string" then v else nil
 	end
+	local function refreshSkinsAttr(p: Player)
+		-- prefstore stamps the sanitized viewmodel->spec map as JSON; a bad
+		-- decode (or clear) just drops this player back to authentic skins
+		local v = p:GetAttribute("RQWeaponSkins")
+		local decoded: { [string]: string }? = nil
+		if typeof(v) == "string" and v ~= "" then
+			local ok, t = pcall(HttpService.JSONDecode, HttpService, v)
+			if ok and type(t) == "table" then
+				decoded = t
+			end
+		end
+		if decoded ~= nil then
+			skinsAttr[p] = decoded
+		else
+			skinsAttr[p] = nil
+		end
+	end
 	local function watchPlayer(p: Player)
 		slotConns[p] = {
 			p:GetAttributeChangedSignal("RQSlot"):Connect(function()
@@ -166,9 +189,13 @@ function avatarlayer.new(deps: Deps): Layer
 			p:GetAttributeChangedSignal("RQWeaponModel"):Connect(function()
 				refreshWeaponAttr(p)
 			end),
+			p:GetAttributeChangedSignal("RQWeaponSkins"):Connect(function()
+				refreshSkinsAttr(p)
+			end),
 		}
 		reindexPlayer(p)
 		refreshWeaponAttr(p)
+		refreshSkinsAttr(p)
 	end
 	for _, p in Players:GetPlayers() do
 		watchPlayer(p)
@@ -180,6 +207,7 @@ function avatarlayer.new(deps: Deps): Layer
 		end
 		slotConns[p] = nil
 		weaponAttr[p] = nil
+		skinsAttr[p] = nil
 		for slot, q in playerBySlot do
 			if q == p then
 				playerBySlot[slot] = nil
@@ -365,14 +393,26 @@ function avatarlayer.new(deps: Deps): Layer
 			-- pickup's floor-level model origin and floats the gun overhead)
 			local part = re.part :: MeshPart
 			setWeaponVisible(re :: entrender.RenderEnt, true)
-			-- the local player's menu-picked skin carries onto their held
-			-- gun (chase cam / other viewers of this client only — skins
-			-- are client-side). The texture is set directly: hand-posed
+			-- menu-picked skins carry onto held guns. The local player's pick
+			-- comes straight from the boot's own table (instant on change);
+			-- everyone else's rides the RQWeaponSkins attribute prefstore
+			-- stamps server-side. The texture is set directly: hand-posed
 			-- weapons never pass through updateAlias, where setSkinOverride
 			-- applies.
 			local def = aw.def
-			if player == Players.LocalPlayer and deps.localWeaponSkin and vmName and want and def then
-				local img = deps.localWeaponSkin(vmName, want, def)
+			if vmName and want and def then
+				local img: EditableImage? = nil
+				if player == Players.LocalPlayer then
+					if deps.localWeaponSkin then
+						img = deps.localWeaponSkin(vmName, want, def)
+					end
+				elseif deps.forgeSkin then
+					local skins = skinsAttr[player]
+					local spec = if skins then skins[vmName] else nil
+					if spec then
+						img = deps.forgeSkin(spec, want, def)
+					end
+				end
 				local skinImages = def.skinImages
 				local desired = img or (if skinImages then skinImages[1] else nil) -- nil forge = authentic
 				if desired and aw.appliedSkin ~= desired then

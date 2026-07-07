@@ -12,6 +12,11 @@ local Workspace = game:GetService("Workspace")
 -- player list, so the CoreGui version stays permanently hidden (both boots)
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 
+-- the HUD/touch layout is landscape-only: lock phones out of portrait
+-- (sensor keeps both landscape flips working; no-op on desktop)
+local bootPlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui") :: PlayerGui
+bootPlayerGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
+
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
@@ -294,14 +299,14 @@ local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, mo
 	re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
 end
 
--- third-person twin of applyGunSkin for avatarlayer: forge (or fetch) the
--- picked skin against the held g_ world model's own skin sheet; nil =
+-- third-person twin of applyGunSkin for avatarlayer: forge (or fetch) a
+-- skin spec against the held g_ world model's own skin sheet; nil =
 -- authentic. Called per frame, so failed forges are cached to avoid
--- re-forging every frame.
+-- re-forging every frame. forgeSkin also serves OTHER players' picks
+-- (replicated via the RQWeaponSkins attribute prefstore stamps).
 local forgeFailed: { [string]: boolean } = {}
-local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
-	local spec = weaponSkins[vmName]
-	if not spec or not def.skinPixels then
+local function forgeSkin(spec: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+	if not def.skinPixels then
 		return nil
 	end
 	local key = `{worldModel}|{spec}`
@@ -317,6 +322,10 @@ local function localWeaponSkin(vmName: string, worldModel: string, def: entrende
 		end
 	end
 	return img
+end
+local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+	local spec = weaponSkins[vmName]
+	return if spec then forgeSkin(spec, worldModel, def) else nil
 end
 
 local function getModelDef(modelindex: number): entrender.ModelDef?
@@ -485,6 +494,7 @@ local avatarLayer = avatarlayer.new({
 	end,
 	palette = pal,
 	localWeaponSkin = localWeaponSkin,
+	forgeSkin = forgeSkin,
 })
 
 -- RQDBG_AvatarDummy (debug hook family): render a mirror avatar N studs
@@ -1782,10 +1792,11 @@ for i, icon in hud.weaponIcons do
 	tap.ZIndex = icon.ZIndex + 1
 	tap.Parent = icon.Parent
 	tap.InputBegan:Connect(function(io: InputObject)
-		if
-			(io.UserInputType == Enum.UserInputType.Touch or io.UserInputType == Enum.UserInputType.MouseButton1)
-			and not isUiOpen()
-		then
+		-- Begin-state check: a look-drag sliding over the icon row must
+		-- not switch weapons (same rule as the FIRE/JUMP buttons)
+		local began = (io.UserInputType == Enum.UserInputType.Touch and io.UserInputState == Enum.UserInputState.Begin)
+			or io.UserInputType == Enum.UserInputType.MouseButton1
+		if began and not isUiOpen() then
 			execLine("impulse " .. (i + 1))
 		end
 	end)
@@ -1946,8 +1957,12 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 	local key = io.KeyCode
 	lastKeyInfo = ("raw key=%s processed=%s conOpen=%s"):format(key.Name, tostring(_processed), tostring(con.open))
 
-	-- tilde/backquote toggles the console from anywhere
+	-- tilde/backquote toggles the console from anywhere (dev surface:
+	-- admins only, like the engine menu below)
 	if key == Enum.KeyCode.Backquote or key == Enum.KeyCode.Tilde then
+		if player:GetAttribute("RQAdmin") ~= true then
+			return
+		end
 		consolelib.toggle(con)
 		refreshInputMode()
 		return
@@ -1959,8 +1974,9 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 	end
 
 	-- the Quake menu lives on backslash (Escape is reserved by Roblox for
-	-- its own menu; M calls the product map vote, see pausemenu.luau)
-	if key == Enum.KeyCode.BackSlash and not menulib.isOpen(mnu) then
+	-- its own menu; M calls the product map vote, see pausemenu.luau).
+	-- Admin-only: players get the product pause menu on E instead.
+	if key == Enum.KeyCode.BackSlash and not menulib.isOpen(mnu) and player:GetAttribute("RQAdmin") == true then
 		menulib.toggle(mnu)
 		refreshInputMode()
 		return
