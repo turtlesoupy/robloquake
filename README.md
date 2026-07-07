@@ -36,6 +36,8 @@ Development happens against the **original Quake shareware assets**
 (`external_assets/quake106/`, gitignored) because they are the ground truth
 for correctness. Before anything is published to Roblox, id Software content
 must be replaced with [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).
+The end-to-end publish flow (build `lq1`, import it, strip id1, stamp the
+mode, publish) is in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 `tools/build_assets.py` splits pak files into base64 chunks under `assets/`
 and `tools/build_soundbank.py` builds the concatenated audio bank. All of
@@ -105,7 +107,8 @@ against the real server in one process.
 
 ```
 default.project.json     Rojo map for the code (daily sync)
-assets.project.json      Rojo map for the asset bundle (occasional sync)
+assets.project.json      Rojo map for all asset bundles (occasional sync)
+assets-lq1.project.json  Rojo map for lq1 only (publish import; see docs/PUBLISHING.md)
 src/shared/engine/       The engine (platform-independent Luau)
   common/                buffers, math, tokenizer, net messages, cvars
   bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders

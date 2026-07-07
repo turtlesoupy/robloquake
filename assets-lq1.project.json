@@ -1,0 +1,14 @@
+{
+  "name": "robloquake-assets-lq1",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "QuakeAssets": {
+        "$className": "Folder",
+        "lq1": {
+          "$path": "assets/lq1"
+        }
+      }
+    }
+  }
+}

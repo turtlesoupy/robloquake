@@ -130,11 +130,12 @@ modepresets.PRESETS = {
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
-		-- lightest lqdm maps first: Studio's EditableMesh budget fits
-		-- lqdm11/12/2 comfortably; the big ones (lqdm3/13/6) starve it
-		maplist = "lqdm11 lqdm12 lqdm2 lqdm1",
+		-- full lqdm1..13 rotation. NOTE: the heavy maps (lqdm3/13/6, and
+		-- to a lesser extent lqdm5/9) can starve Studio's EditableMesh
+		-- budget; verify them in play mode before relying on them.
+		maplist = "lqdm1 lqdm2 lqdm3 lqdm4 lqdm5 lqdm6 lqdm7 lqdm8 lqdm9 lqdm10 lqdm11 lqdm12 lqdm13",
 		votetime = DM_RULES.votetime,
-		startmap = "lqdm11",
+		startmap = "lqdm1",
 		roblox_avatars = true,
 	},
 }
@@ -148,15 +149,15 @@ modepresets.MODIFIERS = {
 	original = { mildmode = false },
 	-- LibreQuake content (copyright-free, game=lq1) over any preset's
 	-- rules, e.g. qw-dm+librequake / nq-dm+librequake. lq1 shares no map
-	-- names with id1 except start.bsp, so the rotation must come along:
-	-- lightest lqdm maps first (Studio's EditableMesh budget fits
-	-- lqdm11/12/2 comfortably; the big ones lqdm3/13/6 starve it). DM
-	-- oriented — campaign+librequake would need its own startmap/exit
+	-- names with id1 except start.bsp, so the full lqdm1..13 rotation must
+	-- come along. NOTE: the heavy maps (lqdm3/13/6, and to a lesser extent
+	-- lqdm5/9) can starve Studio's EditableMesh budget; verify in play mode.
+	-- DM oriented — campaign+librequake would need its own startmap/exit
 	-- chain and is not a supported combination.
 	librequake = {
 		game = "lq1",
-		maplist = "lqdm11 lqdm12 lqdm2 lqdm1",
-		startmap = "lqdm11",
+		maplist = "lqdm1 lqdm2 lqdm3 lqdm4 lqdm5 lqdm6 lqdm7 lqdm8 lqdm9 lqdm10 lqdm11 lqdm12 lqdm13",
+		startmap = "lqdm1",
 	},
 }
 
