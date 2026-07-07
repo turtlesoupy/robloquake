@@ -14,6 +14,7 @@
 local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local qcoords = require(engine.client.qcoords)
@@ -22,16 +23,23 @@ local sound = {}
 
 type Region = { s: number, l: number, ls: number? }
 
-type Channel = { part: Part, sound: Sound }
+-- Two Sounds alternate per channel: an override starts the new sample on
+-- the idle instance and fades the other out over ~30ms. The C mixer's
+-- override is a same-buffer swap (instant, gapless); Roblox can't do
+-- that — a seek pops (no declick: the nailgun cuts at ~24% of peak
+-- amplitude, the super nailgun at ~55-70%) and a Stop/Play restart mutes
+-- ~50-80ms while the audio thread rebuffers. The faded instance keeps
+-- playing silently to its region end, so a rapid-refire override always
+-- lands on a still-hot instance and starts on the next audio buffer.
+type Channel = { part: Part, sounds: { Sound }, active: number, gen: number }
 
 export type System = {
 	assetId: string,
 	regions: { [string]: Region },
 	folder: Folder,
 	-- (entnum*8 + channel) -> persistent channel emitter; a new sound on the
-	-- same entity/channel restarts it, like the C channel allocator. The
-	-- Sound instance is reused so rapid refire (super nailgun) never hits a
-	-- fresh instance whose PlaybackRegion hasn't applied yet.
+	-- same entity/channel overrides it, like the C channel allocator (see
+	-- the Channel comment for why each slot holds two alternating Sounds)
 	channels: { [number]: Channel },
 	ambients: { { sound: Sound?, vol: number } }?,
 	missing: { [string]: boolean },
@@ -139,9 +147,11 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 		local ch = sys.channels[key]
 		if not ch then
 			local part = emitterAt(sys, pos)
-			local snd = bankSound(sys, r, false)
-			snd.Parent = part
-			ch = { part = part, sound = snd }
+			local a = bankSound(sys, r, false)
+			local b = bankSound(sys, r, false)
+			a.Parent = part
+			b.Parent = part
+			ch = { part = part, sounds = { a, b }, active = 2, gen = 0 }
 			sys.channels[key] = ch
 			-- reclaim emitters that have sat silent for a while
 			local function gc()
@@ -149,7 +159,7 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 					if sys.channels[key] ~= ch then
 						return
 					end
-					if ch.sound.IsPlaying then
+					if ch.sounds[1].IsPlaying or ch.sounds[2].IsPlaying then
 						gc()
 					else
 						sys.channels[key] = nil
@@ -159,16 +169,36 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 			end
 			gc()
 		end
-		ch.sound:Stop()
+		ch.gen += 1
+		local myGen = ch.gen
+		local old = ch.sounds[ch.active]
+		ch.active = 3 - ch.active
+		local snd = ch.sounds[ch.active]
+		-- fade the overridden shot out over ~2 frames rather than cutting;
+		-- abort if the instance gets reclaimed by a newer override (which
+		-- retunes Volume itself). Left playing so it stays hot (see Channel).
+		if old.IsPlaying and old.Volume > 0 then
+			task.spawn(function()
+				local v = old.Volume
+				for step = 1, 2 do
+					RunService.Heartbeat:Wait()
+					if sys.channels[key] ~= ch or ch.gen ~= myGen then
+						return
+					end
+					v *= 0.25
+					old.Volume = if step == 2 then 0 else v
+				end
+			end)
+		end
 		-- diagnostic name (RQ_* family): the persistent channel Sound shows
 		-- which sample currently owns the ent/channel slot
-		ch.sound.Name = `RQChan_{entnum}_{channel}_{sample:match("([^/]+)%.wav") or sample}`
+		snd.Name = `RQChan_{entnum}_{channel}_{sample:match("([^/]+)%.wav") or sample}`
 		ch.part.Position = qcoords.toRoblox(pos)
-		ch.sound.PlaybackRegion = NumberRange.new(r.s, r.s + r.l)
-		ch.sound.TimePosition = r.s
-		ch.sound.Volume = vol
-		ch.sound.RollOffMaxDistance = rolloffFor(atten)
-		ch.sound:Play()
+		snd.PlaybackRegion = NumberRange.new(r.s, r.s + r.l)
+		snd.TimePosition = r.s
+		snd.Volume = vol
+		snd.RollOffMaxDistance = rolloffFor(atten)
+		snd:Play()
 		return
 	end
 
@@ -195,8 +225,10 @@ end
 -- S_StopSound: silence a persistent entity channel
 function sound.stop(sys: System, entnum: number, channel: number)
 	local ch = sys.channels[entnum * 8 + channel]
-	if ch and ch.sound then
-		ch.sound:Stop()
+	if ch then
+		ch.gen += 1 -- cancel any in-flight fade
+		ch.sounds[1]:Stop()
+		ch.sounds[2]:Stop()
 	end
 end
 
