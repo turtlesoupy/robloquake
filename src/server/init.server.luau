@@ -222,10 +222,13 @@ end
 
 -- replicated GLOBAL-admin flag: clients gate dev surfaces (tweaks menu,
 -- engine menu, console) on this. Deliberately NOT playerIsHost — a
--- private-server owner gets match control, not dev tooling.
+-- private-server owner gets match control, not dev tooling. RQHost is
+-- the separate host flag (pausemenu reserves the director-gear slot
+-- next to its plaques only when it's set).
 local isGlobalAdmin = require(script.globaladmins)
 local function stampAdmin(p: Player)
 	p:SetAttribute("RQAdmin", isGlobalAdmin(p))
+	p:SetAttribute("RQHost", playerIsHost(p))
 end
 Players.PlayerAdded:Connect(stampAdmin)
 for _, p in Players:GetPlayers() do

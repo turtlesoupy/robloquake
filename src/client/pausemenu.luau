@@ -990,6 +990,81 @@ function pausemenu.attach(opts: Opts): Handle
 		end)
 	end
 
+	-- ---- avatar tint preview machinery (AVATAR page + main-page hero) ----
+	-- Quake shirt/pants palette rows plus the avatarrender template rig the
+	-- previews clone. The template is created ONCE into workspace (create
+	-- ScaleTo's a parked humanoid rig — only safe there, see avatarrender),
+	-- re-tinted with the same palette-row math avatarlayer uses, and cloned
+	-- inert into a page's ViewportFrame.
+	local QUAKE_COLOR_NAMES = {
+		"WHITE", "BROWN", "LAVENDER", "KHAKI", "RED", "OLIVE", "ORANGE",
+		"PEACH", "PURPLE", "MAGENTA", "TAN", "GREEN", "YELLOW", "BLUE",
+	}
+	local function quakeRowColor(row: number): Color3 -- palette row 0..13
+		local base = row * 16
+		local idx = base + (if base < 128 then 11 else 4)
+		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
+	end
+	local avatarPreviewEnt: avatarrender.AvatarEnt? = nil
+	local function ensureAvatarPreview(): Model?
+		if not avatarPreviewEnt then
+			local holder = Instance.new("Folder")
+			holder.Name = "QuakeMenuAvatarPreview"
+			holder.Parent = workspace
+			avatarPreviewEnt = avatarrender.create(Players.LocalPlayer.UserId, holder)
+		end
+		local ae = avatarPreviewEnt
+		return if ae and not ae.loading then ae.model else nil
+	end
+	-- clone of the template carrying the CURRENT tint (nil while the rig
+	-- is still replicating). Byte 0 = untinted in the live pipeline
+	-- (avatarlayer passes nil,nil); mirrored so previews match what
+	-- other players see.
+	local function tintedAvatarClone(): Model?
+		local model = ensureAvatarPreview()
+		local ae = avatarPreviewEnt
+		if not model or not ae then
+			return nil
+		end
+		local ac = opts.avatarColors
+		if ac then
+			local top, bottom = ac.get()
+			if top == 0 and bottom == 0 then
+				avatarrender.setTeamColors(ae, nil, nil)
+			else
+				avatarrender.setTeamColors(ae, quakeRowColor(top), quakeRowColor(bottom))
+			end
+		end
+		return model:Clone()
+	end
+	-- drop a tinted-rig viewport into a panel; false = rig not ready yet
+	local function avatarViewport(parent: Frame, x: number, y: number, w: number, h: number): boolean
+		local clone = tintedAvatarClone()
+		if not clone then
+			return false
+		end
+		local vp = Instance.new("ViewportFrame")
+		vp.BackgroundTransparency = 1
+		vp.Ambient = Color3.new(1, 1, 1)
+		vp.LightColor = Color3.new(0, 0, 0)
+		vp.Position = UDim2.fromOffset(x, y)
+		vp.Size = UDim2.fromOffset(w, h)
+		vp.ZIndex = 3
+		vp.Parent = parent
+		local wm = Instance.new("WorldModel")
+		wm.Parent = vp
+		clone:PivotTo(CFrame.new(0, 0, 0))
+		clone.Parent = wm
+		local cf, size = clone:GetBoundingBox()
+		local cam = Instance.new("Camera")
+		cam.FieldOfView = 30
+		local dist = math.max(size.Y, size.X, 1) * 2.1
+		cam.CFrame = CFrame.lookAt(cf.Position + cf.LookVector * dist, cf.Position)
+		cam.Parent = vp
+		vp.CurrentCamera = cam
+		return true
+	end
+
 	local function buildMain()
 		local cells = layoutHero6()
 		local hero = cells[1]
@@ -1010,16 +1085,20 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 		text(hp, pad, 16, nm, ns)
 
-		-- avatar headshot: right side, below the name line
+		-- avatar: right side, below the name line — the tinted rig preview,
+		-- so the quake shirt/pants pick shows here too. Falls back to the
+		-- flat headshot (which can't tint) while the rig replicates.
 		local bodyTop = 16 + 8 * ns + 12
 		local avSide = math.min(hero.h - bodyTop - 16, math.floor(hero.w * 0.3))
-		local av = Instance.new("ImageLabel")
-		av.BackgroundTransparency = 1
-		av.Image = `rbxthumb://type=AvatarHeadShot&id={me.UserId}&w=150&h=150`
-		av.Size = UDim2.fromOffset(avSide, avSide)
-		av.Position = UDim2.fromOffset(hero.w - avSide - 16, bodyTop)
-		av.ZIndex = 3
-		av.Parent = hp
+		if not avatarViewport(hp, hero.w - avSide - 16, bodyTop, avSide, avSide) then
+			local av = Instance.new("ImageLabel")
+			av.BackgroundTransparency = 1
+			av.Image = `rbxthumb://type=AvatarHeadShot&id={me.UserId}&w=150&h=150`
+			av.Size = UDim2.fromOffset(avSide, avSide)
+			av.Position = UDim2.fromOffset(hero.w - avSide - 16, bodyTop)
+			av.ZIndex = 3
+			av.Parent = hp
+		end
 
 		-- stat lines, left column (kept clear of the avatar). A touch smaller
 		-- than body so "RANK #NN ALL TIME" fits beside the headshot.
@@ -1569,20 +1648,17 @@ function pausemenu.attach(opts: Opts): Handle
 			av.ZIndex = 3
 			av.Parent = p
 			local statusY = 34 + side + 4
+			-- status lines shrink to the card like names do ("IN THIS GAME"
+			-- at body scale overflows the 8-grid cells)
+			local function statusText(s: string, color: Color3)
+				local ssc = if #s * 8 * style.body <= cell.w - 12 then style.body else 1
+				text(p, 0, statusY + (8 * style.body - 8 * ssc) // 2, s, ssc, color, cell.w, 0.5)
+			end
 			if here[f.id] then
-				text(p, 0, statusY, "IN THIS GAME", style.body, GREEN, cell.w, 0.5)
+				statusText("IN THIS GAME", GREEN)
 				return -- nothing to invite; no button row
 			end
-			text(
-				p,
-				0,
-				statusY,
-				if f.online then "ONLINE" else "OFFLINE",
-				style.body,
-				if f.online then COOL else RARITY_GREY,
-				cell.w,
-				0.5
-			)
+			statusText(if f.online then "ONLINE" else "OFFLINE", if f.online then COOL else RARITY_GREY)
 			if canInvite == false then
 				cardButtons(p, cell.w, cell.h, { { label = "INVITES OFF" } })
 			else
@@ -1803,31 +1879,9 @@ function pausemenu.attach(opts: Opts): Handle
 	-- ---- AVATAR page: quake-style shirt/pants tint -----------------------
 	-- Steppers drive the boot's `color` command (userinfo -> the server
 	-- broadcasts it back), so scoreboard colors and every client's rig
-	-- tint move together. The preview reuses the avatarrender pipeline: a
-	-- hidden template ent is created ONCE in workspace (create ScaleTo's a
-	-- parked humanoid rig — only safe there, see avatarrender), tinted with
-	-- the same palette-row math avatarlayer uses, and cloned inert into the
-	-- page's ViewportFrame on every rebuild.
-	local QUAKE_COLOR_NAMES = {
-		"WHITE", "BROWN", "LAVENDER", "KHAKI", "RED", "OLIVE", "ORANGE",
-		"PEACH", "PURPLE", "MAGENTA", "TAN", "GREEN", "YELLOW", "BLUE",
-	}
-	local function quakeRowColor(row: number): Color3 -- palette row 0..13
-		local base = row * 16
-		local idx = base + (if base < 128 then 11 else 4)
-		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
-	end
-	local avatarPreviewEnt: avatarrender.AvatarEnt? = nil
-	local function ensureAvatarPreview(): Model?
-		if not avatarPreviewEnt then
-			local holder = Instance.new("Folder")
-			holder.Name = "QuakeMenuAvatarPreview"
-			holder.Parent = workspace
-			avatarPreviewEnt = avatarrender.create(Players.LocalPlayer.UserId, holder)
-		end
-		local ae = avatarPreviewEnt
-		return if ae and not ae.loading then ae.model else nil
-	end
+	-- tint move together. Preview machinery (tintedAvatarClone /
+	-- avatarViewport) is shared with the main page's hero card and defined
+	-- above buildMain.
 	local function buildAvatar()
 		local ac = opts.avatarColors
 		local cells = layout2()
@@ -1839,37 +1893,7 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 		local top, bottom = ac.get()
 
-		local model = ensureAvatarPreview()
-		local ae = avatarPreviewEnt
-		if model and ae then
-			-- byte 0 = untinted in the live pipeline (avatarlayer passes
-			-- nil,nil); mirror that so the preview matches what others see
-			if top == 0 and bottom == 0 then
-				avatarrender.setTeamColors(ae, nil, nil)
-			else
-				avatarrender.setTeamColors(ae, quakeRowColor(top), quakeRowColor(bottom))
-			end
-			local vp = Instance.new("ViewportFrame")
-			vp.BackgroundTransparency = 1
-			vp.Ambient = Color3.new(1, 1, 1)
-			vp.LightColor = Color3.new(0, 0, 0)
-			vp.Position = UDim2.fromOffset(10, 10)
-			vp.Size = UDim2.fromOffset(left.w - 20, left.h - 20)
-			vp.ZIndex = 3
-			vp.Parent = lp
-			local wm = Instance.new("WorldModel")
-			wm.Parent = vp
-			local clone = model:Clone()
-			clone:PivotTo(CFrame.new(0, 0, 0))
-			clone.Parent = wm
-			local cf, size = clone:GetBoundingBox()
-			local cam = Instance.new("Camera")
-			cam.FieldOfView = 30
-			local dist = math.max(size.Y, size.X, 1) * 2.1
-			cam.CFrame = CFrame.lookAt(cf.Position + cf.LookVector * dist, cf.Position)
-			cam.Parent = vp
-			vp.CurrentCamera = cam
-		else
+		if not avatarViewport(lp, 10, 10, left.w - 20, left.h - 20) then
 			-- rig still replicating/loading: rebuild once it lands
 			text(lp, 0, math.floor(left.h / 2) - 8, "LOADING...", style.body, RARITY_GREY, left.w, 0.5)
 			task.spawn(function()
@@ -1919,7 +1943,7 @@ function pausemenu.attach(opts: Opts): Handle
 	end
 
 	local PAGES: { [string]: { title: string, build: () -> () } } = {
-		main = { title = "FRAG", build = buildMain },
+		main = { title = "FRAG PARTY", build = buildMain },
 		settings = { title = "SETTINGS", build = buildSettings },
 		callvote = { title = "CHANGE MAP", build = buildCallVote },
 		gamemodes = { title = "GAMEMODES", build = buildGamemodes },
@@ -2089,6 +2113,7 @@ function pausemenu.attach(opts: Opts): Handle
 	-- one plaque, right edge at `rightEdge` (offset from the screen's right);
 	-- returns the right edge for the next plaque to its left. `name` renders
 	-- white, the `key` hint (may be "") stays orange, drawn as one centred line
+	local plaqueBtns: { TextButton } = {} -- right-to-left, for layoutPlaques
 	local function topButton(name: string, key: string, rightEdge: number, onClick: () -> ()): number
 		local label = if key ~= "" then name .. " " .. key else name
 		local gw = 8 * TOP_SCALE
@@ -2124,12 +2149,23 @@ function pausemenu.attach(opts: Opts): Handle
 			playClick()
 			onClick()
 		end)
+		table.insert(plaqueBtns, btn)
 		return rightEdge - w - 10
 	end
 
-	-- MAP takes the rightmost slot (nearest the gear), MENU sits to its left.
-	-- The scoreboard lives on TAB (hold-to-show, default.cfg) with a touch
-	-- toggle in controls.luau, so no plaque for it here
+	-- MAP takes the rightmost slot, MENU sits to its left. The gear slot
+	-- (-68) is reserved only while the local player is the match host
+	-- (RQHost, server-stamped) — everyone else gets the plaques flush to
+	-- the corner instead of a gap where the gear would be. The scoreboard
+	-- lives on TAB (hold-to-show, default.cfg) with a touch toggle in
+	-- controls.luau, so no plaque for it here
+	local function layoutPlaques()
+		local edge = if Players.LocalPlayer:GetAttribute("RQHost") == true then -68 else -12
+		for _, btn in plaqueBtns do
+			btn.Position = UDim2.new(1, edge, 0, 8)
+			edge -= btn.Size.X.Offset + 10
+		end
+	end
 	local rightEdge = -68
 	if opts.callvote then
 		rightEdge = topButton("LEVEL", if touchOnly then "" else "[M]", rightEdge, function()
@@ -2139,6 +2175,8 @@ function pausemenu.attach(opts: Opts): Handle
 	topButton("MENU", if touchOnly then "" else "[E]", rightEdge, function()
 		setOpen(not open)
 	end)
+	Players.LocalPlayer:GetAttributeChangedSignal("RQHost"):Connect(layoutPlaques)
+	layoutPlaques()
 
 	return {
 		toggle = function()

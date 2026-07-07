@@ -1861,8 +1861,9 @@ return function()
 			return true
 		end,
 		font = hud.font,
-		isIntermission = function()
-			return cl.intermission ~= 0
+		tapFires = function()
+			-- score screen or dead: a tap advances / respawns
+			return cl.intermission ~= 0 or (cl.stats[qwp.STAT_HEALTH] or 100) <= 0
 		end,
 	})
 	-- ===== end touch + gamepad controls =====

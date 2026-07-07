@@ -1794,8 +1794,9 @@ require(script.controls).attach({
 		return true
 	end,
 	font = hud.font,
-	isIntermission = function()
-		return c.intermission ~= 0
+	tapFires = function()
+		-- score screen or dead: a tap advances / respawns
+		return c.intermission ~= 0 or (c.stats[cllib.STAT_HEALTH] or 100) <= 0
 	end,
 })
 -- ===== end touch + gamepad controls =====

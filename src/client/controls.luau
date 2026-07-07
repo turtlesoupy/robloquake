@@ -34,8 +34,9 @@ export type Deps = {
 	-- the LibreQuake conchars font (shared with hud/menu) for button
 	-- labels; nil falls back to a stock TextLabel
 	font: confontlib.Font?,
-	-- score screen is up: any screen tap presses fire to advance it
-	isIntermission: (() -> boolean)?,
+	-- score screen is up or the player is dead: any screen tap presses
+	-- fire (advance the intermission / respawn)
+	tapFires: (() -> boolean)?,
 }
 
 -- tuning defaults
@@ -382,9 +383,10 @@ function controls.attach(deps: Deps)
 		if io.UserInputType ~= Enum.UserInputType.Touch or processed or not gui.Enabled then
 			return
 		end
-		-- score screen: any tap presses fire to advance the intermission,
-		-- same as the desktop attack bind (released in InputEnded below)
-		if deps.isIntermission and deps.isIntermission() and not deps.isUiOpen() then
+		-- score screen / death: any tap presses fire to advance the
+		-- intermission or respawn, same as the desktop attack bind
+		-- (released in InputEnded below)
+		if deps.tapFires and deps.tapFires() and not deps.isUiOpen() then
 			intermissionTouches[io] = true
 			deps.exec("+attack")
 			return
@@ -431,23 +433,24 @@ function controls.attach(deps: Deps)
 	end)
 
 	-- responsive layout: fixed 140px buttons are enormous on small phones.
-	-- Scale with viewport height and sit flush against the screen edges,
-	-- clear of the 96px HUD strip; the stick's rest pose mirrors FIRE.
+	-- Scale with viewport height (~80% of the first pass after playtest
+	-- feedback), flush against the screen edges (no inset), clear of the
+	-- 96px HUD strip. FIRE takes the top slot, JUMP the bottom; the
+	-- stick's rest pose mirrors the bottom button.
 	local function layoutTouch()
 		local vs = gui.AbsoluteSize
 		if vs.X <= 0 or vs.Y <= 0 then
 			return
 		end
-		local btn = math.clamp(math.floor(vs.Y * 0.26), 64, 140)
-		local margin = 8
+		local btn = math.clamp(math.floor(vs.Y * 0.21), 52, 112)
 		local bottom = 96 + 10 -- HUD strip + a thumb gap
 		fireBtn.Size = UDim2.fromOffset(btn, btn)
 		jumpBtn.Size = UDim2.fromOffset(btn, btn)
-		fireBtn.Position = UDim2.new(1, -margin, 1, -bottom)
-		jumpBtn.Position = UDim2.new(1, -margin, 1, -(bottom + btn + 10))
-		local stickSize = math.clamp(math.floor(vs.Y * 0.3), 80, 150)
+		jumpBtn.Position = UDim2.new(1, 0, 1, -bottom)
+		fireBtn.Position = UDim2.new(1, 0, 1, -(bottom + btn + 10))
+		local stickSize = math.clamp(math.floor(vs.Y * 0.24), 64, 120)
 		stickBase.Size = UDim2.fromOffset(stickSize, stickSize)
-		stickRest = UDim2.new(0, margin + stickSize // 2, 1, -(bottom + btn // 2))
+		stickRest = UDim2.new(0, stickSize // 2, 1, -(bottom + btn // 2))
 		if stickTouch == nil then
 			stickBase.Position = stickRest
 		end
