@@ -146,6 +146,18 @@ modepresets.MODIFIERS = {
 	-- the original engine presentation (red gibs/blood, persistent
 	-- corpses): opts out of the mildmode default for parity captures
 	original = { mildmode = false },
+	-- LibreQuake content (copyright-free, game=lq1) over any preset's
+	-- rules, e.g. qw-dm+librequake / nq-dm+librequake. lq1 shares no map
+	-- names with id1 except start.bsp, so the rotation must come along:
+	-- lightest lqdm maps first (Studio's EditableMesh budget fits
+	-- lqdm11/12/2 comfortably; the big ones lqdm3/13/6 starve it). DM
+	-- oriented — campaign+librequake would need its own startmap/exit
+	-- chain and is not a supported combination.
+	librequake = {
+		game = "lq1",
+		maplist = "lqdm11 lqdm12 lqdm2 lqdm1",
+		startmap = "lqdm11",
+	},
 }
 
 -- resolve "<preset>[+modifier...]" into the complete attribute state;
