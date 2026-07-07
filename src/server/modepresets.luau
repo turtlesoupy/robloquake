@@ -122,6 +122,27 @@ modepresets.PRESETS = {
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
 	},
+	-- LibreQuake base + Threewave CTF overlay: the ctf preset's rules and
+	-- maps with lq1 replacing id1 as the base game (asset fallthrough:
+	-- threewave paks first, then lq1 — same-named replacements resolve).
+	-- Threewave ships under Zoid's permission (docs/mods-licenses.md), so
+	-- unlike plain `ctf` this is publishable. NOT `ctf+librequake` — that
+	-- modifier swaps in the lqdm maplist, which has no flag spawns.
+	["lq-ctf"] = {
+		engine = "qw",
+		game = "lq1",
+		modekey = "ctf",
+		gamedir = "threewave",
+		-- teamplay bitfield per the ctf preset: 419 = mod's shipped
+		-- server.cfg value (health+armor protect, color lock, drop items, CTF)
+		teamplay = 419,
+		deathmatch = 1,
+		fraglimit = 15,
+		timelimit = 20,
+		startmap = "ctf1",
+		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
+		votetime = 30,
+	},
 	-- LibreQuake (copyright-free content, game=lq1): the NQ DM setup on
 	-- the lqdm* maps; weapon model names match id1 (v_shot.mdl etc.)
 	["lq-dm"] = {
@@ -153,7 +174,8 @@ modepresets.MODIFIERS = {
 	-- come along. NOTE: the heavy maps (lqdm3/13/6, and to a lesser extent
 	-- lqdm5/9) can starve Studio's EditableMesh budget; verify in play mode.
 	-- DM oriented — campaign+librequake would need its own startmap/exit
-	-- chain and is not a supported combination.
+	-- chain and is not a supported combination; for CTF use the dedicated
+	-- lq-ctf preset (this modifier's lqdm maplist has no flag spawns).
 	librequake = {
 		game = "lq1",
 		maplist = "lqdm1 lqdm2 lqdm3 lqdm4 lqdm5 lqdm6 lqdm7 lqdm8 lqdm9 lqdm10 lqdm11 lqdm12 lqdm13",

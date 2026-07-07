@@ -38,10 +38,16 @@ it may be.
   id (Jay Wilbur, quoted in server.txt); redistributing *modified bsps* was
   not. The `.ent` workflow targets **registered** Quake maps (episodes 2–4,
   dm1–dm6) — dev-only here, never shipped.
-- **Ship gate:** LOCAL/DEV USE ONLY for now. Before any published place
-  includes Threewave content: (a) this is a commercial context (Robux), so
-  Zoid's permission is required, or the mod must be excluded; (b) the CTF
-  maps/models in the client paks are third-party art — same gate.
+- **Ship gate: CLEARED (2026-07-07).** Zoid's permission for commercial use
+  has been obtained (recorded by project owner, tdimson — archive the
+  permission correspondence alongside this repo). Threewave content may now
+  ship in published places; the supported publish shape is the `lq-ctf`
+  preset (LibreQuake base + threewave gamedir — no id1 content involved).
+  History: the gate previously read LOCAL/DEV ONLY because (a) Robux is a
+  commercial context requiring Zoid's ok, and (b) the CTF maps/models in
+  the client paks are third-party art. If the obtained permission does not
+  cover the third-party map art in the client paks, re-verify (b) before
+  shipping the ctf2m* series.
 
 ## Rocket Arena "Final Arena" 1.20 (`external_assets/rocketarena/`)
 
