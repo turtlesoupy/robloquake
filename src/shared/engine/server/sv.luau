@@ -334,6 +334,11 @@ end
 -- frame updates
 
 -- SV_WriteEntitiesToClient
+local function differs(a: number, b: number): boolean
+	local miss = a - b
+	return miss < -0.1 or miss > 0.1
+end
+
 function sv.writeEntitiesToClient(svr: Server, clent: vmlib.Edict, out: msg.SizeBuf)
 	local vm = svr.vm
 
@@ -380,10 +385,6 @@ function sv.writeEntitiesToClient(svr: Server, clent: vmlib.Edict, out: msg.Size
 		local origin = vmlib.edVector(edict, ent.origin)
 		local angles = vmlib.edVector(edict, ent.angles)
 
-		local function differs(a: number, b: number): boolean
-			local miss = a - b
-			return miss < -0.1 or miss > 0.1
-		end
 		if differs(origin.x, baseline.origin.x) then
 			bits = bit32.bor(bits, proto.U_ORIGIN1)
 		end

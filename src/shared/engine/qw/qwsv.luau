@@ -642,6 +642,74 @@ local function calcRoll(angles: vector, velocity: vector): number
 end
 
 -- SV_RunCmd
+-- AddLinksToPmove's areanode recursion, hoisted to module scope so runCmd
+-- doesn't allocate a closure per cmd (C: static function over globals)
+local function addLinksToPmove(
+	node: any,
+	player: vmlib.Edict,
+	ent: any,
+	svr: any,
+	pm: pmovelib.PlayerMove,
+	pmins: vector,
+	pmaxs: vector,
+	physentEdicts: { number }
+)
+	local sentinel = node.solid_edicts
+	local l = sentinel.next
+	while l ~= sentinel do
+		local nxt = l.next
+		local ed = l.ed
+		repeat
+			if ed == player then
+				break
+			end
+			local solid = vmlib.edFloat(ed, ent.solid)
+			if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
+				break
+			end
+			if vmlib.edInt(ed, ent.owner) == player.num then
+				break -- player's own missile
+			end
+			if #pm.physents >= 32 then -- MAX_PHYSENTS
+				break
+			end
+			local amin = vmlib.edVector(ed, ent.absmin)
+			local amax = vmlib.edVector(ed, ent.absmax)
+			if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
+				break
+			end
+			if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
+				break
+			end
+			if solid == qd.SOLID_BSP then
+				local mi = vmlib.edFloat(ed, ent.modelindex)
+				local m = svr.models[mi + 1]
+				if m and m.kind == "brush" then
+					table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
+					table.insert(physentEdicts, ed.num)
+				end
+			else
+				table.insert(pm.physents, {
+					origin = vmlib.edVector(ed, ent.origin),
+					mins = vmlib.edVector(ed, ent.mins),
+					maxs = vmlib.edVector(ed, ent.maxs),
+				})
+				table.insert(physentEdicts, ed.num)
+			end
+		until true
+		l = nxt
+	end
+	if node.axis == -1 then
+		return
+	end
+	if mathlib.comp(pmaxs, node.axis) > node.dist then
+		addLinksToPmove(node.children[1], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
+	end
+	if mathlib.comp(pmins, node.axis) < node.dist then
+		addLinksToPmove(node.children[2], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
+	end
+end
+
 function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 	local vm = svr.vm
 	local qdefs = svr.qdefs
@@ -720,63 +788,7 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 	local physentEdicts: { number } = { 0 } -- physent index -> edict num
 	local pmins = pm.origin - vector.create(256, 256, 256)
 	local pmaxs = pm.origin + vector.create(256, 256, 256)
-	local function addLinks(node: any)
-		local sentinel = node.solid_edicts
-		local l = sentinel.next
-		while l ~= sentinel do
-			local nxt = l.next
-			local ed = l.ed
-			repeat
-				if ed == player then
-					break
-				end
-				local solid = vmlib.edFloat(ed, ent.solid)
-				if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
-					break
-				end
-				if vmlib.edInt(ed, ent.owner) == player.num then
-					break -- player's own missile
-				end
-				if #pm.physents >= 32 then -- MAX_PHYSENTS
-					break
-				end
-				local amin = vmlib.edVector(ed, ent.absmin)
-				local amax = vmlib.edVector(ed, ent.absmax)
-				if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
-					break
-				end
-				if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
-					break
-				end
-				if solid == qd.SOLID_BSP then
-					local mi = vmlib.edFloat(ed, ent.modelindex)
-					local m = svr.models[mi + 1]
-					if m and m.kind == "brush" then
-						table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
-						table.insert(physentEdicts, ed.num)
-					end
-				else
-					table.insert(pm.physents, {
-						origin = vmlib.edVector(ed, ent.origin),
-						mins = vmlib.edVector(ed, ent.mins),
-						maxs = vmlib.edVector(ed, ent.maxs),
-					})
-					table.insert(physentEdicts, ed.num)
-				end
-			until true
-			l = nxt
-		end
-		if node.axis == -1 then
-			return
-		end
-		if mathlib.comp(pmaxs, node.axis) > node.dist then
-			addLinks(node.children[1])
-		end
-		if mathlib.comp(pmins, node.axis) < node.dist then
-			addLinks(node.children[2])
-		end
-	end
-	addLinks(svr.world.areanodes[1])
+	addLinksToPmove(svr.world.areanodes[1], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
 
 	-- movevars: the cvar half is rebuilt at most once per server frame
 	-- (9 hash lookups per cmd otherwise); only maxspeed/entgravity vary
@@ -1647,6 +1659,7 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 end
 
 -- SV_UpdateClientStats: delta update of the stats array over reliable
+local statsScratch: { [number]: number } = {} -- C's `int stats[MAX_CL_STATS]` (stack, but fully rewritten per call)
 function qwsv.updateClientStats(svr: any, client: Client)
 	local ent = svr.qdefs.ent
 	local vm = svr.vm
@@ -1655,7 +1668,8 @@ function qwsv.updateClientStats(svr: any, client: Client)
 		ed = svr.clients[client.spec_track].edict
 	end
 
-	local stats = table.create(32, 0)
+	local stats = statsScratch
+	table.clear(stats)
 	stats[qwp.STAT_HEALTH] = trunc(vmlib.edFloat(ed, ent.health))
 	stats[qwp.STAT_WEAPON] = svr.modelIndex(svr, vmlib.edString(vm, ed, ent.weaponmodel)) or 0
 	stats[qwp.STAT_AMMO] = trunc(vmlib.edFloat(ed, ent.currentammo))
