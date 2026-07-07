@@ -311,6 +311,13 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 	return def
 end
 
+-- relinkEntities' EF_* lookup, hoisted so the frame loop doesn't allocate
+-- a closure per frame
+local function modelFlagsFor(mi: number): number
+	local def = getModelDef(mi)
+	return if def then def.flags else 0
+end
+
 local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
 	local root: Instance? = re.part or re.billboardPart or re.model
 	if root then
@@ -1750,6 +1757,16 @@ local sendAccumulator = 0
 local lastStyleFrame = -1
 local diagAccumulator = 0
 local statics_spawned = false
+local activeDlightScratch: { lightatlaslib.Dlight } = {}
+
+-- V_UpdatePalette scratch: constant contents shifts + per-frame mutable
+-- damage/bonus entries, so the tint pass allocates nothing per frame
+local SHIFT_WATER = { 130, 80, 50, 128 }
+local SHIFT_SLIME = { 0, 25, 5, 150 }
+local SHIFT_LAVA = { 255, 80, 0, 150 }
+local shiftsScratch: { { number } } = {}
+local damageShiftScratch = { 0, 0, 0, 0 }
+local bonusShiftScratch = { 215, 186, 69, 0 }
 
 local turtleCount = 0
 local lastReceivedAt = 0
@@ -1848,10 +1865,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 
 	-- interpolate entities
-	cllib.relinkEntities(c, function(mi: number): number
-		local def = getModelDef(mi)
-		return if def then def.flags else 0
-	end)
+	cllib.relinkEntities(c, modelFlagsFor)
 
 	-- R_AnimateLight: lightstyle values tick at 10Hz from the style strings
 	local styleFrame = math.floor(c.time * 10)
@@ -1917,7 +1931,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- CL_DecayLights + the dynamic light surface pass
 	do
-		local active: { lightatlaslib.Dlight } = {}
+		local active = activeDlightScratch -- reused per frame
+		table.clear(active)
 		for _, dl in dlights do
 			if dl.die >= c.time and dl.radius > 0 then
 				dl.radius -= dt * dl.decay
@@ -2170,20 +2185,21 @@ RunService.Heartbeat:Connect(function(dt: number)
 	c.cshift_damage_percent = math.max(c.cshift_damage_percent - dt * 150, 0)
 	c.cshift_bonus_percent = math.max(c.cshift_bonus_percent - dt * 100, 0)
 
-	local shifts: { { number } } = {} -- {r,g,b,percent}
+	local shifts = shiftsScratch -- {r,g,b,percent}, reused per frame
+	table.clear(shifts)
 	local viewLeaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
 	do
 		-- contents shift from the view leaf (V_SetContentsColor); empty
 		-- contents use cshift_empty, which the v_cshift command edits
 		local cont = viewLeaf.contents
 		if cont == -3 then -- water
-			table.insert(shifts, { 130, 80, 50, 128 })
+			table.insert(shifts, SHIFT_WATER)
 		elseif cont == -4 then -- slime
-			table.insert(shifts, { 0, 25, 5, 150 })
+			table.insert(shifts, SHIFT_SLIME)
 		elseif cont == -5 then -- lava
-			table.insert(shifts, { 255, 80, 0, 150 })
+			table.insert(shifts, SHIFT_LAVA)
 		elseif cshiftEmpty[4] > 0 then
-			table.insert(shifts, { cshiftEmpty[1], cshiftEmpty[2], cshiftEmpty[3], cshiftEmpty[4] })
+			table.insert(shifts, cshiftEmpty)
 		end
 	end
 	-- S_UpdateAmbientSounds: leaf-based water/sky ambience
@@ -2195,10 +2211,15 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 	if c.cshift_damage_percent > 0 then
 		local dc = c.cshift_damage_color
-		table.insert(shifts, { dc.x, dc.y, dc.z, c.cshift_damage_percent })
+		damageShiftScratch[1] = dc.x
+		damageShiftScratch[2] = dc.y
+		damageShiftScratch[3] = dc.z
+		damageShiftScratch[4] = c.cshift_damage_percent
+		table.insert(shifts, damageShiftScratch)
 	end
 	if c.cshift_bonus_percent > 0 then
-		table.insert(shifts, { 215, 186, 69, c.cshift_bonus_percent })
+		bonusShiftScratch[4] = c.cshift_bonus_percent
+		table.insert(shifts, bonusShiftScratch)
 	end
 
 	if #shifts > 0 then

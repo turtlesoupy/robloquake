@@ -955,8 +955,10 @@ return function()
 
 	----------------------------------------------------------------------
 	-- lightstyles (cl_main frame animation)
+	local changedScratch: { [number]: boolean } = {} -- reused per frame; empty on non-tick frames
 	local function updateLightstyles(time: number)
-		local changed: { [number]: boolean } = {}
+		local changed = changedScratch
+		table.clear(changed)
 		local i = math.floor(time * 10)
 		-- 10Hz texture writers ride the same tick (R_UpdateSky/turb + the
 		-- R_TextureAnimation +wall chain at (int)(cl.time*5) %% total)

@@ -741,6 +741,18 @@ local function lerpPoint(c: Client): number
 	return frac
 end
 
+-- CL_LerpAngle helper, module-level so relinkEntities doesn't allocate a
+-- closure per entity per frame
+local function lerpAngle(new: number, old: number, f: number): number
+	local d = new - old
+	if d > 180 then
+		d -= 360
+	elseif d < -180 then
+		d += 360
+	end
+	return old + f * d
+end
+
 -- CL_RelinkEntities. modelFlags maps a precache index to the model's EF_*
 -- flags (EF_ROTATE etc.), provided by the renderer's model registry.
 function cl.relinkEntities(c: Client, modelFlags: (modelindex: number) -> number)
@@ -796,16 +808,7 @@ function cl.relinkEntities(c: Client, modelFlags: (modelindex: number) -> number
 
 			local a1 = e.msg_angles[1]
 			local a2 = e.msg_angles[2]
-			local function lerpAngle(new: number, old: number): number
-				local d = new - old
-				if d > 180 then
-					d -= 360
-				elseif d < -180 then
-					d += 360
-				end
-				return old + f * d
-			end
-			e.angles = vector.create(lerpAngle(a1.x, a2.x), lerpAngle(a1.y, a2.y), lerpAngle(a1.z, a2.z))
+			e.angles = vector.create(lerpAngle(a1.x, a2.x, f), lerpAngle(a1.y, a2.y, f), lerpAngle(a1.z, a2.z, f))
 		end
 
 		-- rotate binary objects locally
