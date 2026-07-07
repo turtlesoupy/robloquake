@@ -81,6 +81,7 @@ export type Client = {
 	statics: { ClEntity },
 	lightstyles: { [number]: string },
 	scores: { Score },
+	scoresGen: number, -- bumped on any scores mutation; HUD rebuild gate
 	stats: { [number]: number },
 	items: number,
 	item_gettime: { [number]: number },
@@ -194,6 +195,7 @@ function cl.new(playerName: string, color: number): Client
 		statics = {},
 		lightstyles = {},
 		scores = {},
+		scoresGen = 0,
 		stats = table.create(32, 0) :: { [number]: number }, -- C: int stats[MAX_CL_STATS] (zeroed)
 		items = 0,
 		item_gettime = {},
@@ -341,6 +343,7 @@ local function parseServerInfo(c: Client, r: msg.Reader)
 	for i = 1, c.maxclients do
 		c.scores[i] = { name = "", frags = 0, colors = 0 }
 	end
+	c.scoresGen = (c.scoresGen or 0) + 1 -- HUD frag/scoreboard rebuild gate
 
 	c.gametype = msg.readByte(r)
 	c.levelname = msg.readString(r)
@@ -642,12 +645,15 @@ function cl.parseServerMessage(c: Client, data: buffer)
 		elseif cmd == proto.svc_updatename then
 			local i = msg.readByte(r)
 			c.scores[i + 1].name = msg.readString(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_updatefrags then
 			local i = msg.readByte(r)
 			c.scores[i + 1].frags = msg.readShort(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_updatecolors then
 			local i = msg.readByte(r)
 			c.scores[i + 1].colors = msg.readByte(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_particle then
 			local org = vector.create(msg.readCoord(r), msg.readCoord(r), msg.readCoord(r))
 			local dir = vector.create(msg.readChar(r), msg.readChar(r), msg.readChar(r)) * (1 / 16)

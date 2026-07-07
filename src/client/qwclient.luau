@@ -106,6 +106,7 @@ return function()
 		completed_time = 0,
 		gametype = 1, -- QW is deathmatch-only
 		scores = {},
+		scoresGen = 0,
 		viewentity = 1,
 		levelname = "",
 		paused = false,
@@ -286,28 +287,49 @@ return function()
 			end
 		end
 
-		-- Sbar_SortFrags source: scoreboard slots from player infos
+		-- Sbar_SortFrags source: scoreboard slots from player infos; any
+		-- field change bumps scoresGen, the HUD's rebuild gate
+		local scoresDirty = false
 		for i = 0, qwp.MAX_CLIENTS - 1 do
 			local info = cl.players[i]
 			local slot = hudC.scores[i + 1]
 			if not slot then
 				slot = { name = "", frags = 0, colors = 0 }
 				hudC.scores[i + 1] = slot
+				scoresDirty = true
 			end
 			if info then
-				slot.name = info.name
-				slot.frags = info.frags
-				slot.ping = info.ping
-				slot.pl = info.pl
-				slot.entertime = info.entertime
-				slot.spectator = info.spectator
-				slot.team = info.userinfo.team or ""
+				local team = info.userinfo.team or ""
 				local top = tonumber(info.userinfo.topcolor) or 0
 				local bottom = tonumber(info.userinfo.bottomcolor) or 0
-				slot.colors = top * 16 + bottom
-			else
+				local colors = top * 16 + bottom
+				if
+					slot.name ~= info.name
+					or slot.frags ~= info.frags
+					or slot.ping ~= info.ping
+					or slot.pl ~= info.pl
+					or slot.entertime ~= info.entertime
+					or slot.spectator ~= info.spectator
+					or slot.team ~= team
+					or slot.colors ~= colors
+				then
+					scoresDirty = true
+					slot.name = info.name
+					slot.frags = info.frags
+					slot.ping = info.ping
+					slot.pl = info.pl
+					slot.entertime = info.entertime
+					slot.spectator = info.spectator
+					slot.team = team
+					slot.colors = colors
+				end
+			elseif slot.name ~= "" then
 				slot.name = ""
+				scoresDirty = true
 			end
+		end
+		if scoresDirty then
+			hudC.scoresGen += 1
 		end
 
 		-- Sbar_TeamOverlay/serverinfo gate + own slot for the mini overlay
