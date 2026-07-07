@@ -16,6 +16,19 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Fixed during the audit
 
+- **View/feel wiring batch (2026-07-07 call-site audit)**: QW gun bob
+  (raw speed push with no sine — the gun extended and stuck; now
+  oscillating calcBobQW with QW's on-ground bobtime + airborne hold);
+  NQ powerup screen-tint and HUD-face item bits rotated
+  (quad↔suit↔invuln — the test asserted the same wrong constants);
+  QW gib view height (PF_GIB outranks PF_DEAD: +8, was -16);
+  QW gun angles (computed pre-punchangle, roll forced 0 — the gun no
+  longer pitches with kicks or rolls with lean); QW spectator bob gate;
+  bob/kick/punch now apply while dead; 1/16 node-line nudge; NQ pause
+  gate (`if (!cl.paused) V_CalcRefdef()`); QW muzzleflash dlight keyed
+  positive like C. Full record:
+  [docs/coverage/delta-triage-2026-07-07.md](docs/coverage/delta-triage-2026-07-07.md).
+
 - **Demo playback + recording** (`cl_demo.c`): playdemo parses the exact
   .dem block format (cd-track line, then length/viewangles/payload
   blocks) and feeds the shipped attract demos through the full parse
@@ -99,10 +112,64 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
 
 ## Open — ordered by visibility
 
-3. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
-   (no screen-space shader access); best-effort approximation TBD.
-The open list is empty: remaining divergences are the documented
-platform substitutions and deliberate defaults below.
+Repopulated 2026-07-07 by the buried-delta triage
+([docs/coverage/delta-triage-2026-07-07.md](docs/coverage/delta-triage-2026-07-07.md)):
+every "Deltas: …" note inside a VERIFIED coverage row was classified; the
+genuine still-open divergences now live here instead of buried prose. The
+gun-bob bug (VERIFIED row note "gun bob simplified to forward push" hid a
+missing oscillation for two days) is the precedent; fixed 2026-07-07.
+
+1. **Underwater screen warp** (`D_WarpScreen`) — likely platform-limited
+   (no screen-space shader access); best-effort approximation (camera
+   FOV/roll oscillation) TBD. Highest-visibility absence in the port.
+2. **Alias-model directional shading** (`r_alias.c` anorm dot table) —
+   both boots light models with one scalar (entrender.luau setLight);
+   C shades per-vertex via `r_avertexnormal_dots`, giving the bright/dark
+   gradient across a model. Candidate: per-vertex colors on EditableMesh.
+3. **NQ view-weapon damped lag** (`CalcGunAngle` angledelta smoothing) —
+   gun locks rigidly to view angles; C lags yaw/pitch. Same feel class as
+   the fixed bob bug. (QW boot exact by identity — its C lag terms are
+   provably zero.) Existing SUBSTITUTED row w/ playtest expiry.
+4. **Server RNG fixed seed** — `svr.randSeed = 12345` unconditionally
+   (sv.luau:169): every production boot replays the identical
+   monster-dice/nail-spread stream. One-line fix (reseed outside tests).
+5. **PF_objerror aborts the QC program** (pr_cmds.luau:156-163) — C frees
+   the offending edict and *continues*; the port unwinds like PF_error, so
+   a map with one "walkmonster in wall" loses the whole spawn chain.
+6. **soundLog/printLog unbounded growth** (qwsv.luau) — never trimmed;
+   live QW server leaks memory for the session. Ship concern.
+7. **Player entity angles not forced to view** (NQ, view.c:883-885) —
+   port never writes ent yaw/pitch from viewangles; visible as wrong
+   self-model facing in chase cam / avatars mode.
+8. **NQ demo playback in Studio: frozen view entity** — journaled OPEN in
+   nq-client.md (init.client demo glue); offline reader passes.
+9. **PF_localcmd drops everything but changelevel/restart** (both boots)
+   — silent no-op for other commands; mod progs commonly localcmd cvar
+   sets. Mod-compat gap.
+10. **Q_atof accepts exponents** (com.luau:73-79) — `tonumber` first, so
+    "1e5" parses as 100000 where C stops at 'e' (returns 1); reaches
+    cvar/QC parsing. C char constants (`'a'`) also unsupported (dead in
+    id1 data).
+11. **Cvar_Command is a fixed branch list** (NQ) — unlisted cvar names
+    fall through to the server instead of get/set locally like C's
+    registry walk. Console UX.
+12. **viewsize gun-z fudge absent** (NQ, view.c:944-951) — C raises the
+    gun +2 at viewsize 100 (the default); the port's gun rides 2 units
+    low at all times. Few-line fix.
+13. **Unknown user command: silent** (QW server, qwsv.luau:1504) — dprints
+    where C Con_Printf's "Bad user command" back to the client.
+14. **Console UX cluster** (NQ+QW): no pgup/pgdn scrollback, no
+    horizontal scroll of long input lines, client-side `echo` skips the
+    notify lines, unbound-key query prints `"x" = ""` vs C's
+    `"x" is not bound`. (Tab completion EXISTS — console.luau:201.)
+15. **Cosmetic/minor cluster**: beam angles kept float vs C int-truncation
+    (chunky LG rotation); conback slides instead of cropping; CHAN_AUTO
+    never steals a channel when full (dense firefights stack/drop sounds
+    differently); skingroup + sprite-group intervals untimed; sky drift
+    horizontal-only vs C's diagonal; keyboard +lookup stops pitch drift
+    where C lets them fight; two keys bound to one +command release early
+    (kbutton_t down[2] untracked); CL_EntityNum lacks the MAX_EDICTS
+    Host_Error cap; QW held buttons not cleared on disconnect.
 
 ## Platform substitutions (cannot be direct ports)
 

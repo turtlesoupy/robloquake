@@ -72,6 +72,13 @@ with a bias for VERIFIED. Rules:
   cshifts, CTF flag attach, player color translation, s_explod) first, NQ
   HUD odds second, ruled tooling/menus/admin lists third, classification
   sweep last.
+- No untriaged deltas in VERIFIED rows (ratified 2026-07-07): any
+  divergence a row's notes record ("Deltas:", "simplified", "absent", …)
+  must either carry an explicit `delta-ruled: ACCEPT (date) — reason`
+  annotation or point at an open item in FIDELITY.md. VERIFIED covers
+  what was verified, not the deltas sitting next to it — the gun-bob bug
+  ("simplified to forward push", recorded 2026-07-05, fixed 2026-07-07)
+  is the precedent. Full sweep: [delta-triage-2026-07-07.md](delta-triage-2026-07-07.md).
 
 Maintenance rule: when a PENDING row gains a test or screenshot proof,
 move it to VERIFIED and cite the evidence. When new port code is written,
@@ -107,6 +114,26 @@ rows.
 | S6 | Second unmodified mod, round/queue stress: Rocket Arena "Final Arena" 1.20 | VERIFIED | tests/test_scenario_ra.luau (17 checks): RA's shipped qwprogs.dat over id1 + its own 46-map pak; challenger queue over the wire ("Waiting for opponent", challenger announce), the 10..1 countdown to FIGHT!, arena loadout (200 armor/60 rockets, no pickups), rocket duel, "has failed"/"FLAWLESS Victory!", loser autorespawns into round 2 with a fresh loadout (winner stays), fraglimit intermission exits on button press and rotates to the localinfo successor map (rotate.cfg mechanism through PF_infokey's new localinfo fallback). Requires external_assets/rocketarena/ (gitignored; provenance in docs/mods-licenses.md). | `lune run tests/test_scenario_ra.luau` |
 
 ## Changelog
+
+### 2026-07-07 (buried-delta triage + gun-bob fix)
+- QW gun bob fixed: the view weapon's forward offset was raw
+  `speed*cl_bob*0.4` with no sine (extended and stuck instead of
+  bobbing); now `fwd*(bob*0.4)` from a QW-faithful calcBobQW (on-ground
+  bobtime accumulation, airborne hold — view.luau, 4 new test_view
+  truths). Root cause: a delta recorded inside a VERIFIED row and never
+  triaged.
+- Full four-manifest sweep of buried deltas
+  ([delta-triage-2026-07-07.md](delta-triage-2026-07-07.md)): stale row
+  text rewritten, deliberate deltas got explicit `delta-ruled:`
+  annotations, genuine gaps moved to FIDELITY.md "Open". New rule above:
+  no untriaged deltas in VERIFIED rows.
+- Phase-2 call-site wiring audit (same day): 4 more bugs found and fixed
+  — NQ powerup item bits rotated (test_view asserted the same wrong
+  constants), QW gib view height (PF_GIB vs PF_DEAD priority), QW gun
+  angles carrying punch/roll, QW spectator bob. Plus dead-view
+  bob/kick/punch, 1/16 nudge, NQ pause gate, muzzleflash dlight key.
+  Prediction/pmove/qcoords wiring verified clean. Record in
+  [delta-triage-2026-07-07.md](delta-triage-2026-07-07.md) Phase 2.
 
 ### 2026-07-06 (independent completeness audit: 31 rows added, zero state change)
 - A mechanical audit (every C function definition in WinQuake, QW/client,
