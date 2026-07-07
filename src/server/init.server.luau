@@ -207,6 +207,26 @@ end;
 	return false
 end
 
+-- ===== host greeting (PRODUCT layer): MOTD-style console print telling
+-- the host about the match-control menu. REMOVAL: this block + the
+-- greetHost call in connectPlayer + src/server/hostgreeting.luau. =====
+local greetHost = require(script.hostgreeting)({
+	isHost = playerIsHost,
+	sendPrint = function(player: Player, text: string)
+		local slot = slotByPlayer[player]
+		local client = slot and svr.clients[slot]
+		if client and client.active then
+			-- svc_print into the client's reliable message buffer — the
+			-- same product-layer write the finale debug hook uses
+			local msglib = require(engine.common.msg)
+			local proto = require(engine.protocol)
+			msglib.writeByte(client.message, proto.svc_print)
+			msglib.writeString(client.message, text)
+		end
+	end,
+})
+-- ===== end host greeting =====
+
 local function connectPlayer(player: Player)
 	local slot = host.findFreeClient(svr)
 	if not slot then
@@ -237,6 +257,7 @@ local function connectPlayer(player: Player)
 	-- avatars mode plumbing: clients map entity number -> Player by slot
 	player:SetAttribute("RQSlot", slot)
 	publishAvatarRig(player)
+	greetHost(player) -- host greeting (PRODUCT layer)
 	print(`[robloquake] {player.Name} connected as client {slot}`)
 end
 

@@ -72,6 +72,9 @@ export type Hud = {
 	centerTime: number,
 	notifyRows: { confontlib.TextRow },
 	notifyLines: { { text: string, expire: number } },
+	notifyCols: number,
+	notifyHolders: { Frame },
+	notifyY: number,
 	loadingPlaque: ImageLabel?,
 	pausePlaque: ImageLabel?,
 	interFrame: Frame,
@@ -191,6 +194,40 @@ local function hidePic(h: Hud, label: ImageLabel)
 	end
 end
 
+-- Con_CheckResize (console.c): the console/notify column count derives
+-- from the viewport width — (vid.conwidth >> 3) - 3 in C, here with
+-- 8*SCALE-pixel characters. Floor 38 like C's too-small fallback; the
+-- cap only bounds glyph-label instance counts on very wide windows.
+local MIN_NOTIFY_COLS = 38
+local MAX_NOTIFY_COLS = 120
+local function notifyColsFor(gui: ScreenGui): number
+	local w = gui.AbsoluteSize.X
+	if w <= 0 then
+		return 64 -- pre-layout default; the per-frame check corrects it
+	end
+	return math.clamp(math.floor(w / (8 * SCALE)) - 3, MIN_NOTIFY_COLS, MAX_NOTIFY_COLS)
+end
+
+-- (re)build the 4 notify rows at h.notifyCols (Con_DrawNotify geometry:
+-- one char indent, 8px rows below the Roblox topbar inset)
+local function buildNotifyRows(h: Hud)
+	for _, f in h.notifyHolders do
+		f:Destroy()
+	end
+	table.clear(h.notifyHolders)
+	table.clear(h.notifyRows)
+	for i = 1, 4 do
+		local rowFrame = Instance.new("Frame")
+		rowFrame.Name = "notify" .. i
+		rowFrame.BackgroundTransparency = 1
+		rowFrame.Position = UDim2.fromOffset(8 * SCALE, h.notifyY + (i - 1) * 8 * SCALE)
+		rowFrame.Size = UDim2.fromOffset(h.notifyCols * 8 * SCALE, 8 * SCALE)
+		rowFrame.Parent = h.gui
+		h.notifyHolders[i] = rowFrame
+		h.notifyRows[i] = confontlib.newRow(rowFrame, h.notifyCols, SCALE)
+	end
+end
+
 function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hud
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "QuakeHud"
@@ -295,18 +332,13 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 
 	-- Con_DrawNotify: the last 4 console lines at the top-left, 8px rows,
 	-- first column indented one character like (x+1)<<3. Shifted below the
-	-- Roblox topbar inset, which would otherwise cover them.
+	-- Roblox topbar inset, which would otherwise cover them. Width tracks
+	-- the viewport (Con_CheckResize) — rebuilt in hud.update on resize.
 	local inset = game:GetService("GuiService"):GetGuiInset()
-	local NOTIFY_COLS = 64
-	for i = 1, 4 do
-		local rowFrame = Instance.new("Frame")
-		rowFrame.Name = "notify" .. i
-		rowFrame.BackgroundTransparency = 1
-		rowFrame.Position = UDim2.fromOffset(8 * SCALE, inset.Y + (i - 1) * 8 * SCALE)
-		rowFrame.Size = UDim2.fromOffset(NOTIFY_COLS * 8 * SCALE, 8 * SCALE)
-		rowFrame.Parent = gui
-		h.notifyRows[i] = confontlib.newRow(rowFrame, NOTIFY_COLS, SCALE)
-	end
+	h.notifyY = inset.Y
+	h.notifyHolders = {}
+	h.notifyCols = notifyColsFor(gui)
+	buildNotifyRows(h)
 
 	-- SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet: status icons at the
 	-- view top-left (turtle x=vrect.x, ram +32, net +64 like screen.c)
@@ -538,9 +570,14 @@ function hud.setPaused(h: Hud, on: boolean)
 	end
 end
 
--- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs
+-- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs.
+-- Wraps at the live column count like Con_Print filling the text buffer.
 function hud.print(h: Hud, s: string, time: number?)
 	for line in s:gmatch("[^\n]+") do
+		while #line > h.notifyCols do
+			table.insert(h.notifyLines, { text = line:sub(1, h.notifyCols), expire = (time or 0) + 3 })
+			line = line:sub(h.notifyCols + 1)
+		end
 		table.insert(h.notifyLines, { text = line, expire = (time or 0) + 3 }) -- con_notifytime
 	end
 	while #h.notifyLines > 4 do
@@ -1243,6 +1280,15 @@ function hud.update(h: Hud, c: cllib.Client)
 		for _, row in h.soloRows do
 			((row :: any).holder :: Frame).Visible = false
 		end
+	end
+
+	-- Con_CheckResize: rebuild the notify rows when the viewport width
+	-- changes the column count
+	local cols = notifyColsFor(h.gui)
+	if cols ~= h.notifyCols then
+		h.notifyCols = cols
+		buildNotifyRows(h)
+		refreshNotify(h)
 	end
 
 	-- notify lines age out after con_notifytime

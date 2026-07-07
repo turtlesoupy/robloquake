@@ -230,6 +230,21 @@ return function(ctx: Ctx)
 	})
 	-- ===== end stats pipeline =====
 
+	-- ===== host greeting (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/hostgreeting.luau for the REMOVAL note =====
+	local greetHost = require(script.Parent.hostgreeting)({
+		isHost = playerIsHost,
+		sendPrint = function(player: Player, text: string)
+			local slot = slotByPlayer[player]
+			local client = slot and svr.clients[slot]
+			if client and client.active then
+				local qwp = require(engine.qw.qwprotocol)
+				svr.clientPrint(svr, client, qwp.PRINT_HIGH, text)
+			end
+		end,
+	})
+	-- ===== end host greeting =====
+
 	local function connectPlayer(player: Player): number?
 		local slot: number? = nil
 		for i = 1, svr.maxclients do
@@ -253,6 +268,7 @@ return function(ctx: Ctx)
 		-- slot (wire playernum = slot - 1)
 		player:SetAttribute("RQSlot", slot)
 		publishAvatarRig(player)
+		greetHost(player) -- host greeting (PRODUCT layer)
 		print(`[robloquake] {player.Name} connected as qw client {slot}`)
 		return slot
 	end

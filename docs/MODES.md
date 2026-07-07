@@ -116,7 +116,11 @@ blocks in the four boot files).
 ### Admin menu
 
 Hosts (Studio, private-server owner, place creator — same policy as the
-host-command gate) get a gear button (top-right) and the **P** key. The
+host-command gate) get a gear button (top-right) and the **P** key.
+On connect, a host is told so through the engine's own notify surface —
+a MOTD-style server console print (`src/server/hostgreeting.luau`, no
+new UI, no engine edits; suppressed in Studio unless the
+`RQDBG_HostGreeting` ServerStorage attribute is set). The
 menu edits every live parameter: force-load any map, ±steppers for all
 rule cvars (applied immediately; also written back to attributes so
 they survive restarts), the rotation list, and the avatars toggle.
