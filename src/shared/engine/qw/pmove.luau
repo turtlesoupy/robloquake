@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- QuakeWorld player movement — verbatim port of QW/client/pmove.c and
 -- pmovetst.c. This is the movement code shared by the QW server
 -- (SV_RunCmd) and the predicting client (CL_PredictUsercmd); determinism
@@ -104,14 +105,16 @@ type PmTrace = {
 --------------------------------------------------------------------------
 -- pmovetst.c
 
--- PM_InitBoxHull equivalent: a fresh 6-clipnode hull per call site is
--- cheap in Luau; PM_HullForBox fills the plane distances
-local function hullForBox(mins: vector, maxs: vector): bsp.Hull
+-- PM_InitBoxHull: ONE static box hull like the C (box_hull), built once;
+-- PM_HullForBox only refills the six plane distances. Prediction runs
+-- many traces over many box physents per frame — a fresh hull per
+-- (physent x trace) was the client's top GC source.
+local boxHull: bsp.Hull, boxPlanes: { any }
+do
 	local planenum = table.create(6)
 	local child0 = table.create(6)
 	local child1 = table.create(6)
 	local planes = table.create(6)
-	local dists = { maxs.x, mins.x, maxs.y, mins.y, maxs.z, mins.z }
 	for i = 0, 5 do
 		planenum[i + 1] = i
 		local side = bit32.band(i, 1)
@@ -127,18 +130,29 @@ local function hullForBox(mins: vector, maxs: vector): bsp.Hull
 				if axis == 1 then 1 else 0,
 				if axis == 2 then 1 else 0
 			),
-			dist = dists[i + 1],
+			dist = 0,
 			type = axis,
 		}
 	end
-	return {
+	boxPlanes = planes
+	boxHull = {
 		clipnodes = { planenum = planenum, child0 = child0, child1 = child1 },
 		planes = planes,
 		firstclipnode = 0,
 		lastclipnode = 5,
-		clip_mins = mins,
-		clip_maxs = maxs,
+		clip_mins = vector.zero,
+		clip_maxs = vector.zero,
 	} :: any
+end
+
+local function hullForBox(mins: vector, maxs: vector): bsp.Hull
+	boxPlanes[1].dist = maxs.x
+	boxPlanes[2].dist = mins.x
+	boxPlanes[3].dist = maxs.y
+	boxPlanes[4].dist = mins.y
+	boxPlanes[5].dist = maxs.z
+	boxPlanes[6].dist = mins.z
+	return boxHull
 end
 
 -- PM_HullPointContents
@@ -281,7 +295,22 @@ local function pointContents(pm: PlayerMove, p: vector): number
 	return hullPointContents(hull, hull.firstclipnode, p)
 end
 
--- PM_PlayerMove (the trace)
+-- PM_PlayerMove (the trace). The per-physent working trace is a reused
+-- module scratch (the C stack struct); only the winning result is
+-- copied into the returned table, so a trace costs one allocation
+-- instead of one per physent.
+local scratchTrace: PmTrace = {
+	allsolid = false,
+	startsolid = false,
+	inopen = false,
+	inwater = false,
+	fraction = 1,
+	endpos = vector.zero,
+	planeNormal = vector.zero,
+	planeDist = 0,
+	ent = -1,
+}
+
 local function playerTrace(pm: PlayerMove, start: vector, endp: vector): PmTrace
 	local total: PmTrace = {
 		allsolid = false,
@@ -300,17 +329,16 @@ local function playerTrace(pm: PlayerMove, start: vector, endp: vector): PmTrace
 		local start_l = start - offset
 		local end_l = endp - offset
 
-		local trace: PmTrace = {
-			allsolid = true,
-			startsolid = false,
-			inopen = false,
-			inwater = false,
-			fraction = 1,
-			endpos = endp,
-			planeNormal = vector.zero,
-			planeDist = 0,
-			ent = -1,
-		}
+		local trace = scratchTrace
+		trace.allsolid = true
+		trace.startsolid = false
+		trace.inopen = false
+		trace.inwater = false
+		trace.fraction = 1
+		trace.endpos = endp
+		trace.planeNormal = vector.zero
+		trace.planeDist = 0
+		trace.ent = -1
 		recursiveHullCheck(hull, hull.firstclipnode, 0, 1, start_l, end_l, trace)
 
 		if trace.allsolid then
@@ -321,8 +349,15 @@ local function playerTrace(pm: PlayerMove, start: vector, endp: vector): PmTrace
 		end
 
 		if trace.fraction < total.fraction then
-			trace.endpos += offset
-			total = trace
+			-- struct copy like C's `total = trace`
+			total.allsolid = trace.allsolid
+			total.startsolid = trace.startsolid
+			total.inopen = trace.inopen
+			total.inwater = trace.inwater
+			total.fraction = trace.fraction
+			total.endpos = trace.endpos + offset
+			total.planeNormal = trace.planeNormal
+			total.planeDist = trace.planeDist
 			total.ent = i - 1 -- physent index, 0-based like the C
 		end
 	end
@@ -368,13 +403,14 @@ local function clipVelocity(inv: vector, normal: vector, overbounce: number): (v
 end
 
 -- PM_FlyMove
+local flyPlanes: { vector } = {} -- C's `vec3_t planes[MAX_CLIP_PLANES]` (static); reads bounded by numplanes
 local function flyMove(pm: PlayerMove): number
 	local numbumps = 4
 	local blocked = 0
 	local original_velocity = pm.velocity
 	local primal_velocity = pm.velocity
 	local numplanes = 0
-	local planes: { vector } = {}
+	local planes = flyPlanes
 	local time_left = frametime
 
 	for _ = 1, numbumps do

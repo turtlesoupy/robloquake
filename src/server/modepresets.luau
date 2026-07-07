@@ -25,14 +25,18 @@ modepresets.KEYS = {
 	"noexit",
 	"maplist",
 	"votetime",
+	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
+	-- stats/leaderboard scope label; absent = derived (statscore.deriveModeKey)
+	"modekey",
 }
 
 local DM_RULES = {
 	deathmatch = 1,
 	fraglimit = 15,
 	timelimit = 20,
-	maplist = "dm3 dm4 dm6 dm2",
+	-- everything the synced pak1 ships (dm1..dm6)
+	maplist = "dm1 dm2 dm3 dm4 dm5 dm6",
 	votetime = 30,
 	startmap = "dm3",
 }
@@ -43,56 +47,69 @@ modepresets.PRESETS = {
 		engine = "nq",
 		game = "id1",
 		startmap = "start",
-		roblox_avatars = true,
+		modekey = "campaign",
 	},
 	["nq-dm"] = {
 		engine = "nq",
 		game = "id1",
+		modekey = "dm",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		roblox_avatars = true,
 	},
 	["qw-dm"] = {
 		engine = "qw",
 		game = "id1",
+		modekey = "dm",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		-- roblox_avatars omitted: QW avatar parity pending
 	},
 	-- Threewave CTF on QW (the verified mod path: tests/test_scenario_ctf
 	-- + qw-ctf2m3 evidence); pak ships ctf1..ctf8
 	ctf = {
 		engine = "qw",
 		game = "id1",
+		modekey = "ctf",
 		gamedir = "threewave",
-		teamplay = 1,
+		-- threewave overloads teamplay as a bitfield: 256 enables CTF (flags
+		-- don't spawn without it). 419 = the mod's shipped server.cfg value
+		-- (health+armor protect, color lock, drop items, CTF)
+		teamplay = 419,
 		deathmatch = 1,
 		fraglimit = 15,
 		timelimit = 20,
 		startmap = "ctf1",
-		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5",
+		-- everything the synced paks ship: ctf1..ctf8 (pak0) + the
+		-- Capture II series ctf2m1..ctf2m8 (pak1); ctfstart is the mod's
+		-- hub map, not a match map
+		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
 		votetime = 30,
 	},
-	-- Rocket Arena (QW): manages its own rotation via localinfo — no
-	-- maplist, so the director stays out of its way
+	-- Rocket Arena (QW): manages its own rotation via localinfo (the mod's
+	-- rotate.cfg, applied at qwserver boot) — no maplist, so the director
+	-- stays out of its way. Startmap must be IN the rotate.cfg cycle;
+	-- limits per raserver.txt's recommended command line
 	arena = {
 		engine = "qw",
 		game = "id1",
+		modekey = "arena",
 		gamedir = "arena",
 		deathmatch = 1,
-		startmap = "dm3",
+		fraglimit = 15,
+		timelimit = 20,
+		startmap = "crandome",
 	},
 	instagib = {
 		engine = "nq",
 		game = "id1",
+		modekey = "instagib",
 		gamedir = "instagib",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
@@ -100,7 +117,6 @@ modepresets.PRESETS = {
 		maplist = DM_RULES.maplist,
 		votetime = DM_RULES.votetime,
 		startmap = DM_RULES.startmap,
-		roblox_avatars = true,
 	},
 	-- LibreQuake (copyright-free content, game=lq1): the NQ DM setup on
 	-- the lqdm* maps; weapon model names match id1 (v_shot.mdl etc.)

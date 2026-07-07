@@ -17,13 +17,29 @@ local textures = require(script.Parent.render.textures)
 local console = {}
 
 local SCALE = 2
-local COLS = 64
 local ROWS = 25 -- visible rows including the input line
+
+-- Con_CheckResize (console.c): columns derive from the viewport width —
+-- (vid.conwidth >> 3) - 3 in C, here with 8*SCALE-pixel characters.
+-- Floor 38 like C's too-small fallback; the cap bounds glyph-label
+-- instance counts on very wide windows.
+local MIN_COLS = 38
+local MAX_COLS = 120
+local function colsFor(parent: Instance): number
+	local w = if parent:IsA("GuiBase2d") then parent.AbsoluteSize.X else 0
+	if w <= 0 then
+		return 64 -- pre-layout default; checkResize corrects it next frame
+	end
+	return math.clamp(math.floor(w / (8 * SCALE)) - 3, MIN_COLS, MAX_COLS)
+end
 
 export type Console = {
 	gui: Frame,
 	font: confont.Font,
 	rows: { confont.TextRow },
+	cols: number, -- con_linewidth (Con_CheckResize tracks the viewport)
+	rowHolders: { Frame },
+	lineOpen: boolean, -- Con_Print: the last line has no \n yet
 	lines: { string }, -- scrollback
 	inputText: string,
 	history: { string },
@@ -43,13 +59,48 @@ export type Console = {
 	lastTime: number,
 }
 
+-- (re)build the text rows at c.cols glyphs wide
+local function buildRows(c: Console)
+	for _, f in c.rowHolders do
+		f:Destroy()
+	end
+	table.clear(c.rowHolders)
+	table.clear(c.rows)
+	for r = 1, ROWS do
+		local holder = Instance.new("Frame")
+		holder.BackgroundTransparency = 1
+		holder.Position = UDim2.fromOffset(8, (r - 1) * 8 * SCALE + 8)
+		holder.Size = UDim2.fromOffset(c.cols * 8 * SCALE, 8 * SCALE)
+		holder.Parent = c.gui
+		c.rowHolders[r] = holder
+		c.rows[r] = confont.newRow(holder, c.cols, SCALE)
+	end
+end
+
+-- Con_CheckResize: track the viewport width. Like C, existing wrapped
+-- scrollback lines are not re-flowed (C truncates/copies the old grid);
+-- only new prints use the new width.
+local function checkResize(c: Console)
+	local parent = c.gui.Parent
+	if not parent then
+		return
+	end
+	local cols = colsFor(parent)
+	if cols ~= c.cols then
+		c.cols = cols
+		c.gui.Size = UDim2.fromOffset(cols * 8 * SCALE, (ROWS + 1) * 8 * SCALE + 16)
+		buildRows(c)
+	end
+end
+
 function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Console
 	local gui = Instance.new("Frame")
 	gui.Name = "QuakeConsole"
 	gui.BackgroundTransparency = 1
+	local cols = colsFor(parent)
 	gui.AnchorPoint = Vector2.new(0.5, 0)
 	gui.Position = UDim2.new(0.5, 0, 0, 0)
-	gui.Size = UDim2.fromOffset(COLS * 8 * SCALE, (ROWS + 1) * 8 * SCALE + 16)
+	gui.Size = UDim2.fromOffset(cols * 8 * SCALE, (ROWS + 1) * 8 * SCALE + 16)
 	gui.Visible = false
 	gui.ZIndex = 20
 
@@ -93,15 +144,11 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	local c = {} :: Console
 	c.gui = gui
 	c.font = confont.new(conchars, pal)
+	c.cols = cols
 	c.rows = {}
-	for r = 1, ROWS do
-		local holder = Instance.new("Frame")
-		holder.BackgroundTransparency = 1
-		holder.Position = UDim2.fromOffset(8, (r - 1) * 8 * SCALE + 8)
-		holder.Size = UDim2.fromOffset(COLS * 8 * SCALE, 8 * SCALE)
-		holder.Parent = gui
-		c.rows[r] = confont.newRow(holder, COLS, SCALE)
-	end
+	c.rowHolders = {}
+	c.lineOpen = false
+	buildRows(c)
 	c.lines = {}
 	c.inputText = ""
 	c.completions = {}
@@ -119,18 +166,44 @@ function console.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance)
 	return c
 end
 
-function console.print(c: Console, s: string)
-	for line in s:gmatch("[^\n]+") do
-		-- wrap long lines at the console width
-		while #line > COLS do
-			table.insert(c.lines, line:sub(1, COLS))
-			line = line:sub(COLS + 1)
+-- Con_Print: append to the OPEN line; only '\n' (or width overflow)
+-- advances. Server messages arrive in pieces — QC sprints
+-- "You got the " and "nails\n" separately and they must join — so the
+-- wire paths call this directly. Local UI messages use console.print,
+-- which terminates its argument.
+function console.printCon(c: Console, s: string)
+	local pieces = s:split("\n")
+	for j, piece in pieces do
+		if #piece > 0 then
+			if c.lineOpen and #c.lines > 0 then
+				c.lines[#c.lines] ..= piece
+			else
+				table.insert(c.lines, piece)
+			end
+			c.lineOpen = true
+			-- wrap at the live console width (con_linewidth)
+			while #c.lines[#c.lines] > c.cols do
+				local full = table.remove(c.lines) :: string
+				table.insert(c.lines, full:sub(1, c.cols))
+				table.insert(c.lines, full:sub(c.cols + 1))
+			end
 		end
-		table.insert(c.lines, line)
+		if j < #pieces then
+			if not c.lineOpen and #piece == 0 then
+				table.insert(c.lines, "") -- bare \n = blank line (Con_Linefeed)
+			end
+			c.lineOpen = false
+		end
 	end
 	while #c.lines > 200 do
 		table.remove(c.lines, 1)
 	end
+end
+
+-- one call = one finished line (the local-command convenience the
+-- console/boot code is written against)
+function console.print(c: Console, s: string)
+	console.printCon(c, s .. "\n")
 end
 
 -- Con_DPrintf: only prints when the developer cvar is set
@@ -238,6 +311,7 @@ function console.handleText(c: Console, text: string)
 end
 
 function console.update(c: Console, time: number)
+	checkResize(c) -- Con_CheckResize runs every SCR_UpdateScreen in C
 	-- SCR_SetUpToDrawConsole: slide at scr_conspeed (300 lines/sec on the
 	-- 200-line virtual screen = 1.5 console-heights/sec here)
 	local dt = math.clamp(time - c.lastTime, 0, 0.1)

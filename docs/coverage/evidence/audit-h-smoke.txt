@@ -1,0 +1,54 @@
+# Audit H (second-pass performance) — live Studio verification
+# 2026-07-07, QW boot (engine=qw, startmap=ctf1), fresh play session on
+# the post-H build (rojo sync confirmed per-file before starting: probes
+# for RQDBG / modelFlagsFor / FORCE_ATTRS / POOL_GRACE / hidePic all
+# reported SYNCED in the Edit datamodel).
+
+## H9 — diagnostics gated behind RQDBG
+Server, fresh session:
+  before RQDBG: SV_Time=nil SV_Engine=nil        (nothing published)
+  set ServerStorage RQDBG=true, wait 1.2s:
+  after  RQDBG: SV_Time=43.87 SV_Engine=qw       (diag tick publishing)
+
+## H7 — RQ_Force* hooks through the AttributeChanged cache
+Client: RQ_ForceYaw 90 -> 180 moved the camera look yaw by exactly
+-90.0 deg (roblox-space probe), i.e. the cached force path drives the
+real input pipeline end to end. Verified twice (previous session and
+this one), delta -90.0 both times.
+
+## H2 — HUD dirty-check
+2s forced-attack combat smoke, then probe: QuakeHud present, 56 visible
+ImageLabels. Screenshot audit_h_smoke (session transcript) shows the
+full sbar rendered through the setPic cache: armor 50 + icon, face,
+health 100, ammo 36 (large digits + small yellow count row), weapon
+icons with the active-weapon variant, and the mini frag overlay
+("BLUE TURTLE...") built through the scoresGen gate.
+
+## H3 — lightatlas dirty-rect path
+Same combat smoke: muzzleflash dlights ran the mark -> writeRegion ->
+flushDirty per-page upload path every frame for 2s. No errors, no
+visual anomalies (screenshot).
+
+## H1 — render-ent pool
+3s forced-run through ctf1 (PVS churn drops/returns item packet
+entities through retire -> pool -> reuse) plus the combat smoke.
+No errors; entities render normally after the sweep.
+
+## H6 — avatarlayer slot cache
+LocalPlayer RQSlot=1 resolved through the event-driven playerBySlot map
+(avatar/corpse paths exercised by the session; no errors).
+
+## H10 — client frame-loop hygiene
+Whole session runs the edited relink/lightstyle/cshift paths at 60Hz.
+
+## Error scan
+LogService:GetLogHistory() filtered MessageError:
+  Client: 0 errors
+  Server: 0 errors
+
+## Note — first restart hit the EditableMesh budget cliff
+Restarting play immediately after stopping the previous long session
+starved the world build (known async budget refund, 15-25s+). A 75s
+wait between stop and start produced a clean build. Unrelated to the H
+changes (build-time path, predates them); recorded here so the next
+verifier doesn't misattribute it.

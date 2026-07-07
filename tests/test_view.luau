@@ -48,6 +48,16 @@ t.check(approx(view.calcBob(mockC(0.15, vector.create(30, 40, 0)) :: any), 1), "
 t.check(approx(view.calcBob(mockC(0.3, vector.create(30, 40, 0)) :: any), 0.3, 1e-4), "calcBob: cycle .5 -> sin(pi)=0 -> .3")
 
 --------------------------------------------------------------------------
+-- QW V_CalcBob: bobtime accumulates on-ground only; airborne holds old bob
+local bs = view.newBobState()
+local v50 = vector.create(30, 40, 0)
+t.check(approx(view.calcBobQW(bs, 0.15, true, v50), 1), "calcBobQW: bobtime .15 -> peak sin -> 1 (matches NQ truth)")
+local held = view.calcBobQW(bs, 0.15, false, vector.create(300, 400, 0))
+t.check(approx(held, 1) and approx(bs.bobtime, 0.15), "calcBobQW: airborne returns held bob, bobtime frozen")
+t.check(approx(view.calcBobQW(bs, 0.15, true, v50), 0.3, 1e-4), "calcBobQW: ground resumes at bobtime .3 -> sin(pi)=0 -> .3")
+t.check(approx(view.calcBobQW(view.newBobState(), 0.15, true, vector.create(300, 400, 0)), 4), "calcBobQW: speed 500 at peak clamps to 4")
+
+--------------------------------------------------------------------------
 -- V_CalcRefdef composition
 local c = mockC(0.15, vector.create(30, 40, 0)) :: any
 c.viewangles = vector.create(10, 90, 0)
@@ -61,8 +71,9 @@ t.check(approx(rd.viewangles.z, 0.3), "refdef roll: V_CalcRoll folded into viewa
 t.check(approx(rd.viewangles.x, 10) and approx(rd.viewangles.y, 90), "refdef pitch/yaw pass through")
 t.check(rd.gunangles == vector.create(-10, 90, 0), "CalcGunAngle: gun pitch = -view pitch, roll dropped")
 local fwd = mathlib.angleVectors(vector.create(10, 90, 0.3))
-local wantGun = vector.create(100, 200, 24) + vector.create(0, 0, 22) + fwd * (bob * 0.4) + vector.create(0, 0, bob)
-t.check(vector.magnitude(rd.gunorg - wantGun) < 1e-4, "gun origin: eye + forward*bob*.4 + z bob")
+-- +2: the viewsize-100 gun-z fudge (view.c:944-951, landed 2026-07-07)
+local wantGun = vector.create(100, 200, 24) + vector.create(0, 0, 22) + fwd * (bob * 0.4) + vector.create(0, 0, bob + 2)
+t.check(vector.magnitude(rd.gunorg - wantGun) < 1e-4, "gun origin: eye + forward*bob*.4 + z bob + viewsize fudge")
 t.eq(rd.gunmodel, 5, "gunmodel from STAT_WEAPON")
 t.eq(rd.gunframe, 2, "gunframe from STAT_WEAPONFRAME")
 
@@ -171,7 +182,9 @@ t.check(approx(pc.dmg_roll, 10 * 1 * 0.6), "roll kick: count floored at 10, side
 --------------------------------------------------------------------------
 -- V_CalcPowerupCshift priority chain (view.c:442): quad > suit > invis
 -- > invuln, with the C colors/percents
-local IT_INVIS, IT_SUIT, IT_QUAD, IT_INVULN = 524288, 1048576, 2097152, 4194304
+-- constants from WinQuake quakedef.h:157-160 (a 2026-07-07 audit found the
+-- previous truths here encoded a rotated mapping, green-lighting a real bug)
+local IT_INVIS, IT_INVULN, IT_SUIT, IT_QUAD = 524288, 1048576, 2097152, 4194304
 local function eqShift(a: { number }?, b: { number }?): boolean
 	if a == nil or b == nil then
 		return a == b

@@ -5,6 +5,12 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- the engine drives everything client-side (scriptable camera, no
+-- Humanoid): never spawn the default Roblox character — on touch
+-- devices it would also summon Roblox's own thumbstick/jump TouchGui
+-- over the game's controls (src/client/controls.luau)
+Players.CharacterAutoLoads = false
 local ServerStorage = game:GetService("ServerStorage")
 local RunService = game:GetService("RunService")
 
@@ -154,95 +160,10 @@ end;
 -- TextChatService, and the server refuses raw wire say from anyone
 (svr :: any).suppressSay = true
 
--- Roblox avatars mode (product layer): the roblox_avatars attribute on
--- QuakeAssets toggles clients rendering player entities as avatar rigs.
--- The server publishes one neutralized R15 rig per connected player
--- under ReplicatedStorage.QuakeAvatars (clients clone it locally), and
--- mirrors each player's Quake weapon as an RQWeaponModel attribute so
--- clients can attach the matching world model to the rig's hand.
-local avatarsAttr = "roblox_avatars"
-bundle.clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
-assets:GetAttributeChangedSignal(avatarsAttr):Connect(function()
-	bundle.clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) == true)
-end)
-
-local avatarFolder = Instance.new("Folder")
-avatarFolder.Name = "QuakeAvatars"
-avatarFolder.Parent = ReplicatedStorage
-
-local function publishAvatarRig(player: Player)
-	if avatarFolder:FindFirstChild(tostring(player.UserId)) then
-		return
-	end
-	task.spawn(function()
-		local ok, rig = pcall(function()
-			-- Studio multi-client test players are guests with NEGATIVE
-			-- UserIds; description fetch rejects those (and can fail on
-			-- network hiccups). Test guests borrow the place creator's
-			-- avatar (override with a test_avatar_userid attribute) so
-			-- tests exercise a REAL look — hats, layered clothing, anim
-			-- pack — instead of the blank default.
-			local fetchId = player.UserId
-			if fetchId <= 0 then
-				fetchId = if game.CreatorType == Enum.CreatorType.User then game.CreatorId else 0
-				local override = assets:GetAttribute("test_avatar_userid")
-				if typeof(override) == "number" and override > 0 then
-					fetchId = override
-				end
-			end
-			local desc: HumanoidDescription? = nil
-			if fetchId > 0 then
-				local okDesc, d = pcall(function()
-					return Players:GetHumanoidDescriptionFromUserId(fetchId)
-				end)
-				if okDesc then
-					desc = d
-				end
-			end
-			if not desc then
-				-- blank descriptions default EVERY body color to black
-				-- (playtest: "all black mesh") — paint the guest rig
-				local d = Instance.new("HumanoidDescription")
-				local gray = Color3.fromRGB(163, 162, 165)
-				d.HeadColor = gray
-				d.TorsoColor = Color3.fromRGB(121, 128, 141)
-				d.LeftArmColor = gray
-				d.RightArmColor = gray
-				d.LeftLegColor = Color3.fromRGB(87, 91, 101)
-				d.RightLegColor = Color3.fromRGB(87, 91, 101)
-				desc = d
-			end
-			local model = Players:CreateHumanoidModelFromDescription(desc :: HumanoidDescription, Enum.HumanoidRigType.R15)
-			model:SetAttribute("IdleAnim", tonumber((desc :: HumanoidDescription).IdleAnimation) or 0)
-			model:SetAttribute("RunAnim", tonumber((desc :: HumanoidDescription).RunAnimation) or 0)
-			return model
-		end)
-		if not ok or not rig then
-			warn(`[robloquake] avatar rig fetch failed for {player.Name}`)
-			return
-		end
-		for _, d in rig:GetDescendants() do
-			if d:IsA("BasePart") then
-				d.Anchored = true
-				d.CanCollide = false
-				d.CanQuery = false
-				d.CanTouch = false
-			elseif d:IsA("BaseScript") then
-				d:Destroy() -- rigs are client-driven visuals only
-			end
-		end
-		rig.Name = tostring(player.UserId)
-		rig:PivotTo(CFrame.new(0, -100000, 0))
-		rig.Parent = avatarFolder
-	end)
-end
-
-Players.PlayerRemoving:Connect(function(player)
-	local rig = avatarFolder:FindFirstChild(tostring(player.UserId))
-	if rig then
-		rig:Destroy()
-	end
-end)
+-- Roblox avatars mode (product layer, SHARED module with the QW boot):
+-- publishes rigs + mirrors the roblox_avatars toggle; this boot also
+-- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
+local publishAvatarRig = require(script.avatarrigs)(assets, bundle.clientFS)
 
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do
@@ -286,6 +207,26 @@ end;
 	return false
 end
 
+-- ===== host greeting (PRODUCT layer): MOTD-style console print telling
+-- the host about the match-control menu. REMOVAL: this block + the
+-- greetHost call in connectPlayer + src/server/hostgreeting.luau. =====
+local greetHost = require(script.hostgreeting)({
+	isHost = playerIsHost,
+	sendPrint = function(player: Player, text: string)
+		local slot = slotByPlayer[player]
+		local client = slot and svr.clients[slot]
+		if client and client.active then
+			-- svc_print into the client's reliable message buffer — the
+			-- same product-layer write the finale debug hook uses
+			local msglib = require(engine.common.msg)
+			local proto = require(engine.protocol)
+			msglib.writeByte(client.message, proto.svc_print)
+			msglib.writeString(client.message, text)
+		end
+	end,
+})
+-- ===== end host greeting =====
+
 local function connectPlayer(player: Player)
 	local slot = host.findFreeClient(svr)
 	if not slot then
@@ -316,6 +257,7 @@ local function connectPlayer(player: Player)
 	-- avatars mode plumbing: clients map entity number -> Player by slot
 	player:SetAttribute("RQSlot", slot)
 	publishAvatarRig(player)
+	greetHost(player) -- host greeting (PRODUCT layer)
 	print(`[robloquake] {player.Name} connected as client {slot}`)
 end
 
@@ -391,6 +333,10 @@ local dir = directorlib.attach({
 	getRule = function(name: string)
 		return cvarlib.value(svr.cvars, name)
 	end,
+	broadcastPrint = function(text: string)
+		-- callvote announcements ride the engine notify surface
+		svlib.broadcastPrint(svr, text .. "\n")
+	end,
 	adminCommand = function(cmd: string, arg: string): string?
 		-- Host_Status_f / Host_Ping_f / Host_Kick_f for the admin menu
 		if cmd == "status" then
@@ -405,6 +351,58 @@ local dir = directorlib.attach({
 	end,
 })
 -- ===== end match director =====
+
+-- ===== stats pipeline (PRODUCT layer): persistent per-player stats,
+-- leaderstats, daily/weekly/all-time leaderboards. REMOVAL: delete
+-- this block + the statsApi.step call in the heartbeat below,
+-- src/server/stats.luau, statscore.luau, statstore.luau and
+-- src/client/leaderboardui.luau. =====
+local statscorelib = require(script.statscore)
+local statstorelib = require(script.statstore)
+local statslib = require(script.stats)
+local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
+local statsApi = statslib.attach({
+	store = statstorelib.new({
+		modekey = statscorelib.deriveModeKey({
+			modekey = assets:GetAttribute("modekey") :: any,
+			engine = assets:GetAttribute("engine") :: any,
+			gamedir = assets:GetAttribute("gamedir") :: any,
+			deathmatch = assets:GetAttribute("deathmatch") :: any,
+			coop = assets:GetAttribute("coop") :: any,
+			teamplay = assets:GetAttribute("teamplay") :: any,
+		}),
+		net = net,
+	}),
+	maxclients = svr.maxclients,
+	playerBySlot = function(slot: number): Player?
+		for p, s in slotByPlayer do
+			if s == slot then
+				return p
+			end
+		end
+		return nil
+	end,
+	readSlot = function(slot: number): statslib.SlotRead?
+		local cl = svr.clients[slot]
+		if not (cl and cl.active and cl.edict) then
+			return nil
+		end
+		statsRead.frags = vmlib.edFloat(cl.edict, defs.ent.frags)
+		statsRead.health = vmlib.edFloat(cl.edict, defs.ent.health)
+		statsRead.deadflag = vmlib.edFloat(cl.edict, defs.ent.deadflag)
+		statsRead.weapon = vmlib.edFloat(cl.edict, defs.ent.weapon)
+		return statsRead
+	end,
+	getIntermission = function()
+		local d = svr.vm.progs.globaldefsByName["intermission_running"]
+		return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+	end,
+	getCurrentMap = function()
+		return svr.name
+	end,
+	competitive = (tonumber(assets:GetAttribute("deathmatch")) or 0) ~= 0,
+})
+-- ===== end stats pipeline =====
 
 -- M_ScanSaves' data: publish {name, comment} for every save so the
 -- client Load/Save menus can list them (comment = savegame line 2)
@@ -446,11 +444,17 @@ RunService.Heartbeat:Connect(function(dt: number)
 				end
 			end
 		end
-		local ServerStorage = game:GetService("ServerStorage")
-		ServerStorage:SetAttribute("SV_Time", svr.time)
-		ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+		-- SV_* / SVDBG_* diagnostics (edict scans + attribute mirror) are
+		-- debug-only: gated behind ServerStorage RQDBG so production ticks
+		-- pay one GetAttribute per 0.5s and nothing else. Verify tools set
+		-- RQDBG=true before using the SVDBG_* hooks.
+		local dbg = ServerStorage:GetAttribute("RQDBG") and true or false
+		if dbg then
+			ServerStorage:SetAttribute("SV_Time", svr.time)
+			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+		end
 		local c1 = svr.clients[1]
-		if c1 and c1.active and c1.edict then
+		if dbg and c1 and c1.active and c1.edict then
 			ServerStorage:SetAttribute("SV_CmdF", c1.cmd.forwardmove)
 			local o = vmlib.edVector(c1.edict, defs.ent.origin)
 			local v = vmlib.edVector(c1.edict, defs.ent.velocity)
@@ -644,6 +648,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 
 	dir.step() -- match director: vote lifecycle + idle expiry
+	statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo

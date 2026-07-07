@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Network message buffers — port of sizebuf_t / MSG_Write* / MSG_Read* from
 -- WinQuake common.c. All values little-endian; coords are 13.3 fixed point,
 -- angles are 8-bit 360ths.
@@ -185,15 +186,26 @@ function msg.readFloat(r: Reader): number
 end
 
 function msg.readString(r: Reader): string
-	local out = {}
-	while true do
-		local c = msg.readChar(r)
-		if c == -1 or c == 0 then
-			break
+	-- scan for the terminator, then one buffer.readstring (the old
+	-- char-by-char table build was hot during stufftext/print bursts)
+	local data = r.data
+	local len = r.size
+	local start = r.readcount
+	local pos = start
+	while pos < len do
+		local c = buffer.readu8(data, pos)
+		if c == 0 or c == 0xff then
+			-- C's loop breaks on 0 AND on -1 (0xff through the signed
+			-- MSG_ReadChar), consuming the terminator
+			r.readcount = pos + 1
+			return buffer.readstring(data, start, pos - start)
 		end
-		table.insert(out, string.char(bit32.band(c, 0xff)))
+		pos += 1
 	end
-	return table.concat(out)
+	-- ran off the end: the C loop's failing MSG_ReadChar sets msg_badread
+	r.readcount = len
+	r.badread = true
+	return buffer.readstring(data, start, len - start)
 end
 
 function msg.readCoord(r: Reader): number

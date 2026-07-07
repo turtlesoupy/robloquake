@@ -31,7 +31,7 @@ hud.SBAR_LINES_PX = hud.sbarLinesPx(100) -- default viewsize
 
 -- item flags (quakedef.h)
 local IT_SHOTGUN = 1
-local IT_INVULNERABILITY = 4194304
+local IT_INVULNERABILITY = 1048576 -- quakedef.h:158
 local IT_ARMOR1 = 8192
 local IT_ARMOR2 = 16384
 local IT_ARMOR3 = 32768
@@ -40,17 +40,19 @@ local IT_NAILS = 512
 local IT_ROCKETS = 1024
 local IT_CELLS = 2048
 local IT_INVISIBILITY = 524288
-local IT_QUAD = 2097152
+local IT_QUAD = 4194304 -- quakedef.h:160
 
 -- img is usually the shared page (rect-addressed); dedicated only when
 -- the page is full. One page instead of ~25 pics: live EditableImage
 -- bindings are a scarce pool (~128) and binds past the cap render black.
-type Pic = { img: EditableImage?, off: Vector2, w: number, h: number }
+type Pic = { img: EditableImage?, content: Content?, off: Vector2, w: number, h: number }
 
 export type Hud = {
 	gui: ScreenGui,
 	canvas: Frame,
 	pics: { [string]: Pic },
+	lastPic: { [ImageLabel]: string }, -- setPic dirty-check (Sbar_Changed spirit)
+	lastDigit: { [ImageLabel]: string }, -- small ammo-count digit dirty-check
 	-- dynamic widgets
 	armorDigits: { ImageLabel },
 	healthDigits: { ImageLabel },
@@ -70,7 +72,12 @@ export type Hud = {
 	centerTime: number,
 	notifyRows: { confontlib.TextRow },
 	notifyLines: { { text: string, expire: number } },
+	notifyCols: number,
+	notifyHolders: { Frame },
+	notifyY: number,
+	notifyOpen: boolean, -- Con_Print: the last notify line has no \n yet
 	loadingPlaque: ImageLabel?,
+	loadingCurtain: GuiObject?,
 	pausePlaque: ImageLabel?,
 	interFrame: Frame,
 	interSig: string,
@@ -108,6 +115,7 @@ local function getPic(h: Hud, w: wadlib.Wad, name: string): Pic
 		local img = textures.createImage(pic.pixels, pic.width, pic.height, h.pal, true)
 		p = { img = img, off = Vector2.zero, w = pic.width, h = pic.height }
 	end
+	p.content = if p.img then Content.fromObject(p.img) else nil
 	h.pics[name] = p
 	return p
 end
@@ -142,6 +150,9 @@ local function charPic(h: Hud, code: number): Pic?
 			p = { img = img, off = Vector2.zero, w = 8, h = 8 }
 		end
 	end
+	if p and p.img then
+		p.content = Content.fromObject(p.img)
+	end
 	h.charPics[code] = p
 	return p
 end
@@ -157,16 +168,65 @@ local function makeLabel(parent: Instance, x: number, y: number, w: number, hh: 
 	return label
 end
 
+-- Sbar_Changed spirit: the C sbar only repaints when sb_updates was
+-- bumped; here each label skips its reflected writes when it already
+-- shows the named pic. hidePic clears the cache so the next setPic
+-- re-applies in full.
 local function setPic(h: Hud, label: ImageLabel, name: string, w: wadlib.Wad)
+	if h.lastPic[label] == name then
+		return
+	end
 	local pic = getPic(h, w, name)
+	h.lastPic[label] = name
 	if pic.img then
-		label.ImageContent = Content.fromObject(pic.img)
+		label.ImageContent = pic.content :: Content
 		label.ImageRectOffset = pic.off
 		label.ImageRectSize = Vector2.new(pic.w, pic.h)
 		label.Size = UDim2.fromOffset(pic.w * SCALE, pic.h * SCALE)
 		label.Visible = true
 	else
 		label.Visible = false
+	end
+end
+
+local function hidePic(h: Hud, label: ImageLabel)
+	if h.lastPic[label] ~= nil then
+		h.lastPic[label] = nil
+		label.Visible = false
+	end
+end
+
+-- Con_CheckResize (console.c): the console/notify column count derives
+-- from the viewport width — (vid.conwidth >> 3) - 3 in C, here with
+-- 8*SCALE-pixel characters. Floor 38 like C's too-small fallback; the
+-- cap only bounds glyph-label instance counts on very wide windows.
+local MIN_NOTIFY_COLS = 38
+local MAX_NOTIFY_COLS = 120
+local function notifyColsFor(gui: ScreenGui): number
+	local w = gui.AbsoluteSize.X
+	if w <= 0 then
+		return 64 -- pre-layout default; the per-frame check corrects it
+	end
+	return math.clamp(math.floor(w / (8 * SCALE)) - 3, MIN_NOTIFY_COLS, MAX_NOTIFY_COLS)
+end
+
+-- (re)build the 4 notify rows at h.notifyCols (Con_DrawNotify geometry:
+-- one char indent, 8px rows below the Roblox topbar inset)
+local function buildNotifyRows(h: Hud)
+	for _, f in h.notifyHolders do
+		f:Destroy()
+	end
+	table.clear(h.notifyHolders)
+	table.clear(h.notifyRows)
+	for i = 1, 4 do
+		local rowFrame = Instance.new("Frame")
+		rowFrame.Name = "notify" .. i
+		rowFrame.BackgroundTransparency = 1
+		rowFrame.Position = UDim2.fromOffset(8 * SCALE, h.notifyY + (i - 1) * 8 * SCALE)
+		rowFrame.Size = UDim2.fromOffset(h.notifyCols * 8 * SCALE, 8 * SCALE)
+		rowFrame.Parent = h.gui
+		h.notifyHolders[i] = rowFrame
+		h.notifyRows[i] = confontlib.newRow(rowFrame, h.notifyCols, SCALE)
 	end
 end
 
@@ -201,6 +261,8 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.sbarStrip = strip
 	h.canvas = canvas
 	h.pics = {}
+	h.lastPic = {}
+	h.lastDigit = {}
 	h.charPics = {}
 	h.page = textures.newImagePage(512)
 	h.pal = pal
@@ -216,6 +278,28 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	local w = wadlib.load(wadbuf)
 	local ok, conchars = pcall(wadlib.getRaw, w, "conchars")
 	h.conchars = if ok then conchars else nil
+
+	-- SCR_TileClear: the band beside the 320px sbar shows the tiled
+	-- 64x64 gfx.wad backtile, not black (Draw_TileClear). The black strip
+	-- Frame stays as the fallback. C anchors the tile phase at screen
+	-- (0,0); this anchors at the band's top-left — indistinguishable for
+	-- the uniform pattern short of a pixel diff.
+	do
+		local okPic, pic = pcall(wadlib.getPic, w, "backtile")
+		local img = if okPic then textures.createImage(pic.pixels, pic.width, pic.height, pal, false) else nil
+		if img then
+			local tile = Instance.new("ImageLabel")
+			tile.Name = "backtile"
+			tile.BackgroundTransparency = 1
+			tile.BorderSizePixel = 0
+			tile.ImageContent = Content.fromObject(img :: EditableImage)
+			tile.ResampleMode = Enum.ResamplerMode.Pixelated
+			tile.ScaleType = Enum.ScaleType.Tile
+			tile.TileSize = UDim2.fromOffset(pic.width * SCALE, pic.height * SCALE)
+			tile.Size = UDim2.fromScale(1, 1)
+			tile.Parent = strip
+		end
+	end
 
 	-- static backgrounds: ibar at canvas y=0 (sbar-space -24), sbar at y=24.
 	-- the whole inventory row lives in its own frame: screen.c's
@@ -254,7 +338,8 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	for i = 0, 3 do
 		local digits = {}
 		for j = 0, 2 do
-			digits[j + 1] = makeLabel(ibarRow, (6 * i + 1 + j) * 8 - 2, 0, 8, 8)
+			-- C x is (6*i+1+j)*8 - 2, plus Sbar_DrawCharacter's built-in +4
+			digits[j + 1] = makeLabel(ibarRow, (6 * i + 1 + j) * 8 + 2, 0, 8, 8)
 		end
 		h.countDigits[i + 1] = digits
 	end
@@ -272,18 +357,14 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 
 	-- Con_DrawNotify: the last 4 console lines at the top-left, 8px rows,
 	-- first column indented one character like (x+1)<<3. Shifted below the
-	-- Roblox topbar inset, which would otherwise cover them.
+	-- Roblox topbar inset, which would otherwise cover them. Width tracks
+	-- the viewport (Con_CheckResize) — rebuilt in hud.update on resize.
 	local inset = game:GetService("GuiService"):GetGuiInset()
-	local NOTIFY_COLS = 64
-	for i = 1, 4 do
-		local rowFrame = Instance.new("Frame")
-		rowFrame.Name = "notify" .. i
-		rowFrame.BackgroundTransparency = 1
-		rowFrame.Position = UDim2.fromOffset(8 * SCALE, inset.Y + (i - 1) * 8 * SCALE)
-		rowFrame.Size = UDim2.fromOffset(NOTIFY_COLS * 8 * SCALE, 8 * SCALE)
-		rowFrame.Parent = gui
-		h.notifyRows[i] = confontlib.newRow(rowFrame, NOTIFY_COLS, SCALE)
-	end
+	h.notifyY = inset.Y
+	h.notifyHolders = {}
+	h.notifyCols = notifyColsFor(gui)
+	h.notifyOpen = false
+	buildNotifyRows(h)
 
 	-- SCR_DrawRam / SCR_DrawTurtle / SCR_DrawNet: status icons at the
 	-- view top-left (turtle x=vrect.x, ram +32, net +64 like screen.c)
@@ -345,6 +426,37 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 		label.Parent = gui
 		return label
 	end
+	-- scr_disabled_for_loading analog: Quake freezes the screen under the
+	-- loading plaque (SCR_UpdateScreen returns early), but the Roblox
+	-- viewport keeps rendering the workspace — entities pop in against the
+	-- void while the world mesh builds. An opaque conback curtain stands in
+	-- for the not-updating screen (it's what a first-connect load shows).
+	do
+		local curtain: GuiObject
+		local img: EditableImage? = nil
+		local backbuf = vfslib.loadFile(fs, "gfx/conback.lmp")
+		if backbuf then
+			local pic = wadlib.parseQPic(backbuf)
+			img = textures.createImage(pic.pixels, pic.width, pic.height, pal, false)
+		end
+		if img then
+			local label = Instance.new("ImageLabel")
+			label.ImageContent = Content.fromObject(img :: EditableImage)
+			label.ResampleMode = Enum.ResamplerMode.Pixelated
+			curtain = label
+		else
+			curtain = Instance.new("Frame")
+		end
+		curtain.Name = "loadingCurtain"
+		curtain.BackgroundColor3 = Color3.new(0, 0, 0)
+		curtain.BackgroundTransparency = 0
+		curtain.BorderSizePixel = 0
+		curtain.Size = UDim2.fromScale(1, 1)
+		curtain.Visible = false
+		curtain.ZIndex = 14
+		curtain.Parent = gui
+		h.loadingCurtain = curtain
+	end
 	h.loadingPlaque = plaque("gfx/loading.lmp")
 	h.pausePlaque = plaque("gfx/pause.lmp")
 
@@ -396,7 +508,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	fragsFrame.Visible = false
 	fragsFrame.Parent = ibarRow
 	;(h :: any).fragsFrame = fragsFrame
-	;(h :: any).fragsSig = ""
+	;(h :: any).fragsGen = -1
 
 	-- Sbar_SoloScoreboard rows drawn over the status row (canvas coords)
 	local function soloRow(x: number, y: number, cols: number): confontlib.TextRow
@@ -440,9 +552,9 @@ local function drawNum(h: Hud, labels: { ImageLabel }, baseX: number, num: numbe
 			local ch = str:sub(ci, ci)
 			local name = if ch == "-" then prefix .. "minus" else prefix .. ch
 			setPic(h, label, name, w)
-			label.Position = UDim2.fromOffset((baseX + slot * 24) * SCALE, 24 * SCALE)
+			-- position is fixed at creation (baseX + slot*24, 24)
 		else
-			label.Visible = false
+			hidePic(h, label)
 		end
 	end
 end
@@ -500,9 +612,13 @@ function hud.setLoading(h: Hud, on: boolean)
 	if h.loadingPlaque then
 		h.loadingPlaque.Visible = on
 	end
+	if h.loadingCurtain then
+		h.loadingCurtain.Visible = on
+	end
 	if on then
 		-- Con_ClearNotify + centertime_off = 0
 		table.clear(h.notifyLines)
+		h.notifyOpen = false
 		refreshNotify(h)
 		h.centerFrame.Visible = false
 		h.centerTime = 0
@@ -515,15 +631,43 @@ function hud.setPaused(h: Hud, on: boolean)
 	end
 end
 
--- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs
-function hud.print(h: Hud, s: string, time: number?)
-	for line in s:gmatch("[^\n]+") do
-		table.insert(h.notifyLines, { text = line, expire = (time or 0) + 3 }) -- con_notifytime
+-- Con_Print → Con_DrawNotify: raw bytes so bronze text keeps its glyphs.
+-- Appends to the OPEN line — server messages arrive in pieces
+-- ("You got the " .. "nails\n") — closing only on '\n'; wraps at the
+-- live column count like Con_Print filling the text buffer. Appending
+-- refreshes the line's con_notifytime window like C's con_times stamp.
+function hud.printCon(h: Hud, s: string, time: number?)
+	local expire = (time or 0) + 3 -- con_notifytime
+	local pieces = s:split("\n")
+	for j, piece in pieces do
+		if #piece > 0 then
+			if h.notifyOpen and #h.notifyLines > 0 then
+				local last = h.notifyLines[#h.notifyLines]
+				last.text ..= piece
+				last.expire = expire
+			else
+				table.insert(h.notifyLines, { text = piece, expire = expire })
+			end
+			h.notifyOpen = true
+			while #h.notifyLines[#h.notifyLines].text > h.notifyCols do
+				local last = table.remove(h.notifyLines) :: { text: string, expire: number }
+				table.insert(h.notifyLines, { text = last.text:sub(1, h.notifyCols), expire = last.expire })
+				table.insert(h.notifyLines, { text = last.text:sub(h.notifyCols + 1), expire = last.expire })
+			end
+		end
+		if j < #pieces then
+			h.notifyOpen = false -- blank lines are not worth a notify row
+		end
 	end
 	while #h.notifyLines > 4 do
 		table.remove(h.notifyLines, 1)
 	end
 	refreshNotify(h)
+end
+
+-- one call = one finished line (chat and product-layer messages)
+function hud.print(h: Hud, s: string, time: number?)
+	hud.printCon(h, s .. "\n", time)
 end
 
 --------------------------------------------------------------------------
@@ -828,25 +972,23 @@ end
 
 -- Sbar_DrawFrags: the top-4 frag cells in the ibar row. Both sbar.c
 -- versions share the layout: fills at x*8+10 (28 wide), digits at
--- (x+1..3)*8, own-slot brackets, 4 cells of 32px from x=23*8. The C
+-- (x+1..3)*8+4 (chars get Sbar_DrawCharacter's +4, fills don't),
+-- own-slot brackets, 4 cells of 32px from x=23*8. The C
 -- deathmatch xofs=0 quirk (fills screen-left, digits sbar-relative)
 -- collapses at the 320 reference width the canvas replicates, so both
 -- draw sbar-relative here.
-local function updateFragCells(h: Hud, scores: { any }, playerslot: number)
+local function updateFragCells(h: Hud, scores: { any }, playerslot: number, gen: number)
 	local frame = (h :: any).fragsFrame :: Frame
-	local order = qwview.sortFrags(scores, false)
-	local sig = ""
-	for i = 1, math.min(#order, 4) do
-		local sc = scores[order[i]]
-		sig ..= ("|%s:%d:%d:%d"):format(sc.name, sc.frags, sc.colors, if order[i] == playerslot then 1 else 0)
-	end
-	if sig == (h :: any).fragsSig then
-		frame.Visible = sig ~= ""
+	-- rebuild gate: scoresGen replaces the per-frame signature string (and
+	-- skips the per-frame sortFrags alloc entirely)
+	if (h :: any).fragsGen == gen and (h :: any).fragsSlot == playerslot then
 		return
 	end
-	;(h :: any).fragsSig = sig
+	;(h :: any).fragsGen = gen
+	;(h :: any).fragsSlot = playerslot
+	local order = qwview.sortFrags(scores, false)
 	frame:ClearAllChildren()
-	frame.Visible = sig ~= ""
+	frame.Visible = #order > 0
 	local x = 23
 	for i = 1, math.min(#order, 4) do
 		local k = order[i]
@@ -855,12 +997,13 @@ local function updateFragCells(h: Hud, scores: { any }, playerslot: number)
 			frameFill(h, frame, x * 8 + 10 - 184, 1, 28, 4, bit32.band(sc.colors, 0xf0) + 8)
 			frameFill(h, frame, x * 8 + 10 - 184, 5, 28, 3, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
 			local num = ("%3i"):format(sc.frags)
+			-- chars carry Sbar_DrawCharacter's built-in +4; fills don't
 			for j = 1, 3 do
-				frameText(h, frame, (x + j) * 8 - 184, 0, num:sub(j, j))
+				frameText(h, frame, (x + j) * 8 + 4 - 184, 0, num:sub(j, j))
 			end
 			if k == playerslot then
-				frameText(h, frame, x * 8 + 2 - 184, 0, string.char(16))
-				frameText(h, frame, (x + 4) * 8 - 4 - 184, 0, string.char(17))
+				frameText(h, frame, x * 8 + 2 + 4 - 184, 0, string.char(16))
+				frameText(h, frame, (x + 4) * 8 - 4 + 4 - 184, 0, string.char(17))
 			end
 			x += 4
 		end
@@ -894,7 +1037,7 @@ end
 -- Sbar_MiniDeathmatchOverlay: a frags/name strip right of the sbar,
 -- windowed around the local player. Draws only with sb_lines > 0 and a
 -- window wide enough (C: vid.width >= 512).
-local function updateMiniOverlay(h: Hud, scores: { any }, playerslot: number, teamplayNum: number)
+local function updateMiniOverlay(h: Hud, scores: { any }, playerslot: number, teamplayNum: number, gen: number)
 	local sbLines = if h.viewsize >= 120 then 0 elseif h.viewsize >= 110 then 24 else 48
 	local numlines = sbLines // 8
 	local vidWidth = h.gui.AbsoluteSize.X / SCALE
@@ -903,6 +1046,15 @@ local function updateMiniOverlay(h: Hud, scores: { any }, playerslot: number, te
 		h.miniSig = ""
 		return
 	end
+	-- rebuild gate: everything below is a pure function of (scores,
+	-- playerslot, teamplay, sbLines, vidWidth) — skip sort+rebuild when
+	-- none changed. miniSig carries the non-gen inputs.
+	local key = `{playerslot}:{teamplayNum}:{sbLines}:{vidWidth}`
+	if (h :: any).miniGen == gen and h.miniSig == key then
+		return
+	end
+	;(h :: any).miniGen = gen
+	h.miniSig = key
 	local teamplay = teamplayNum > 0
 
 	-- Sbar_SortFrags(false)
@@ -924,18 +1076,9 @@ local function updateMiniOverlay(h: Hud, scores: { any }, playerslot: number, te
 	local first = if selfAt == 0 then 1 else selfAt - numlines // 2
 	first = math.clamp(first, 1, math.max(#order - numlines + 1, 1))
 
-	local sig = `mini{first}:{teamplay}`
-	for i = first, math.min(first + numlines - 1, #order) do
-		local sc = scores[order[i]]
-		sig ..= ("|%s:%d:%d:%s"):format(sc.name, sc.frags, sc.colors, sc.team or "")
-	end
 	-- y = vid.height - sb_lines - 1 in canvas space (canvas is 48 tall)
 	h.miniFrame.Position = UDim2.fromOffset(324 * SCALE, (48 - sbLines - 1) * SCALE)
 	h.miniFrame.Visible = true
-	if sig == h.miniSig then
-		return
-	end
-	h.miniSig = sig
 	h.miniFrame:ClearAllChildren()
 
 	local y = 0
@@ -975,17 +1118,11 @@ function hud.updateOverlays(h: Hud, c: cllib.Client)
 		mode = "dm"
 	end
 
-	local sig = mode
-	if mode == "dm" then
-		for _, sc in c.scores do
-			if sc.name ~= "" then
-				sig ..= ("|%s:%d:%d"):format(sc.name, sc.frags, sc.colors)
-			end
-		end
-	elseif mode == "sp" then
-		sig ..= tostring(math.floor(c.completed_time))
-	end
-
+	-- rebuild gate: scoresGen replaces the per-frame signature string
+	local sig = if mode == "dm"
+		then `{mode}:{c.scoresGen}`
+		elseif mode == "sp" then `{mode}:{math.floor(c.completed_time)}`
+		else mode
 	if sig ~= h.interSig then
 		h.interSig = sig
 		h.interFrame:ClearAllChildren()
@@ -1001,7 +1138,7 @@ function hud.updateOverlays(h: Hud, c: cllib.Client)
 
 	-- Sbar_MiniDeathmatchOverlay (NQ Sbar_Draw: sb_lines > 0 + deathmatch)
 	if c.gametype == 1 then
-		updateMiniOverlay(h, c.scores :: { any }, c.viewentity, 0)
+		updateMiniOverlay(h, c.scores :: { any }, c.viewentity, 0, c.scoresGen)
 	else
 		h.miniFrame.Visible = false
 	end
@@ -1023,14 +1160,9 @@ function hud.updateOverlaysQW(h: Hud, c: any)
 	elseif h.showTeamScores then
 		mode = "team"
 	end
-	local sig = mode
-	if mode == "dm" or mode == "team" then
-		for _, sc in c.scores do
-			if sc.name ~= "" then
-				sig ..= ("|%s:%d:%d:%d:%d:%s"):format(sc.name, sc.frags, sc.colors, sc.ping or 0, (sc.entertime or 0) // 60, sc.team or "")
-			end
-		end
-	end
+	-- rebuild gate: scoresGen covers name/frags/colors/ping/entertime/team
+	-- (the QW copy loop bumps it on any field change)
+	local sig = if mode == "dm" or mode == "team" then `{mode}:{c.scoresGen or 0}` else mode
 	if sig ~= h.interSig then
 		h.interSig = sig
 		h.interFrame:ClearAllChildren()
@@ -1044,7 +1176,7 @@ function hud.updateOverlaysQW(h: Hud, c: any)
 	end
 	h.interFrame.Visible = mode ~= ""
 
-	updateMiniOverlay(h, c.scores, c.playerslot, c.teamplay or 0)
+	updateMiniOverlay(h, c.scores, c.playerslot, c.teamplay or 0, c.scoresGen or 0)
 end
 
 local WEAPON_NAMES = { "shotgun", "sshotgun", "nailgun", "snailgun", "rlaunch", "srlaunch", "lightng" }
@@ -1061,7 +1193,6 @@ function hud.update(h: Hud, c: cllib.Client)
 	local soloActive = (h.showScores or health <= 0) and c.gametype ~= 1
 	-- Sbar_Draw swaps the status backdrop for scorebar.lmp when scoring
 	setPic(h, h.sbarBg, if soloActive then "scorebar" else "sbar", w)
-	h.sbarBg.Position = UDim2.fromOffset(0, 24 * SCALE)
 
 	-- armor
 	if bit32.band(items, IT_INVULNERABILITY) ~= 0 then
@@ -1077,7 +1208,7 @@ function hud.update(h: Hud, c: cllib.Client)
 		elseif bit32.band(items, IT_ARMOR1) ~= 0 then
 			setPic(h, h.armorIcon, "sb_armor1", w)
 		else
-			h.armorIcon.Visible = false
+			hidePic(h, h.armorIcon)
 		end
 	end
 
@@ -1112,7 +1243,7 @@ function hud.update(h: Hud, c: cllib.Client)
 	elseif bit32.band(items, IT_CELLS) ~= 0 then
 		setPic(h, h.ammoIcon, "sb_cells", w)
 	else
-		h.ammoIcon.Visible = false
+		hidePic(h, h.ammoIcon)
 	end
 	local ammo = c.stats[cllib.STAT_AMMO]
 	drawNum(h, h.ammoDigits, 248, ammo, if ammo <= 10 then 1 else 0)
@@ -1141,29 +1272,33 @@ function hud.update(h: Hud, c: cllib.Client)
 				prefix = "inva" .. (flashon - 1) .. "_"
 			end
 			setPic(h, label, prefix .. WEAPON_NAMES[i + 1], w)
-			label.Position = UDim2.fromOffset(i * 24 * SCALE, 8 * SCALE)
+			-- position fixed at creation (i*24, 8)
 		else
-			label.Visible = false
+			hidePic(h, label)
 		end
 	end
 
-	-- ibar ammo counts (small yellow conchars digits)
+	-- ibar ammo counts (small yellow conchars digits), dirty-checked per
+	-- label so an unchanged count costs 4 string.sub compares
 	for i = 0, 3 do
 		local count = c.stats[cllib.STAT_SHELLS + i]
 		local str = ("%3d"):format(math.clamp(count, 0, 999))
 		for j = 0, 2 do
 			local label = h.countDigits[i + 1][j + 1]
 			local ch = str:sub(j + 1, j + 1)
-			if ch ~= " " then
-				local pic = charPic(h, 18 + (ch:byte() - 48))
-				if pic and pic.img then
-					label.ImageContent = Content.fromObject(pic.img)
-					label.ImageRectOffset = pic.off
-					label.ImageRectSize = Vector2.new(pic.w, pic.h)
-					label.Visible = true
+			if h.lastDigit[label] ~= ch then
+				h.lastDigit[label] = ch
+				if ch ~= " " then
+					local pic = charPic(h, 18 + (ch:byte() - 48))
+					if pic and pic.content then
+						label.ImageContent = pic.content :: Content
+						label.ImageRectOffset = pic.off
+						label.ImageRectSize = Vector2.new(pic.w, pic.h)
+						label.Visible = true
+					end
+				else
+					label.Visible = false
 				end
-			else
-				label.Visible = false
 			end
 		end
 	end
@@ -1173,9 +1308,9 @@ function hud.update(h: Hud, c: cllib.Client)
 		local label = h.itemIcons[i + 1]
 		if bit32.band(items, bit32.lshift(1, 17 + i)) ~= 0 then
 			setPic(h, label, ITEM_NAMES[i + 1], w)
-			label.Position = UDim2.fromOffset((192 + i * 16) * SCALE, 8 * SCALE)
+			-- position fixed at creation (192 + i*16, 8)
 		else
-			label.Visible = false
+			hidePic(h, label)
 		end
 	end
 
@@ -1184,19 +1319,19 @@ function hud.update(h: Hud, c: cllib.Client)
 		local label = h.sigilIcons[i + 1]
 		if bit32.band(items, bit32.lshift(1, 28 + i)) ~= 0 then
 			setPic(h, label, "sb_sigil" .. (i + 1), w)
-			label.Position = UDim2.fromOffset((288 + i * 8) * SCALE, 8 * SCALE)
+			-- position fixed at creation (288 + i*8, 8)
 		else
-			label.Visible = false
+			hidePic(h, label)
 		end
 	end
 
 	-- Sbar_DrawFrags: multiplayer, full ibar visible (sb_lines > 24)
 	local fragsFrame = (h :: any).fragsFrame :: Frame
 	if h.viewsize < 110 and ((c :: any).maxclients or 2) ~= 1 then
-		updateFragCells(h, c.scores :: { any }, (c :: any).playerslot or c.viewentity)
+		updateFragCells(h, c.scores :: { any }, (c :: any).playerslot or c.viewentity, (c :: any).scoresGen or 0)
 	elseif fragsFrame.Visible then
 		fragsFrame.Visible = false
-		;(h :: any).fragsSig = "<hidden>"
+		;(h :: any).fragsGen = -1 -- force a rebuild when shown again
 	end
 
 	-- Sbar_SoloScoreboard text over the status row
@@ -1213,23 +1348,33 @@ function hud.update(h: Hud, c: cllib.Client)
 		for _, row in h.soloRows do
 			((row :: any).holder :: Frame).Visible = true
 		end
-		-- hide the status-row widgets the scoreboard replaces
-		h.armorIcon.Visible = false
-		h.face.Visible = false
-		h.ammoIcon.Visible = false
+		-- hide the status-row widgets the scoreboard replaces (via hidePic
+		-- so the setPic cache re-applies them when the scoreboard closes)
+		hidePic(h, h.armorIcon)
+		hidePic(h, h.face)
+		hidePic(h, h.ammoIcon)
 		for _, l in h.armorDigits do
-			l.Visible = false
+			hidePic(h, l)
 		end
 		for _, l in h.healthDigits do
-			l.Visible = false
+			hidePic(h, l)
 		end
 		for _, l in h.ammoDigits do
-			l.Visible = false
+			hidePic(h, l)
 		end
 	else
 		for _, row in h.soloRows do
 			((row :: any).holder :: Frame).Visible = false
 		end
+	end
+
+	-- Con_CheckResize: rebuild the notify rows when the viewport width
+	-- changes the column count
+	local cols = notifyColsFor(h.gui)
+	if cols ~= h.notifyCols then
+		h.notifyCols = cols
+		buildNotifyRows(h)
+		refreshNotify(h)
 	end
 
 	-- notify lines age out after con_notifytime

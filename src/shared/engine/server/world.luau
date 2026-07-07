@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- World query functions — port of WinQuake world.c: box hulls, entity area
 -- links, point contents, and SV_Move hull tracing.
 
@@ -386,9 +387,17 @@ function world.recursiveHullCheck(
 	return false
 end
 
--- SV_ClipMoveToEntity
-function world.clipMoveToEntity(w: World, ed: vmlib.Edict, start: vector, mins: vector, maxs: vector, endp: vector): Trace
-	local trace = newTrace()
+-- SV_ClipMoveToEntity. `into` lets the per-candidate loop reuse a
+-- scratch trace (the C stack struct) instead of allocating one per
+-- entity tested; the winning result is copied into the escaping trace.
+function world.clipMoveToEntity(w: World, ed: vmlib.Edict, start: vector, mins: vector, maxs: vector, endp: vector, into: Trace?): Trace
+	local trace = into or newTrace()
+	trace.startsolid = false
+	trace.inopen = false
+	trace.inwater = false
+	trace.planeNormal = vector.zero
+	trace.planeDist = 0
+	trace.ent = nil
 	trace.fraction = 1
 	trace.allsolid = true
 	trace.endpos = endp
@@ -608,6 +617,18 @@ type MoveClip = {
 }
 
 -- SV_ClipToLinks: mins and maxs enclose the entire area swept by the move
+local scratchClipTrace: Trace = {
+	allsolid = false,
+	startsolid = false,
+	inopen = false,
+	inwater = false,
+	fraction = 0,
+	endpos = vector.zero,
+	planeNormal = vector.zero,
+	planeDist = 0,
+	ent = nil,
+}
+
 local function clipToLinks(w: World, node: AreaNode, clip: MoveClip)
 	local vm = w.vm
 
@@ -669,18 +690,24 @@ local function clipToLinks(w: World, node: AreaNode, clip: MoveClip)
 			if not skip then
 				local trace
 				if bit32.band(vmlib.edFloat(touch, ent.flags), qd.FL_MONSTER) ~= 0 then
-					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins2, clip.maxs2, clip.endp)
+					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins2, clip.maxs2, clip.endp, scratchClipTrace)
 				else
-					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins, clip.maxs, clip.endp)
+					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins, clip.maxs, clip.endp, scratchClipTrace)
 				end
 				if trace.allsolid or trace.startsolid or trace.fraction < clip.trace.fraction then
-					trace.ent = touch
-					if clip.trace.startsolid then
-						clip.trace = trace
-						clip.trace.startsolid = true
-					else
-						clip.trace = trace
-					end
+					-- C struct copy of the winner (plus the startsolid
+					-- carry) into the one escaping trace table
+					local ct = clip.trace
+					local prevStartsolid = ct.startsolid
+					ct.allsolid = trace.allsolid
+					ct.startsolid = trace.startsolid or prevStartsolid
+					ct.inopen = trace.inopen
+					ct.inwater = trace.inwater
+					ct.fraction = trace.fraction
+					ct.endpos = trace.endpos
+					ct.planeNormal = trace.planeNormal
+					ct.planeDist = trace.planeDist
+					ct.ent = touch
 				elseif trace.startsolid then
 					clip.trace.startsolid = true
 				end
@@ -709,6 +736,21 @@ local function moveBounds(start: vector, mins: vector, maxs: vector, endp: vecto
 end
 
 -- SV_Move
+-- clip is C's stack `moveclip_t` — module scratch (every field rewritten
+-- per call; only clip.trace escapes, and that stays freshly allocated)
+local clipScratch: MoveClip = {
+	boxmins = vector.zero,
+	boxmaxs = vector.zero,
+	mins = vector.zero,
+	maxs = vector.zero,
+	mins2 = vector.zero,
+	maxs2 = vector.zero,
+	start = vector.zero,
+	endp = vector.zero,
+	trace = scratchClipTrace,
+	type = 0,
+	passedict = nil,
+}
 function world.move(
 	w: World,
 	start: vector,
@@ -720,19 +762,18 @@ function world.move(
 ): Trace
 	-- clip to world
 	local worldEd = vmlib.edictNum(w.vm, 0)
-	local clip: MoveClip = {
-		boxmins = vector.zero,
-		boxmaxs = vector.zero,
-		mins = mins,
-		maxs = maxs,
-		mins2 = mins,
-		maxs2 = maxs,
-		start = start,
-		endp = endp,
-		trace = world.clipMoveToEntity(w, worldEd, start, mins, maxs, endp),
-		type = movetype,
-		passedict = passedict,
-	}
+	local clip = clipScratch
+	clip.boxmins = vector.zero
+	clip.boxmaxs = vector.zero
+	clip.mins = mins
+	clip.maxs = maxs
+	clip.mins2 = mins
+	clip.maxs2 = maxs
+	clip.start = start
+	clip.endp = endp
+	clip.trace = world.clipMoveToEntity(w, worldEd, start, mins, maxs, endp)
+	clip.type = movetype
+	clip.passedict = passedict
 
 	if movetype == qd.MOVE_MISSILE then
 		clip.mins2 = vector.create(-15, -15, -15)

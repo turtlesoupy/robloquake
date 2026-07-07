@@ -25,6 +25,7 @@ local qwview = require(engine.qw.qwview)
 local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
 
+local avatarlayer = require(script.Parent.render.avatarlayer)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
@@ -96,6 +97,7 @@ return function()
 	local hud = hudlib.create(fs, pal, player:WaitForChild("PlayerGui"))
 	local vmgun = viewmodellib.new(player:WaitForChild("PlayerGui"))
 	hudlib.setLoading(hud, true)
+	input.setLookLocked(true)
 	local hudC: any = {
 		stats = cl.stats,
 		items = 0,
@@ -106,6 +108,7 @@ return function()
 		completed_time = 0,
 		gametype = 1, -- QW is deathmatch-only
 		scores = {},
+		scoresGen = 0,
 		viewentity = 1,
 		levelname = "",
 		paused = false,
@@ -114,8 +117,8 @@ return function()
 
 	-- view blends (view.c): the offline-tested qwview pipeline
 	local blend = qwview.newBlendState()
-	local V_KICKTIME = 0.5 -- v_kicktime (V_CalcViewRoll ramp divisor)
-	local v_oldz = 0 -- V_CalcRefdef stair-step smoothing state
+	-- V_CalcRefdef persistent state: V_CalcBob bobtime/held-bob + stair oldz
+	local qwRefdefState = viewlib.newQWRefdefState()
 	-- V_DriftPitch state (QW has no idealpitch wire — centers to 0)
 	local pitchDrift = viewlib.newPitchDrift()
 	local lastDriftPitch: number? = nil
@@ -239,6 +242,11 @@ return function()
 	local explosions: { qwview.Explosion? } = {}
 	local explosionIndex: number? = nil
 
+	-- forward ref: execCommand is declared after the stufftext consumer
+	-- below, but stuffed lines must run through the full command layer
+	-- (Cbuf_AddText semantics — mods stuff "setinfo topcolor N" etc.)
+	local execStuffLine: (string) -> () = function(_line: string) end
+
 	local function updateHudAdapter()
 		hudC.time = cl.time
 		hudC.intermission = cl.intermission
@@ -269,45 +277,61 @@ return function()
 			end
 		end
 
-		-- server-stuffed view commands: "bf" (V_BonusFlash_f) on item
-		-- pickup, "v_cshift ..." (V_cshift_f) from trigger_cshift-style QC
+		-- server-stuffed commands run through the console layer like C's
+		-- Cbuf_AddText: "bf"/"v_cshift" from pickups and triggers, but
+		-- also mod stuffcmds — threewave's color lock stuffs "setinfo
+		-- topcolor/bottomcolor N" to team-color new joiners
 		local raw = cl.rawStufftext
 		if raw and raw ~= "" then
 			cl.rawStufftext = ""
 			for line in raw:gmatch("[^\n]+") do
-				if line == "bf" then
-					qwview.bonusFlash(blend)
-				else
-					local vargs = line:match("^v_cshift%s*(.*)$")
-					if vargs then
-						qwview.cshiftCmd(blend, vargs)
-					end
-				end
+				execStuffLine(line)
 			end
 		end
 
-		-- Sbar_SortFrags source: scoreboard slots from player infos
+		-- Sbar_SortFrags source: scoreboard slots from player infos; any
+		-- field change bumps scoresGen, the HUD's rebuild gate
+		local scoresDirty = false
 		for i = 0, qwp.MAX_CLIENTS - 1 do
 			local info = cl.players[i]
 			local slot = hudC.scores[i + 1]
 			if not slot then
 				slot = { name = "", frags = 0, colors = 0 }
 				hudC.scores[i + 1] = slot
+				scoresDirty = true
 			end
 			if info then
-				slot.name = info.name
-				slot.frags = info.frags
-				slot.ping = info.ping
-				slot.pl = info.pl
-				slot.entertime = info.entertime
-				slot.spectator = info.spectator
-				slot.team = info.userinfo.team or ""
+				local team = info.userinfo.team or ""
 				local top = tonumber(info.userinfo.topcolor) or 0
 				local bottom = tonumber(info.userinfo.bottomcolor) or 0
-				slot.colors = top * 16 + bottom
-			else
+				local colors = top * 16 + bottom
+				if
+					slot.name ~= info.name
+					or slot.frags ~= info.frags
+					or slot.ping ~= info.ping
+					or slot.pl ~= info.pl
+					or slot.entertime ~= info.entertime
+					or slot.spectator ~= info.spectator
+					or slot.team ~= team
+					or slot.colors ~= colors
+				then
+					scoresDirty = true
+					slot.name = info.name
+					slot.frags = info.frags
+					slot.ping = info.ping
+					slot.pl = info.pl
+					slot.entertime = info.entertime
+					slot.spectator = info.spectator
+					slot.team = team
+					slot.colors = colors
+				end
+			elseif slot.name ~= "" then
 				slot.name = ""
+				scoresDirty = true
 			end
+		end
+		if scoresDirty then
+			hudC.scoresGen += 1
 		end
 
 		-- Sbar_TeamOverlay/serverinfo gate + own slot for the mini overlay
@@ -328,6 +352,7 @@ return function()
 	local beamPool: { [string]: { entrender.RenderEnt } } = {}
 	local updateBeams: () -> ()
 	local handleTempEntity: (te: any) -> ()
+	local muzzleFlashUntil: { [number]: number } = {} -- 1-based player ent num
 
 	local styleValues: { [number]: number } = {}
 	local function styleValueFor(style: number): number
@@ -340,11 +365,14 @@ return function()
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
 	local buildingTemplates: { [string]: boolean } = {}
-	local worldBuilt = false
+	local worldBuilt = false -- buildWorld entered (guards re-entry from later frames)
+	local worldReady = false -- buildWorld returned: every mesh batch is up
 	local seenLevelResets = 0
 	local staticsSpawned = 0
 	local staticSoundsSpawned = 0
-	local staticRes: { entrender.RenderEnt } = {} -- destroyed on level change
+	-- destroyed on level change; def/es kept so framegroup statics (torch
+	-- flames) can re-pose by time each frame like R_DrawEntitiesOnList
+	local staticRes: { { re: entrender.RenderEnt, def: any, es: any } } = {}
 
 	-- model defs come straight from qwcl's loaded models (modellist)
 	local function getModelDef(modelindex: number): entrender.ModelDef?
@@ -395,6 +423,130 @@ return function()
 		return def
 	end
 
+	----------------------------------------------------------------------
+	-- Roblox avatars mode (product layer, live-flippable via the
+	-- roblox_avatars attribute the server mirrors onto QuakeClientFS).
+	-- All rules live in the SHARED avatarlayer module (same code as the
+	-- NQ boot); this block only adapts QW data shapes. The alias renderer
+	-- remains the fallback (rig loading, toggle off).
+	local avatarLocalFolder = Instance.new("Folder")
+	avatarLocalFolder.Name = "QuakeAvatarRigs"
+	avatarLocalFolder.Parent = Workspace
+
+	local function avatarsOn(): boolean
+		return clientAssets:GetAttribute("roblox_avatars") == true
+	end
+
+	-- R_AliasSetupLighting: lightmap sample under the entity plus dynamic
+	-- light adds (rigs + hand weapons; QW alias ents keep their own path)
+	local function entityLight(origin: vector): number
+		if not cl.worldmodel then
+			return 255
+		end
+		local elight = lightpoint.at(cl.worldmodel, origin, styleValueFor)
+		for _, dl in cl.dlights do
+			if dl.die >= cl.time and dl.radius > 0 then
+				local add = dl.radius - vector.magnitude(origin - dl.origin)
+				if add > 0 then
+					elight += add
+				end
+			end
+		end
+		return elight
+	end
+
+	-- procedural weapon skins: forged per (model, spec) and cached for the
+	-- session. The tweaks menu (T) picks a spec per viewmodel name; the
+	-- RQ_WeaponSkin workspace attribute (e.g. "camo:7") is a debug override
+	-- applied to weapons without a menu selection. nil/empty spec restores
+	-- the authentic skin.
+	local forgedSkins: { [string]: EditableImage } = {}
+	local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
+	local gunSkinApplied: string? = nil
+	local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
+	local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
+		local name = cl.model_name[modelindex]
+		local spec: string? = if name then weaponSkins[name] else nil
+		if not spec then
+			local attr = Workspace:GetAttribute("RQ_WeaponSkin")
+			if type(attr) == "string" and attr ~= "" then
+				spec = attr
+			end
+		end
+		local key = if spec then `{name or modelindex}|{spec}` else nil
+		if key == gunSkinApplied then
+			return
+		end
+		gunSkinApplied = key
+		if not key or not spec then
+			entrender.setSkinOverride(re, nil)
+			re.fullbrightSkin = def.fullbrightSkin
+			return
+		end
+		local img = forgedSkins[key]
+		if not img and def.skinPixels then
+			local forged =
+				skinforge.createImage(spec :: string, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+			if forged then
+				forgedSkins[key] = forged
+				img = forged
+			end
+		end
+		entrender.setSkinOverride(re, img)
+		-- saturated skins are marked unlit so setLight keeps them vivid
+		-- in dark rooms (same path as torch flames)
+		re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
+	end
+
+	-- third-person twin of applyGunSkin for avatarlayer: forge (or fetch)
+	-- the picked skin against the held g_ world model's own skin sheet;
+	-- nil = authentic. Called per frame, so failed forges are cached to
+	-- avoid re-forging every frame.
+	local forgeFailed: { [string]: boolean } = {}
+	local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+		local spec = weaponSkins[vmName]
+		if not spec or not def.skinPixels then
+			return nil
+		end
+		local key = `{worldModel}|{spec}`
+		local img = forgedSkins[key]
+		if not img and not forgeFailed[key] then
+			local forged =
+				skinforge.createImage(spec, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+			if forged then
+				forgedSkins[key] = forged
+				img = forged
+			else
+				forgeFailed[key] = true
+			end
+		end
+		return img
+	end
+
+	local avatarLayer = avatarlayer.new({
+		rigFolder = avatarLocalFolder,
+		entFolder = entFolder,
+		getModelDef = getModelDef,
+		modelIndexByName = function(name: string): number?
+			for i, n in cl.model_name do
+				if n == name then
+					return i
+				end
+			end
+			return nil
+		end,
+		entityLight = entityLight,
+		worldHull = function(): any?
+			local wm = cl.worldmodel
+			return if wm then wm.hulls[1] else nil
+		end,
+		time = function(): number
+			return cl.time
+		end,
+		palette = pal,
+		localWeaponSkin = localWeaponSkin,
+	})
+
 	local function buildWorld()
 		if worldBuilt or not cl.worldmodel then
 			return
@@ -411,6 +563,10 @@ return function()
 		for _, ta in worldmesh.takeTextureAnims() do
 			table.insert(textureAnims, ta)
 		end
+		-- worldmesh.build yields on budget backoff, so frames run while it
+		-- streams batches in; worldReady (not worldBuilt, which flips at
+		-- entry as the re-entrancy guard) is what gates the render loop
+		worldReady = true
 		print(`[robloquake] qw world built: {cl.levelname}`)
 	end
 
@@ -424,9 +580,9 @@ return function()
 			if def and def.kind ~= "none" then
 				local re = entrender.create(def, entFolder)
 				if re then
-					table.insert(staticRes, re)
+					table.insert(staticRes, { re = re, def = def, es = es })
 					if def.kind == "alias" then
-						entrender.updateAlias(re, def, es.origin, es.angles, es.frame, es.skinnum, 0, 0)
+						entrender.updateAlias(re, def, es.origin, es.angles, es.frame, es.skinnum, 0, cl.time)
 					elseif def.kind == "sprite" then
 						entrender.updateSprite(re, def, es.origin, es.frame)
 					elseif def.kind == "brush" then
@@ -577,7 +733,10 @@ return function()
 		local t = te.type
 		if t == -1 then
 			-- svc_muzzleflash: dlight 18 units forward of the shooter
+			-- (QW signals the flash here, not via entity effects — mark it
+			-- so the avatar layer's weapon flash/recoil/burst still fires)
 			local entnum = te.entity or 0
+			muzzleFlashUntil[entnum] = cl.time + 0.1
 			local org, ang
 			if entnum == cl.playernum + 1 then
 				org, ang = cl.simorg, cl.viewangles
@@ -589,7 +748,9 @@ return function()
 				org, ang = ps.origin, ps.viewangles
 			end
 			local fwd = mathlib.angleVectors(ang)
-			local dl = allocDlight(-entnum, cl.time)
+			-- C keys by positive entity number: a player's muzzleflash and
+			-- EF_*LIGHT dlight share one slot (flash replaces glow)
+			local dl = allocDlight(entnum, cl.time)
 			dl.origin = org + fwd * 18
 			dl.radius = 200 + math.random(0, 31)
 			dl.die = cl.time + 0.1
@@ -663,47 +824,74 @@ return function()
 	local gunEnt: entrender.RenderEnt? = nil
 	local gunModelIndex = 0
 
-	-- procedural weapon skins: forged per (model, spec) and cached for the
-	-- session. The tweaks menu (T) picks a spec per viewmodel name; the
-	-- RQ_WeaponSkin workspace attribute (e.g. "camo:7") is a debug override
-	-- applied to weapons without a menu selection. nil/empty spec restores
-	-- the authentic skin.
-	local forgedSkins: { [string]: EditableImage } = {}
-	local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
-	local gunSkinApplied: string? = nil
-	local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
-	local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
-		local name = cl.model_name[modelindex]
-		local spec: string? = if name then weaponSkins[name] else nil
-		if not spec then
-			local attr = Workspace:GetAttribute("RQ_WeaponSkin")
-			if type(attr) == "string" and attr ~= "" then
-				spec = attr
-			end
+	-- Render-ent pool: QW delta compression drops entities freely (PVS
+	-- edges, packet overflow) and they return a frame or two later. C keeps
+	-- cl_entities render state forever and just skips drawing; destroying
+	-- the EditableMesh on drop meant an async ms-scale rebuild (and mesh-
+	-- budget churn) on return, with the entity invisible meanwhile. Instead
+	-- retired ents hide into a per-modeldef pool and are reused on return;
+	-- entries idle past POOL_GRACE are destroyed for real.
+	local entPool: { [entrender.ModelDef]: { entrender.RenderEnt } } = {}
+	local entPoolAt: { [entrender.RenderEnt]: number } = {}
+	local POOL_GRACE = 5 -- seconds hidden before a pooled ent is freed
+
+	local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
+		local root: Instance? = re.part or re.billboardPart or re.model
+		if root then
+			(root :: any).Parent = if visible then entFolder else nil
 		end
-		local key = if spec then `{name or modelindex}|{spec}` else nil
-		if key == gunSkinApplied then
+	end
+
+	local function retireEnt(key: string, time: number)
+		local re = renderEnts[key]
+		local def = renderDefs[key]
+		renderEnts[key] = nil
+		renderDefs[key] = nil
+		if not re then
 			return
 		end
-		gunSkinApplied = key
-		if not key or not spec then
-			entrender.setSkinOverride(re, nil)
-			re.fullbrightSkin = def.fullbrightSkin
+		if not def then
+			entrender.destroy(re)
 			return
 		end
-		local img = forgedSkins[key]
-		if not img and def.skinPixels then
-			local forged =
-				skinforge.createImage(spec :: string, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
-			if forged then
-				forgedSkins[key] = forged
-				img = forged
+		setEntVisible(re, false)
+		local pool = entPool[def]
+		if not pool then
+			pool = {}
+			entPool[def] = pool
+		end
+		table.insert(pool, re)
+		entPoolAt[re] = time
+	end
+
+	local function sweepEntPool(time: number)
+		for def, pool in entPool do
+			local i = 1
+			while i <= #pool do
+				local re = pool[i]
+				if time - (entPoolAt[re] or 0) > POOL_GRACE then
+					entrender.destroy(re)
+					entPoolAt[re] = nil
+					pool[i] = pool[#pool]
+					pool[#pool] = nil
+				else
+					i += 1
+				end
+			end
+			if #pool == 0 then
+				entPool[def] = nil
 			end
 		end
-		entrender.setSkinOverride(re, img)
-		-- saturated skins are marked unlit so setLight keeps them vivid
-		-- in dark rooms (same path as torch flames)
-		re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
+	end
+
+	local function destroyEntPool()
+		for _, pool in entPool do
+			for _, re in pool do
+				entrender.destroy(re)
+			end
+		end
+		table.clear(entPool)
+		table.clear(entPoolAt)
 	end
 
 	local function linkEnt(key: string, modelindex: number, origin: vector, angles: vector, frame: number, skinnum: number, time: number, colors: number?)
@@ -714,11 +902,20 @@ return function()
 		liveKeys[key] = true
 		local re = renderEnts[key]
 		if re and renderDefs[key] ~= def then
-			entrender.destroy(re)
+			retireEnt(key, time)
 			re = nil
 		end
 		if not re then
-			re = entrender.create(def, entFolder)
+			local pool = entPool[def]
+			local n = if pool then #pool else 0
+			if pool and n > 0 then
+				re = pool[n]
+				pool[n] = nil
+				entPoolAt[re :: entrender.RenderEnt] = nil
+				setEntVisible(re :: entrender.RenderEnt, true)
+			else
+				re = entrender.create(def, entFolder)
+			end
 			if not re then
 				return
 			end
@@ -740,10 +937,51 @@ return function()
 
 	local function relinkEntities(time: number)
 		table.clear(liveKeys)
+		local seenAvatars: { [number]: boolean } = {}
 		local frame: qwcl.Frame = cl.frames[bit32.band(cl.netchan.incoming_sequence, qwp.UPDATE_MASK)]
 
 		for _, es in frame.packet_entities do
-			linkEnt(`e{es.number}`, es.modelindex, es.origin, es.angles, es.frame, es.skinnum, time)
+			local key = `e{es.number}`
+			-- bodyque corpses (CopyToBodyQue): player.mdl packet entities in
+			-- the death band keep the owner's avatar — colormap carries the
+			-- owner's slot, exactly like the NQ boot
+			local corpsePlayer: Player? = nil
+			local corpseColors: number? = nil
+			if
+				avatarsOn()
+				and es.modelindex == cl.playerindex
+				and avatarLayer.isDeathFrame(es.frame)
+				and es.colormap > 0
+				and es.colormap <= qwp.MAX_CLIENTS
+			then
+				corpsePlayer = avatarLayer.playerForSlot(es.colormap)
+				-- corpses keep the owner's shirt/pants re-skin (colormap is
+				-- the 1-based owner slot; cl.players is 0-based)
+				local info = cl.players[es.colormap - 1]
+				if info then
+					local top = tonumber(info.userinfo.topcolor) or 0
+					local bottom = tonumber(info.userinfo.bottomcolor) or 0
+					corpseColors = top * 16 + bottom
+				end
+			end
+			if
+				corpsePlayer
+				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, corpseColors, true)
+			then
+				seenAvatars[1000 + es.number] = true
+			else
+				-- projectile muzzle blend: tag fresh projectiles near an
+				-- avatar's gun; render blended toward the true origin
+				local re0 = renderEnts[key]
+				local org = if re0 and avatarsOn() then avatarLayer.blendOrigin(re0, es.origin) else es.origin
+				linkEnt(key, es.modelindex, org, es.angles, es.frame, es.skinnum, time)
+				if not re0 and avatarsOn() then
+					local re1 = renderEnts[key]
+					if re1 then
+						avatarLayer.tagMuzzle(re1, cl.model_name[es.modelindex], es.origin)
+					end
+				end
+			end
 
 			-- EF_ effects dlights (quad/pent glow, brightlight/dimlight)
 			if bit32.band(es.effects, 12) ~= 0 then -- EF_BRIGHTLIGHT|EF_DIMLIGHT
@@ -789,8 +1027,15 @@ return function()
 		-- extrapolated forward by half the elapsed move (CL_LinkPlayers)
 		-- with the V_CalcRoll strafe lean
 		local predicted = qwcl.predictedPlayerOrigins(cl)
+		-- RQDBG_QWSelfAvatar: render your OWN avatar too (normally skipped,
+		-- since it is the first-person camera) so avatar behaviour —
+		-- especially the velocity-driven walk animation — can be verified
+		-- solo without a second client
+		local drawSelf = workspace:GetAttribute("RQDBG_QWSelfAvatar") == true
+		local velProbe = workspace:GetAttribute("RQDBG_QWVelProbe") == true
+		local peakPeerVel, peakPeerNum = 0, -1
 		for num, ps in frame.playerstate do
-			if ps.messagenum ~= cl.parsecount or num == cl.playernum then
+			if ps.messagenum ~= cl.parsecount or (num == cl.playernum and not drawSelf) then
 				continue
 			end
 			-- Cam_DrawPlayer: don't draw the target we are chase camming
@@ -810,7 +1055,39 @@ return function()
 				local bottom = tonumber(info.userinfo.bottomcolor) or 0
 				colors = top * 16 + bottom
 			end
-			linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+			-- Roblox avatars mode: wire playernum is slot-1, so RQSlot maps
+			-- num+1 -> Player. Death band renders the rig's scripted corpse.
+			local avatarDrawn = false
+			if avatarsOn() and ps.modelindex == cl.playerindex then
+				local aplayer = avatarLayer.playerForSlot(num + 1)
+				if aplayer then
+					local effects = ps.effects
+					if (muzzleFlashUntil[num + 1] or 0) > time then
+						effects = bit32.bor(effects, 2) -- EF_MUZZLEFLASH for the layer
+					end
+					-- QW replicates velocity — drives the run/idle/jump/fall
+					-- animation state directly (tick-rate origins can't).
+					-- RQDBG_QWVelProbe: record the fastest rendered peer's
+					-- horizontal wire speed so a 2-client test shows whether
+					-- velocity actually arrives for other players
+					if velProbe then
+						local v = ps.velocity
+						local vh = math.sqrt(v.x * v.x + v.y * v.y)
+						if vh > peakPeerVel then
+							peakPeerVel = vh
+							peakPeerNum = num
+						end
+					end
+					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, ps.frame, effects, colors, nil, nil, ps.velocity) then
+						seenAvatars[num + 1] = true
+						avatarDrawn = true
+					end
+					-- rig still loading: alias fallback below
+				end
+			end
+			if not avatarDrawn then
+				linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+			end
 
 			-- CL_AddFlagModels: CTF flag riding on the carrier's back
 			-- (placement math offline-tested in test_qwview)
@@ -819,6 +1096,10 @@ return function()
 				local forg, fang = qwview.flagPlacement(ps.frame, angles, porigin)
 				linkEnt(`pf{num}`, cl.flagindex, forg, fang, 0, if bit32.band(ps.effects, 32) ~= 0 then 1 else 0, time)
 			end
+		end
+		if velProbe then
+			workspace:SetAttribute("RQDBG_QWPeerVel", peakPeerVel)
+			workspace:SetAttribute("RQDBG_QWPeerNum", peakPeerNum)
 		end
 
 		-- CL_UpdateExplosions: s_explod.spr at 10 Hz until frames run out
@@ -852,19 +1133,21 @@ return function()
 			end
 		end
 
-		for key, re in renderEnts do
+		for key in renderEnts do
 			if not liveKeys[key] then
-				entrender.destroy(re)
-				renderEnts[key] = nil
-				renderDefs[key] = nil
+				retireEnt(key, time)
 			end
 		end
+		sweepEntPool(time)
+		avatarLayer.hideExcept(seenAvatars)
 	end
 
 	----------------------------------------------------------------------
 	-- lightstyles (cl_main frame animation)
+	local changedScratch: { [number]: boolean } = {} -- reused per frame; empty on non-tick frames
 	local function updateLightstyles(time: number)
-		local changed: { [number]: boolean } = {}
+		local changed = changedScratch
+		table.clear(changed)
 		local i = math.floor(time * 10)
 		-- 10Hz texture writers ride the same tick (R_UpdateSky/turb + the
 		-- R_TextureAnimation +wall chain at (int)(cl.time*5) %% total)
@@ -956,12 +1239,15 @@ return function()
 	local directorUiOpen = false
 	local tweaksUiOpen = false
 	local pauseUiOpen = false
+	local lbUiOpen = false
 	local function refreshInputMode()
 		-- while the console, chat line or menu is up the player stops
 		-- moving (Key_ClearStates lives in input.setEnabled(false))
-		input.setEnabled(not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or pauseUiOpen or menulib.isOpen(mnu)))
-		if directorUiOpen or tweaksUiOpen or pauseUiOpen then
-			input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
+		input.setEnabled(
+			not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen or menulib.isOpen(mnu))
+		)
+		if directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen then
+			input.freeMouse() -- the admin/tweaks/pause menus + leaderboard are clickable UI
 		end
 	end
 
@@ -1034,6 +1320,21 @@ return function()
 	})
 	-- ===== end tweaks menu =====
 
+	-- ===== leaderboard UI (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/stats.luau for the REMOVAL note =====
+	require(script.Parent.leaderboardui).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		net = net,
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+		onUiToggle = function(open: boolean)
+			lbUiOpen = open
+			refreshInputMode()
+		end,
+	})
+	-- ===== end leaderboard UI =====
+
 	-- keys.c bind system (Key_SetBinding/Key_Bind_f family): quake key
 	-- names from the shared keymap; Key_Init seeds default.cfg-parity
 	-- bindings. +/- button commands route through input.setButton.
@@ -1050,7 +1351,9 @@ return function()
 		leftarrow = "+left", rightarrow = "+right",
 		pgup = "+lookup", pgdn = "+lookdown",
 		space = "+jump", ctrl = "+attack", shift = "+speed",
-		-- talk sits on Y: T is the product tweaks-menu hotkey (tweaksui.luau)
+		-- talk sits on Y: T is the product tweaks-menu hotkey (tweaksui.luau).
+		-- Tab toggles the Roblox player list at CoreScript priority and
+		-- can't be unbound, so the scoreboard sits on R instead
 		r = "+showscores", y = "messagemode",
 	}
 	for i = 1, 8 do
@@ -1278,6 +1581,14 @@ return function()
 				currentFov = v
 				applyFov()
 			end
+		elseif cmd == "pushlatency" then
+			-- cl_pred.c cvar; CL_PredictMove clamps positive values to 0
+			local v = tonumber(args)
+			if v then
+				cl.pushlatency = v
+			else
+				consolelib.print(con, `"pushlatency" is "{cl.pushlatency}"`)
+			end
 		elseif cmd == "viewsize" then
 			-- screen.c: 100 full HUD, 110 status row only, 120 none
 			local v = tonumber(args)
@@ -1299,6 +1610,7 @@ return function()
 		end
 	end
 	con.onCommand = execCommand
+	execStuffLine = execCommand
 	mnu.onColor = function(top: number, bottom: number)
 		execCommand(`color {top} {bottom}`)
 	end
@@ -1313,6 +1625,25 @@ return function()
 		"users", "v_cshift", "version", "viewsize",
 		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
 	}
+
+	-- ===== touch + gamepad controls (PRODUCT layer) — twin of the NQ
+	-- block; see src/client/controls.luau for the removal note. =====
+	require(script.Parent.controls).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		exec = execCommand,
+		isUiOpen = function()
+			return con.open or chatOpen or directorUiOpen or lbUiOpen or menulib.isOpen(mnu)
+		end,
+		menuKey = function(key: Enum.KeyCode): boolean
+			if not menulib.isOpen(mnu) then
+				return false
+			end
+			menulib.handleKey(mnu, { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard } :: any)
+			refreshInputMode()
+			return true
+		end,
+	})
+	-- ===== end touch + gamepad controls =====
 
 	-- console text entry straight from key codes (same scheme as the NQ
 	-- boot: no TextBox, GetStringForKeyCode + shifted punctuation)
@@ -1523,7 +1854,14 @@ return function()
 		for _, packet in inbound do
 			local ok, err = pcall(qwcl.processPacket, cl, packet)
 			if not ok then
-				warn("[qwcl] " .. tostring(err))
+				-- Host_EndGame: a parse error leaves half-applied frame
+				-- state (netchan already advanced) — fail loudly and
+				-- disconnect instead of playing against corrupt deltas
+				warn("[qwcl] Host_EndGame: " .. tostring(err))
+				cl.disconnected_reason = tostring(err)
+				cl.state = "disconnected"
+				consolelib.print(con, `Host_EndGame: {tostring(err)}`)
+				break
 			end
 		end
 		table.clear(inbound)
@@ -1538,7 +1876,12 @@ return function()
 			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
 			-- it looping sounds carry across level changes
 			soundlib.clear(sndsys)
+			-- SCR_BeginLoadingPlaque: curtain up + look frozen until the
+			-- first rendered frame of the new level
+			hudlib.setLoading(hud, true)
+			input.setLookLocked(true)
 			worldBuilt = false
+			worldReady = false
 			staticsSpawned = 0
 			staticSoundsSpawned = 0
 			for _, def in modelDefs do
@@ -1560,10 +1903,13 @@ return function()
 				renderEnts[key] = nil
 				renderDefs[key] = nil
 			end
-			for _, re in staticRes do
-				entrender.destroy(re)
+			destroyEntPool() -- pooled ents reference the old level's defs
+			for _, st in staticRes do
+				entrender.destroy(st.re)
 			end
 			table.clear(staticRes)
+			avatarLayer.destroyWeapons() -- weapon defs are per-level
+			avatarLayer.hideAll() -- rigs persist across levels
 			particleslib.clear(psys) -- R_ClearParticles on the map change
 			-- CL_ClearTEnts: beams + explosions zeroed on level start; the
 			-- pooled beam render instances are port-side and released too
@@ -1593,6 +1939,7 @@ return function()
 				img:Destroy()
 			end
 			table.clear(forgedSkins)
+			table.clear(forgeFailed)
 			gunSkinApplied = nil
 			for _, child in worldFolder:GetChildren() do
 				worldmesh.destroyBuild(child)
@@ -1604,10 +1951,18 @@ return function()
 		end
 
 		buildWorld()
-		if not worldBuilt then
+		if not worldReady then
 			return
 		end
 		spawnPendingStatics()
+
+		-- statics with framegroup models (torch flames) animate by time, so
+		-- alias statics re-pose every frame like R_DrawEntitiesOnList
+		for _, st in staticRes do
+			if st.re.kind == "alias" then
+				entrender.updateAlias(st.re, st.def, st.es.origin, st.es.angles, st.es.frame, st.es.skinnum, 0, cl.time)
+			end
+		end
 
 		-- server-forced view angles (spawn/teleport fixangle)
 		if cl.setangle then
@@ -1642,7 +1997,11 @@ return function()
 			msec = 100 -- CL_FinishMove's hitch substitution
 			accum = 0
 		end
-		if msec >= 1 and cl.state ~= "connected" and not demoBlocks then
+		-- cl_maxfps 77 equivalent: never send more than ~77 cmds/s. The
+		-- server does a full pmove + entity encode per packet, so a
+		-- 150fps client would otherwise double the per-client server
+		-- cost (and its own packet volume) for no gameplay benefit.
+		if msec >= 13 and cl.state ~= "connected" and not demoBlocks then
 			accum -= msec / 1000
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)
@@ -1726,7 +2085,7 @@ return function()
 		end
 		local ownState = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
 		local trackPs = camTrackedState()
-		local eye, angles
+		local eye, angles, gunorg, gunangles
 		local gunVisible = false
 		local gunFrame = ownState.weaponframe
 		if cl.intermission ~= 0 then
@@ -1735,6 +2094,8 @@ return function()
 			eye = cl.simorg
 			local ip, iy, ir = viewlib.addIdle(cl.time, 1)
 			angles = cl.simangles + vector.create(ip, iy, ir)
+			gunorg, gunangles = eye, vector.create(-angles.x, angles.y, 0)
+			qwRefdefState.oldz = cl.simorg.z
 		elseif trackPs then
 			-- Cam_Track chase lock: through the tracked player's eyes at
 			-- their predicted origin (stats already mirror the target)
@@ -1745,45 +2106,41 @@ return function()
 			-- = player->weaponframe
 			gunVisible = true
 			gunFrame = trackPs.weaponframe
-		elseif (cl.stats[qwp.STAT_HEALTH] or 100) <= 0 or bit32.band(ownState.flags, qwp.PF_DEAD) ~= 0 then
-			-- dead: corpse view at -16 with the 80-degree death roll
-			eye = cl.simorg + vector.create(0, 0, -16)
-			angles = vector.create(cl.simangles.x, cl.simangles.y, 80)
+			gunorg, gunangles = eye, vector.create(-angles.x, angles.y, 0)
+			qwRefdefState.oldz = cl.simorg.z
 		else
-			-- V_CalcBob / V_CalcRoll: shared C-truth-tested implementations
-			local bob = viewlib.calcBob({ time = cl.time, velocity = cl.simvel } :: any)
-			local roll = viewlib.calcRoll(cl.simangles, cl.simvel)
-
-			if bit32.band(ownState.flags, qwp.PF_GIB) ~= 0 then
-				viewheight += 8 -- gibbed: view from the head
-			end
-			-- V_CalcViewRoll damage kick
-			local kroll, kpitch = 0, 0
-			if blend.dmgTime > 0 then
-				kroll = blend.dmgTime / V_KICKTIME * blend.dmgRoll
-				kpitch = blend.dmgTime / V_KICKTIME * blend.dmgPitch
-				blend.dmgTime -= dt
-			end
-			eye = cl.simorg + vector.create(0, 0, viewheight + bob)
-			angles = vector.create(cl.simangles.x + cl.punchangle + kpitch, cl.simangles.y, cl.simangles.z + roll + kroll)
-			gunVisible = true
+			-- V_CalcRefdef core (QW view.c): shared, C-truth-traced vs
+			-- tools/view_truth.c (test_view_truth) — bob, lean, kicks,
+			-- gib/dead heights, gun composition, punch order, stair glide
+			local gib = bit32.band(ownState.flags, qwp.PF_GIB) ~= 0
+			local dead = not gib
+				and (bit32.band(ownState.flags, qwp.PF_DEAD) ~= 0 or (cl.stats[qwp.STAT_HEALTH] or 100) <= 0)
+			eye, angles, gunorg, gunangles, gunVisible = viewlib.calcRefdefQW(qwRefdefState, blend, {
+				dt = dt,
+				simorg = cl.simorg,
+				simvel = cl.simvel,
+				simangles = cl.simangles,
+				punchangle = cl.punchangle,
+				onground = ownState.onground ~= -1,
+				dead = dead,
+				gib = gib,
+				spectator = cl.spectator,
+				viewheight = viewheight,
+			})
 		end
-		-- smooth out stair step ups (view.c V_CalcRefdef): oldz glides up
-		-- at 80 u/s and never lags more than 12 units below the real z
-		if cl.intermission == 0 and not trackPs and ownState.onground ~= -1 and cl.simorg.z - v_oldz > 0 then
-			v_oldz += dt * 80
-			if v_oldz > cl.simorg.z then
-				v_oldz = cl.simorg.z
-			end
-			if cl.simorg.z - v_oldz > 12 then
-				v_oldz = cl.simorg.z - 12
-			end
-			eye += vector.create(0, 0, v_oldz - cl.simorg.z)
-		else
-			v_oldz = cl.simorg.z
-		end
-
 		local fwd, right, up = mathlib.angleVectors(angles)
+		-- RQDBG_QWSelfAvatar: pull the camera back into third person so the
+		-- self avatar (rendered at the eye) is visible; suppress the
+		-- 1st-person viewmodel gun (it would float at the camera). Debug
+		-- preview only — the self avatar holds the world weapon anyway.
+		if workspace:GetAttribute("RQDBG_QWSelfAvatar") == true then
+			local back = workspace:GetAttribute("RQDBG_QWSelfChaseDist")
+			local d = if typeof(back) == "number" then back else 210
+			-- pull back far enough that the whole body clears the HUD in a
+			-- level view; only a small rise (camera looks horizontally)
+			eye = eye - fwd * d + up * 34
+			gunVisible = false
+		end
 		camera.CFrame = qcoords.cframe(eye, fwd, right, up)
 		viewmodellib.update(vmgun, camera)
 
@@ -1807,11 +2164,10 @@ return function()
 			if ge then
 				local def = getModelDef(gunModel) :: entrender.ModelDef
 				applyGunSkin(ge, def, gunModel)
-				local gunorg = eye + fwd * (math.sqrt(cl.simvel.x * cl.simvel.x + cl.simvel.y * cl.simvel.y) * 0.02 * 0.4)
 				-- vrect: in C the gun hugs the 3D view bottom, which ends
 				-- ABOVE the sbar; rotate it up by the vrect center offset
 				-- so the HUD doesn't cover it (see qcoords.vrect)
-				entrender.updateAlias(ge, def, gunorg, vector.create(-angles.x, angles.y, angles.z), gunFrame, 0, 0, cl.time)
+				entrender.updateAlias(ge, def, gunorg, gunangles, gunFrame, 0, 0, cl.time)
 				-- R_DrawViewModel: always give some light on the gun
 				local glight = if cl.worldmodel then lightpoint.at(cl.worldmodel, eye, styleValueFor) else 255
 				for _, dl in cl.dlights do
@@ -1837,12 +2193,16 @@ return function()
 			Workspace:SetAttribute("QW_Cmd", "")
 			qwcl.sendStringCmd(cl, pendingCmd)
 		end
-		Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
-		Workspace:SetAttribute("QW_OnGround", ownState.onground)
-		Workspace:SetAttribute("QW_State", cl.state)
-		Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
-		Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
-		Workspace:SetAttribute("QW_Valid", cl.validsequence)
+		-- per-frame attribute replication is not free: publish the
+		-- diagnostics only while a debugging session asks for them
+		if Workspace:GetAttribute("RQDBG_QWDiag") then
+			Workspace:SetAttribute("QW_SimOrg", Vector3.new(cl.simorg.x, cl.simorg.y, cl.simorg.z))
+			Workspace:SetAttribute("QW_OnGround", ownState.onground)
+			Workspace:SetAttribute("QW_State", cl.state)
+			Workspace:SetAttribute("QW_SeqIn", cl.netchan.incoming_sequence)
+			Workspace:SetAttribute("QW_SeqOut", cl.netchan.outgoing_sequence)
+			Workspace:SetAttribute("QW_Valid", cl.validsequence)
+		end
 
 		-- sounds
 		for i = sndDrained + 1, #cl.sounds do
@@ -1891,14 +2251,17 @@ return function()
 				if p.level == qwp.PRINT_CHAT then
 					soundlib.localSound(sndsys, "misc/talk.wav") -- S_LocalSound
 				end
-				hudlib.print(hud, p.text, cl.time)
-				consolelib.print(con, p.text)
+				-- wire prints arrive in pieces (QC sprints "You got the "
+				-- and "nails\n" separately): Con_Print append joins them
+				hudlib.printCon(hud, p.text, cl.time)
+				consolelib.printCon(con, p.text)
 				print("[qw] " .. p.text:gsub("\n$", ""))
 			end
 		end
 
 		-- Sbar_Draw
 		hudlib.setLoading(hud, false)
+		input.setLookLocked(false)
 		hudlib.setPaused(hud, cl.paused == true)
 		updateHudAdapter()
 		-- request new ping times every two seconds while the board shows

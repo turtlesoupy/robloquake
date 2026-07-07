@@ -75,6 +75,19 @@ return function(ctx: Ctx)
 		end
 	end
 
+	-- Rocket Arena-style rotation: the mod ships rotate.cfg ("localinfo
+	-- <map> <nextmap>" lines) that real servers +exec at boot; apply the
+	-- pairs so the progs' PF_infokey rotation lookup sees the chain
+	local rotateCfg = vfs.loadFile(ctx.fsys, "rotate.cfg")
+	if rotateCfg then
+		local n = 0
+		for k, v in buffer.tostring(rotateCfg):gmatch("localinfo%s+(%S+)%s+(%S+)") do
+			svr.localinfo[k] = v
+			n += 1
+		end
+		print(`[robloquake] rotate.cfg: {n} localinfo rotation entries applied`)
+	end
+
 	qwsv.spawnServer(svr, ctx.startMap)
 	assert(svr.active, "QW server failed to spawn")
 	_G.RQ_SERVER = svr -- studio debugging access
@@ -82,6 +95,11 @@ return function(ctx: Ctx)
 	local bundle = clientbundle.new(ctx.fsys, ctx.gameDir, ctx.gameFolder, ctx.modDir, ctx.modFolder)
 	bundle.clientFS:SetAttribute("engine", "qw")
 	bundle.publishAll(svr)
+
+	-- Roblox avatars mode (product layer, SHARED module with the NQ boot):
+	-- publishes rigs + mirrors the roblox_avatars toggle; this boot also
+	-- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
+	local publishAvatarRig = require(script.Parent.avatarrigs)(ctx.assets, bundle.clientFS)
 
 	-- ===== match director (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/director.luau for the REMOVAL note =====
@@ -116,6 +134,10 @@ return function(ctx: Ctx)
 		end,
 		getRule = function(name: string)
 			return cvarlib.value(svr.cvars, name)
+		end,
+		broadcastPrint = function(text: string)
+			-- callvote announcements ride the engine notify surface
+			svr.broadcastPrint(svr, 2, text .. "\n") -- PRINT_HIGH
 		end,
 		adminCommand = function(cmd: string, arg: string): string?
 			-- SV_Status-style report / pings / SV_Kick_f for the admin menu
@@ -162,6 +184,71 @@ return function(ctx: Ctx)
 	-- player <-> client slot bridging
 	local slotByPlayer: { [Player]: number } = {}
 
+	-- ===== stats pipeline (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/stats.luau for the REMOVAL note =====
+	local statscorelib = require(script.Parent.statscore)
+	local statstorelib = require(script.Parent.statstore)
+	local statslib = require(script.Parent.stats)
+	local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
+	local statsApi = statslib.attach({
+		store = statstorelib.new({
+			modekey = statscorelib.deriveModeKey({
+				modekey = ctx.assets:GetAttribute("modekey") :: any,
+				engine = ctx.assets:GetAttribute("engine") :: any,
+				gamedir = ctx.assets:GetAttribute("gamedir") :: any,
+				deathmatch = ctx.assets:GetAttribute("deathmatch") :: any,
+				coop = ctx.assets:GetAttribute("coop") :: any,
+				teamplay = ctx.assets:GetAttribute("teamplay") :: any,
+			}),
+			net = ctx.reliable.Parent :: Instance,
+		}),
+		maxclients = svr.maxclients,
+		playerBySlot = function(slot: number): Player?
+			for p, s in slotByPlayer do
+				if s == slot then
+					return p
+				end
+			end
+			return nil
+		end,
+		readSlot = function(slot: number): statslib.SlotRead?
+			local cl = svr.clients[slot]
+			if not (cl and cl.active and cl.edict) or cl.spectator then
+				return nil
+			end
+			local ent = svr.qdefs.ent
+			statsRead.frags = vmlib.edFloat(cl.edict, ent.frags)
+			statsRead.health = vmlib.edFloat(cl.edict, ent.health)
+			statsRead.deadflag = vmlib.edFloat(cl.edict, ent.deadflag)
+			statsRead.weapon = vmlib.edFloat(cl.edict, ent.weapon)
+			return statsRead
+		end,
+		getIntermission = function()
+			local d = svr.vm.progs.globaldefsByName["intermission_running"]
+			return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+		end,
+		getCurrentMap = function()
+			return svr.name
+		end,
+		competitive = (tonumber(ctx.assets:GetAttribute("deathmatch")) or 1) ~= 0,
+	})
+	-- ===== end stats pipeline =====
+
+	-- ===== host greeting (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/hostgreeting.luau for the REMOVAL note =====
+	local greetHost = require(script.Parent.hostgreeting)({
+		isHost = playerIsHost,
+		sendPrint = function(player: Player, text: string)
+			local slot = slotByPlayer[player]
+			local client = slot and svr.clients[slot]
+			if client and client.active then
+				local qwp = require(engine.qw.qwprotocol)
+				svr.clientPrint(svr, client, qwp.PRINT_HIGH, text)
+			end
+		end,
+	})
+	-- ===== end host greeting =====
+
 	local function connectPlayer(player: Player): number?
 		local slot: number? = nil
 		for i = 1, svr.maxclients do
@@ -175,9 +262,17 @@ return function(ctx: Ctx)
 			return nil
 		end
 		slotByPlayer[player] = slot
-		qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
+		local client = qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
 			ctx.reliable:FireClient(player, packet)
 		end)
+		-- PF_infokey("ip"): stable transport identity in place of a
+		-- remote address (mods use it for ban/identity logic)
+		client.address = tostring(player.UserId)
+		-- avatars mode plumbing: clients map QW player number -> Player by
+		-- slot (wire playernum = slot - 1)
+		player:SetAttribute("RQSlot", slot)
+		publishAvatarRig(player)
+		greetHost(player) -- host greeting (PRODUCT layer)
 		print(`[robloquake] {player.Name} connected as qw client {slot}`)
 		return slot
 	end
@@ -225,9 +320,13 @@ return function(ctx: Ctx)
 
 		-- level change requested by qwprogs (fraglimit/timelimit/
 		-- changelevel): respawn the server, republish the bundle, and
-		-- send every connected client a fresh serverdata — they redo
-		-- the soundlist/modellist/prespawn/spawn/begin handshake
+		-- stuff "changing"/"reconnect" like SV_Map_f — the client answers
+		-- with "new" and redoes the soundlist/modellist/prespawn/spawn/
+		-- begin handshake. The serverdata must be the paired reply to
+		-- that "new" packet: an unsolicited push here skews the strict
+		-- 1:1 sequence exchange the delta-frame lookup is keyed by
 		dir.step() -- match director: vote lifecycle + idle expiry
+		statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 
 		local nextLevel = svr.changelevelTo
 		if nextLevel then
@@ -239,13 +338,12 @@ return function(ctx: Ctx)
 			bundle.publishAll(svr)
 			for i = 1, svr.maxclients do
 				local client = svr.clients[i]
-				if client.active and client.send then
+				if client.active then
 					client.spawned = false
-					qwsv.newF(svr, client)
-					client.send_message = true
-					qwsv.replyToClient(svr, client)
 				end
 			end
+			qwsv.broadcastCommand(svr, "changing\n")
+			qwsv.broadcastCommand(svr, "reconnect\n")
 		end
 
 		-- host commands from Studio / the owner UI: "kick <uid>",
@@ -305,12 +403,28 @@ return function(ctx: Ctx)
 		diagAccum += dt
 		if diagAccum > 0.5 then
 			diagAccum = 0
+			-- avatars mode: mirror each player's held weapon (v_ viewmodel
+			-- name) so clients can attach the matching world model to rigs
+			for player, slot in slotByPlayer do
+				local cl = svr.clients[slot]
+				if cl and cl.spawned and cl.edict then
+					local wm = vmlib.edString(svr.vm, cl.edict, svr.qdefs.ent.weaponmodel)
+					if player:GetAttribute("RQWeaponModel") ~= wm then
+						player:SetAttribute("RQWeaponModel", wm)
+					end
+				end
+			end
+			-- SV_*/SVDBG_* diagnostics are debug-only, gated behind RQDBG
+			-- like the NQ boot (audit H9); verify tools set RQDBG first
 			local ServerStorage = game:GetService("ServerStorage")
-			ServerStorage:SetAttribute("SV_Time", svr.time)
-			ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
-			ServerStorage:SetAttribute("SV_Engine", "qw")
+			local dbg = ServerStorage:GetAttribute("RQDBG") and true or false
+			if dbg then
+				ServerStorage:SetAttribute("SV_Time", svr.time)
+				ServerStorage:SetAttribute("SV_Edicts", svr.vm.num_edicts)
+				ServerStorage:SetAttribute("SV_Engine", "qw")
+			end
 			local c1 = svr.clients[1]
-			if c1 and c1.spawned then
+			if dbg and c1 and c1.spawned then
 				local vmlib = require(engine.progs.vm)
 				local o = vmlib.edVector(c1.edict, svr.qdefs.ent.origin)
 				ServerStorage:SetAttribute("SV_Origin", Vector3.new(o.x, o.y, o.z))

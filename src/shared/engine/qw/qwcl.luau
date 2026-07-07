@@ -88,6 +88,7 @@ function qwcl.new(fsys: vfslib.Vfs): any
 	cl.realtime = 0
 	cl.time = 0
 	cl.latency = 0
+	cl.pushlatency = -999 -- cl_pred.c cvar default; <=0 predicts to realtime
 
 	cl.servercount = 0
 	cl.gamedir = "qw"
@@ -182,12 +183,14 @@ local function camVectoangles(vec: vector): vector
 		yaw = 0
 		pitch = if vec.z > 0 then 90 else 270
 	else
-		yaw = math.floor(math.atan2(vec.y, vec.x) * 180 / math.pi)
+		-- C: (int) casts truncate toward zero (floor biased negative
+		-- angles a degree low before the +360 wrap)
+		yaw = mathlib.trunc(math.atan2(vec.y, vec.x) * 180 / math.pi)
 		if yaw < 0 then
 			yaw += 360
 		end
 		local fwd = math.sqrt(vec.x * vec.x + vec.y * vec.y)
-		pitch = math.floor(math.atan2(vec.z, fwd) * 180 / math.pi)
+		pitch = mathlib.trunc(math.atan2(vec.z, fwd) * 180 / math.pi)
 		if pitch < 0 then
 			pitch += 360
 		end
@@ -197,13 +200,20 @@ end
 qwcl.camVlen = camVlen
 qwcl.camVectoangles = camVectoangles
 
--- Cam_DoTrace: a player-hull trace against the flyby physents
+-- defined in the prediction section below (forward-declared so the cam
+-- can trace against the same solid-entity physents; a bare reference
+-- here would silently resolve as a nil global)
+local buildPhysents: (cl: any, includePlayers: boolean) -> { pmovelib.PhysEnt }
+
+-- Cam_DoTrace: a player-hull trace against the current solid physents —
+-- in C this is pmove.physents as last built by CL_SetSolidEntities
+-- (world + clip-hulled brush ents), so the cam clips against doors/plats
 local function camDoTrace(cl: any, from: vector, to: vector)
 	local pm = {
 		origin = from,
 		velocity = vector.zero,
 		angles = vector.zero,
-		physents = cl.predictPhysents or { { model = cl.worldmodel, origin = vector.zero } },
+		physents = cl.predictPhysents or buildPhysents(cl, false),
 	}
 	return pmovelib.playerTrace(pm :: any, from, to)
 end
@@ -351,13 +361,19 @@ function qwcl.camTrack(cl: any, buttons: number): string?
 		qwcl.camCheckHighTarget(cl)
 		return nil
 	end
-	-- clc_tmove keeps the spectator entity riding the tracked player
+	-- clc_tmove keeps the spectator entity riding the tracked player: C's
+	-- chasecam branch (cl_cam.c:361) sends on ANY difference from our own
+	-- playerstate origin and moves there locally immediately
 	local ps = qwcl.camTrackedState(cl)
-	if ps and vector.magnitude(ps.origin - cl.simorg) > 16 then
-		msg.writeByte(cl.netchan.message, qwp.clc_tmove)
-		msg.writeCoord(cl.netchan.message, ps.origin.x)
-		msg.writeCoord(cl.netchan.message, ps.origin.y)
-		msg.writeCoord(cl.netchan.message, ps.origin.z)
+	if ps then
+		local selfps = cl.frames[bit32.band(cl.parsecount, 63)].playerstate[cl.playernum]
+		if selfps and ps.origin ~= selfps.origin then
+			msg.writeByte(cl.netchan.message, qwp.clc_tmove)
+			msg.writeCoord(cl.netchan.message, ps.origin.x)
+			msg.writeCoord(cl.netchan.message, ps.origin.y)
+			msg.writeCoord(cl.netchan.message, ps.origin.z)
+			selfps.origin = ps.origin
+		end
 	end
 	if cam.locked then
 		if bit32.band(buttons, BUTTON_JUMP) ~= 0 and bit32.band(cam.oldbuttons, BUTTON_JUMP) ~= 0 then
@@ -457,7 +473,11 @@ end
 --------------------------------------------------------------------------
 -- server message parsing (cl_parse.c)
 
--- CL_ClearState: wipe per-level state before a new serverdata
+-- CL_ClearState: wipe per-level state before a new serverdata. C is a
+-- memset of the whole cl struct — the delta-stats protocol depends on
+-- it: the server zeroes its sent-stats mirror on spawn and only sends
+-- stats that CHANGED from zero, so stats (and the other fields below)
+-- must reset here or last level's values ghost into the new one.
 local function clearState(cl: any)
 	cl.baselines = {}
 	cl.lightstyles = {}
@@ -468,9 +488,19 @@ local function clearState(cl: any)
 	cl.models = {}
 	cl.worldmodel = nil
 	cl.playerindex = nil
+	cl.flagindex = nil
 	cl.spikeindex = nil
 	cl.validsequence = 0
 	cl.nails = {}
+	for i = 0, 31 do
+		cl.stats[i] = 0
+	end
+	cl.movemessages = 0 -- the first two moves flush stale input again
+	cl.players = {}
+	cl.punchangle = 0
+	cl.simorg = vector.zero
+	cl.simvel = vector.zero
+	cl.cam = { autocam = 0, spec_track = 0, locked = false, oldbuttons = 0 }
 	for i = 0, UPDATE_BACKUP - 1 do
 		local f: Frame = cl.frames[i]
 		f.packet_entities = {}
@@ -1270,12 +1300,14 @@ function qwcl.demoStep(cl: any, blocks: { any }, idx: number, demotime: number):
 end
 
 function qwcl.processPacket(cl: any, packet: buffer)
-	if cl.recording then
-		qwcl.writeDemoMessage(cl, packet) -- CL_WriteDemoMessage
-	end
 	local r = qwnetchan.process(cl.netchan, packet)
 	if not r then
 		return -- stale packet
+	end
+	-- CL_ReadPackets records only ACCEPTED packets (after Netchan_Process)
+	-- — a recorded stale packet would double-apply at playback
+	if cl.recording then
+		qwcl.writeDemoMessage(cl, packet) -- CL_WriteDemoMessage
 	end
 	qwcl.parseServerMessage(cl, r)
 	-- during the handshake, reply immediately with any queued cmds
@@ -1289,7 +1321,8 @@ end
 
 -- CL_FinishMove's MakeChar: moves travel as signed chars of 4-unit steps
 local function makeChar(i: number): number
-	i = bit32.band(i // 1, bit32.bnot(3)) -- &~3 on the int
+	-- C's float->int argument conversion truncates toward zero
+	i = bit32.band(mathlib.trunc(i), bit32.bnot(3)) -- &~3 on the int
 	if i >= 0x80000000 then
 		i -= 0x100000000 -- undo bit32's unsigned view for negatives
 	end
@@ -1311,13 +1344,21 @@ end
 function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	local chan = cl.netchan
 
-	-- CL_FinishMove: chop moves and quantize angles BEFORE storing, so
-	-- the predicted cmd equals the wire cmd
-	cmd = table.clone(cmd)
-	cmd.forwardmove = makeChar(cmd.forwardmove)
-	cmd.sidemove = makeChar(cmd.sidemove)
-	cmd.upmove = makeChar(cmd.upmove)
-	cmd.angles = vector.create(quantAngle(cmd.angles.x), quantAngle(cmd.angles.y), quantAngle(cmd.angles.z))
+	-- CL_FinishMove dumps the first two moves per level (they may hold
+	-- stale inputs from the last level) — but CL_SendCmd still sends
+	-- the packet, keeping the netchan lockstep flowing
+	cl.movemessages = (cl.movemessages or 0) + 1
+	if cl.movemessages <= 2 then
+		cmd = qwents.nullCmd()
+	else
+		-- CL_FinishMove: chop moves and quantize angles BEFORE storing,
+		-- so the predicted cmd equals the wire cmd
+		cmd = table.clone(cmd)
+		cmd.forwardmove = makeChar(cmd.forwardmove)
+		cmd.sidemove = makeChar(cmd.sidemove)
+		cmd.upmove = makeChar(cmd.upmove)
+		cmd.angles = vector.create(quantAngle(cmd.angles.x), quantAngle(cmd.angles.y), quantAngle(cmd.angles.z))
+	end
 
 	-- save this command off for prediction
 	local i = bit32.band(chan.outgoing_sequence, UPDATE_MASK)
@@ -1328,13 +1369,6 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 
 	if cl.recording then
 		qwcl.writeDemoCmd(cl, cmd, cmd.angles) -- CL_WriteDemoCmd
-	end
-
-	-- don't send too soon after connecting: the first two moves flush
-	-- stale pre-spawn input state (C: cl.movemessages <= 2)
-	cl.movemessages = (cl.movemessages or 0) + 1
-	if cl.movemessages <= 2 then
-		return
 	end
 
 	local buf = msg.newBuf(128)
@@ -1350,11 +1384,13 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 	qwents.writeDeltaUsercmd(buf, oldest, oldcmd)
 	qwents.writeDeltaUsercmd(buf, oldcmd, cmd)
 
-	-- request delta compression of entities
+	-- request delta compression of entities (never while recording: a
+	-- played-back demo cannot reconstruct the frames ring's
+	-- delta_sequence bookkeeping — cl_input.c:459)
 	if chan.outgoing_sequence - cl.validsequence >= UPDATE_BACKUP - 1 then
 		cl.validsequence = 0
 	end
-	if cl.validsequence ~= 0 and cl.state == "active" then
+	if cl.validsequence ~= 0 and cl.state == "active" and not cl.recording then
 		frame.delta_sequence = cl.validsequence
 		msg.writeByte(buf, qwp.clc_delta)
 		msg.writeByte(buf, bit32.band(cl.validsequence, 255))
@@ -1371,8 +1407,8 @@ end
 --------------------------------------------------------------------------
 -- prediction (cl_pred.c)
 
--- CL_SetSolidEntities + CL_SetSolidPlayers
-local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysEnt }
+-- CL_SetSolidEntities + CL_SetSolidPlayers (forward-declared above for camDoTrace)
+function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysEnt }
 	local physents: { pmovelib.PhysEnt } = { { model = cl.worldmodel, origin = vector.zero } }
 	-- any packet entity whose model has clipping hulls (brush models)
 	local frame: Frame = cl.frames[bit32.band(cl.parsecount, UPDATE_MASK)]
@@ -1381,7 +1417,9 @@ local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysE
 			continue
 		end
 		local m = cl.models[es.modelindex] -- wire indices are 1-based like C's cl.model_precache
-		if m and m.kind == "brush" then
+		-- only models with a real player clip hull are solid; item boxes
+		-- (b_*.bsp) have no clipnodes and prediction must pass through them
+		if m and m.kind == "brush" and m.brush.hulls[2].firstclipnode ~= 0 then
 			table.insert(physents, { model = m.brush, origin = es.origin })
 		end
 	end
@@ -1424,7 +1462,7 @@ function qwcl.predictUsercmd(cl: any, from: PlayerState, to: PlayerState, u: qwe
 		velocity = from.velocity,
 		oldbuttons = from.oldbuttons,
 		waterjumptime = from.waterjumptime,
-		dead = (cl.stats[qwp.STAT_HEALTH] or 100) <= 0,
+		dead = (cl.stats[qwp.STAT_HEALTH] or 0) <= 0, -- C's zero-filled stats predict dead until the first update
 		spectator = spectator,
 		physents = cl.predictPhysents or buildPhysents(cl, true),
 		cmd = u :: any,
@@ -1450,6 +1488,12 @@ end
 -- Returns { [playernum]: origin }; the renderer and the solid-player
 -- physents both consume it.
 function qwcl.predictedPlayerOrigins(cl: any): { [number]: vector }
+	-- memoized per (realtime, parsecount): the renderer, the solid-player
+	-- physents, and the spectator cam all ask within one frame, and each
+	-- uncached call runs a full playerMove per visible player
+	if cl.predOriginsTime == cl.realtime and cl.predOriginsParse == cl.parsecount and cl.predOrigins then
+		return cl.predOrigins
+	end
 	local out: { [number]: vector } = {}
 	local playertime = cl.realtime - cl.latency + 0.02
 	if playertime > cl.realtime then
@@ -1482,15 +1526,21 @@ function qwcl.predictedPlayerOrigins(cl: any): { [number]: vector }
 		end
 	end
 	cl.predictPhysents = saved
+	cl.predOriginsTime = cl.realtime
+	cl.predOriginsParse = cl.parsecount
+	cl.predOrigins = out
 	return out
 end
 
 -- CL_PredictMove
 function qwcl.predictMove(cl: any)
+	if cl.pushlatency > 0 then
+		cl.pushlatency = 0
+	end
 	if cl.paused then
 		return
 	end
-	cl.time = cl.realtime - cl.latency
+	cl.time = cl.realtime - cl.latency - cl.pushlatency * 0.001
 	if cl.time > cl.realtime then
 		cl.time = cl.realtime
 	end

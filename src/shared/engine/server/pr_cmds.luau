@@ -402,6 +402,11 @@ function pr_cmds.install(svr: svlib.Server)
 		local v = vmlib.globalFloat(vm, OFS_PARM0)
 		local s
 		if v == mathlib.trunc(v) then
+			-- C: sprintf("%d", (int)v); out-of-int32 values saturate to
+			-- INT_MIN on x86 (cvttsd2si) instead of crashing the frame
+			if not (v >= -2147483648 and v <= 2147483647) then
+				v = -2147483648
+			end
 			s = string.format("%d", v)
 		else
 			s = fmt51(v)

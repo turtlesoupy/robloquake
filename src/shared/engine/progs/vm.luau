@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- The QuakeC virtual machine — port of pr_exec.c and pr_edict.c from
 -- WinQuake. Executes progs.dat bytecode over a globals buffer and per-edict
 -- field buffers, reproducing the C engine's type-punning semantics exactly
@@ -392,7 +393,7 @@ end
 --------------------------------------------------------------------------
 -- PR_ExecuteProgram
 
-function vmlib.exec(vm: VM, fnum: number)
+local function execLoop(vm: VM, fnum: number)
 	local pr = vm.progs
 	if fnum <= 0 or fnum >= #pr.functions then
 		error(`PR_ExecuteProgram: NULL function ({fnum})`)
@@ -409,6 +410,11 @@ function vmlib.exec(vm: VM, fnum: number)
 	local exitdepth = vm.depth
 	local s = enterFunction(vm, fnum)
 
+	-- profile counter kept in a register, synced to vm.profcount at the
+	-- call boundaries where profileMark reads it (a table write per
+	-- instruction is measurable in this loop)
+	local profcount = vm.profcount
+
 	while true do
 		s += 1 -- next statement
 		local si = s + 1 -- 1-based index into the statement arrays
@@ -422,7 +428,7 @@ function vmlib.exec(vm: VM, fnum: number)
 			runError(vm, "runaway loop error")
 		end
 		vm.xstatement = s
-		vm.profcount += 1
+		profcount += 1
 
 		-- pr_trace: PF_traceon sets it mid-run; exec entry resets it like C
 		if vm.trace then
@@ -432,187 +438,222 @@ function vmlib.exec(vm: VM, fnum: number)
 			end
 		end
 
-		if op == 0 or op == 43 then -- OP_DONE / OP_RETURN
-			buffer.copy(g, OFS_RETURN * 4, g, a * 4, 12)
-			s = leaveFunction(vm)
-			if vm.depth == exitdepth then
-				return -- all done
-			end
-		elseif op == 1 then -- OP_MUL_F
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) * buffer.readf32(g, b * 4))
-		elseif op == 2 then -- OP_MUL_V (dot product)
-			buffer.writef32(
-				g,
-				c * 4,
-				buffer.readf32(g, a * 4) * buffer.readf32(g, b * 4)
-					+ buffer.readf32(g, a * 4 + 4) * buffer.readf32(g, b * 4 + 4)
-					+ buffer.readf32(g, a * 4 + 8) * buffer.readf32(g, b * 4 + 8)
-			)
-		elseif op == 3 then -- OP_MUL_FV
-			local f = buffer.readf32(g, a * 4)
-			buffer.writef32(g, c * 4, f * buffer.readf32(g, b * 4))
-			buffer.writef32(g, c * 4 + 4, f * buffer.readf32(g, b * 4 + 4))
-			buffer.writef32(g, c * 4 + 8, f * buffer.readf32(g, b * 4 + 8))
-		elseif op == 4 then -- OP_MUL_VF
-			local f = buffer.readf32(g, b * 4)
-			buffer.writef32(g, c * 4, f * buffer.readf32(g, a * 4))
-			buffer.writef32(g, c * 4 + 4, f * buffer.readf32(g, a * 4 + 4))
-			buffer.writef32(g, c * 4 + 8, f * buffer.readf32(g, a * 4 + 8))
-		elseif op == 5 then -- OP_DIV_F
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) / buffer.readf32(g, b * 4))
-		elseif op == 6 then -- OP_ADD_F
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) + buffer.readf32(g, b * 4))
-		elseif op == 7 then -- OP_ADD_V
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) + buffer.readf32(g, b * 4))
-			buffer.writef32(g, c * 4 + 4, buffer.readf32(g, a * 4 + 4) + buffer.readf32(g, b * 4 + 4))
-			buffer.writef32(g, c * 4 + 8, buffer.readf32(g, a * 4 + 8) + buffer.readf32(g, b * 4 + 8))
-		elseif op == 8 then -- OP_SUB_F
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) - buffer.readf32(g, b * 4))
-		elseif op == 9 then -- OP_SUB_V
-			buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) - buffer.readf32(g, b * 4))
-			buffer.writef32(g, c * 4 + 4, buffer.readf32(g, a * 4 + 4) - buffer.readf32(g, b * 4 + 4))
-			buffer.writef32(g, c * 4 + 8, buffer.readf32(g, a * 4 + 8) - buffer.readf32(g, b * 4 + 8))
-		elseif op == 10 then -- OP_EQ_F
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) == buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op == 11 then -- OP_EQ_V
-			local eq = buffer.readf32(g, a * 4) == buffer.readf32(g, b * 4)
-				and buffer.readf32(g, a * 4 + 4) == buffer.readf32(g, b * 4 + 4)
-				and buffer.readf32(g, a * 4 + 8) == buffer.readf32(g, b * 4 + 8)
-			buffer.writef32(g, c * 4, if eq then 1 else 0)
-		elseif op == 12 then -- OP_EQ_S
-			local sa = vmlib.getString(vm, buffer.readi32(g, a * 4))
-			local sb = vmlib.getString(vm, buffer.readi32(g, b * 4))
-			buffer.writef32(g, c * 4, if sa == sb then 1 else 0)
-		elseif op == 13 or op == 14 then -- OP_EQ_E / OP_EQ_FNC
-			buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) == buffer.readi32(g, b * 4) then 1 else 0)
-		elseif op == 15 then -- OP_NE_F
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) ~= buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op == 16 then -- OP_NE_V
-			local ne = buffer.readf32(g, a * 4) ~= buffer.readf32(g, b * 4)
-				or buffer.readf32(g, a * 4 + 4) ~= buffer.readf32(g, b * 4 + 4)
-				or buffer.readf32(g, a * 4 + 8) ~= buffer.readf32(g, b * 4 + 8)
-			buffer.writef32(g, c * 4, if ne then 1 else 0)
-		elseif op == 17 then -- OP_NE_S
-			local sa = vmlib.getString(vm, buffer.readi32(g, a * 4))
-			local sb = vmlib.getString(vm, buffer.readi32(g, b * 4))
-			buffer.writef32(g, c * 4, if sa ~= sb then 1 else 0)
-		elseif op == 18 or op == 19 then -- OP_NE_E / OP_NE_FNC
-			buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) ~= buffer.readi32(g, b * 4) then 1 else 0)
-		elseif op == 20 then -- OP_LE
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) <= buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op == 21 then -- OP_GE
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) >= buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op == 22 then -- OP_LT
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) < buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op == 23 then -- OP_GT
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) > buffer.readf32(g, b * 4) then 1 else 0)
-		elseif op >= 24 and op <= 29 then -- OP_LOAD_F/V/S/ENT/FLD/FNC
-			local ed = edicts[buffer.readi32(g, a * 4) + 1]
-			local fofs = buffer.readi32(g, b * 4)
-			if op == 25 then -- OP_LOAD_V
-				buffer.copy(g, c * 4, ed.fields, fofs * 4, 12)
-			else
-				buffer.copy(g, c * 4, ed.fields, fofs * 4, 4)
-			end
-		elseif op == 30 then -- OP_ADDRESS
-			local enum_ = buffer.readi32(g, a * 4)
-			if enum_ == 0 and vm.serverActive then
-				runError(vm, "assignment to world entity")
-			end
-			buffer.writei32(g, c * 4, enum_ * PTR_STRIDE + buffer.readi32(g, b * 4))
-		elseif op >= 31 and op <= 36 then -- OP_STORE_F/V/S/ENT/FLD/FNC
-			if op == 32 then -- OP_STORE_V
-				buffer.copy(g, b * 4, g, a * 4, 12)
-			else
-				buffer.copy(g, b * 4, g, a * 4, 4)
-			end
-		elseif op >= 37 and op <= 42 then -- OP_STOREP_F/V/S/ENT/FLD/FNC
-			local ptr = buffer.readi32(g, b * 4)
-			local ed = edicts[math.floor(ptr / PTR_STRIDE) + 1]
-			local fofs = ptr % PTR_STRIDE
-			if op == 38 then -- OP_STOREP_V
-				buffer.copy(ed.fields, fofs * 4, g, a * 4, 12)
-			else
-				buffer.copy(ed.fields, fofs * 4, g, a * 4, 4)
-			end
-		elseif op == 44 then -- OP_NOT_F
-			buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) == 0 then 1 else 0)
-		elseif op == 45 then -- OP_NOT_V
-			local z = buffer.readf32(g, a * 4) == 0
-				and buffer.readf32(g, a * 4 + 4) == 0
-				and buffer.readf32(g, a * 4 + 8) == 0
-			buffer.writef32(g, c * 4, if z then 1 else 0)
-		elseif op == 46 then -- OP_NOT_S
-			local sofs = buffer.readi32(g, a * 4)
-			local empty = sofs == 0 or #vmlib.getString(vm, sofs) == 0
-			buffer.writef32(g, c * 4, if empty then 1 else 0)
-		elseif op == 47 then -- OP_NOT_ENT
-			buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) == 0 then 1 else 0)
-		elseif op == 48 then -- OP_NOT_FNC
-			buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) == 0 then 1 else 0)
-		elseif op == 49 then -- OP_IF
-			if buffer.readi32(g, a * 4) ~= 0 then
-				s += b - 1 -- offset the s++
-			end
-		elseif op == 50 then -- OP_IFNOT
-			if buffer.readi32(g, a * 4) == 0 then
-				s += b - 1 -- offset the s++
-			end
-		elseif op >= 51 and op <= 59 then -- OP_CALL0..OP_CALL8
-			vm.argc = op - 51
-			local fn = buffer.readi32(g, a * 4)
-			if fn == 0 then
-				runError(vm, "NULL function")
-			end
-			local newf = pr.functions[fn + 1]
-			if not newf then
-				runError(vm, `bad function number {fn}`)
-			end
-			if newf.first_statement < 0 then
-				-- negative statements are built in functions
-				local bnum = -newf.first_statement
-				local builtin = vm.builtins[bnum]
-				if not builtin then
-					runError(vm, `bad builtin call number {bnum} ({newf.name})`)
+		-- dispatch: two range buckets, each ordered by QuakeC opcode
+		-- frequency (STORE/IF/CALL and LOAD dominate real progs; the
+		-- old single chain put them 20+ compares deep)
+		if op >= 31 then
+			if op <= 36 then -- OP_STORE_F/V/S/ENT/FLD/FNC
+				if op == 32 then -- OP_STORE_V
+					buffer.copy(g, b * 4, g, a * 4, 12)
+				else
+					buffer.copy(g, b * 4, g, a * 4, 4)
 				end
-				builtin(vm)
+			elseif op == 50 then -- OP_IFNOT
+				if buffer.readi32(g, a * 4) == 0 then
+					s += b - 1 -- offset the s++
+				end
+			elseif op == 49 then -- OP_IF
+				if buffer.readi32(g, a * 4) ~= 0 then
+					s += b - 1 -- offset the s++
+				end
+			elseif op >= 51 and op <= 59 then -- OP_CALL0..OP_CALL8
+				vm.argc = op - 51
+				local fn = buffer.readi32(g, a * 4)
+				if fn == 0 then
+					runError(vm, "NULL function")
+				end
+				local newf = pr.functions[fn + 1]
+				if not newf then
+					runError(vm, `bad function number {fn}`)
+				end
+				vm.profcount = profcount
+				if newf.first_statement < 0 then
+					-- negative statements are built in functions
+					local bnum = -newf.first_statement
+					local builtin = vm.builtins[bnum]
+					if not builtin then
+						runError(vm, `bad builtin call number {bnum} ({newf.name})`)
+					end
+					builtin(vm)
+					profcount = vm.profcount -- builtins can exec re-entrantly
+				else
+					s = enterFunction(vm, fn)
+				end
+			elseif op == 43 then -- OP_RETURN
+				buffer.copy(g, OFS_RETURN * 4, g, a * 4, 12)
+				vm.profcount = profcount
+				s = leaveFunction(vm)
+				if vm.depth == exitdepth then
+					return -- all done
+				end
+			elseif op <= 42 then -- OP_STOREP_F/V/S/ENT/FLD/FNC (37-42)
+				local ptr = buffer.readi32(g, b * 4)
+				local ed = edicts[math.floor(ptr / PTR_STRIDE) + 1]
+				local fofs = ptr % PTR_STRIDE
+				if op == 38 then -- OP_STOREP_V
+					buffer.copy(ed.fields, fofs * 4, g, a * 4, 12)
+				else
+					buffer.copy(ed.fields, fofs * 4, g, a * 4, 4)
+				end
+			elseif op == 44 then -- OP_NOT_F
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) == 0 then 1 else 0)
+			elseif op == 45 then -- OP_NOT_V
+				local z = buffer.readf32(g, a * 4) == 0
+					and buffer.readf32(g, a * 4 + 4) == 0
+					and buffer.readf32(g, a * 4 + 8) == 0
+				buffer.writef32(g, c * 4, if z then 1 else 0)
+			elseif op == 46 then -- OP_NOT_S
+				local sofs = buffer.readi32(g, a * 4)
+				local empty = sofs == 0 or #vmlib.getString(vm, sofs) == 0
+				buffer.writef32(g, c * 4, if empty then 1 else 0)
+			elseif op == 47 or op == 48 then -- OP_NOT_ENT / OP_NOT_FNC
+				buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) == 0 then 1 else 0)
+			elseif op == 61 then -- OP_GOTO
+				s += a - 1 -- offset the s++
+			elseif op == 62 then -- OP_AND
+				local r = buffer.readf32(g, a * 4) ~= 0 and buffer.readf32(g, b * 4) ~= 0
+				buffer.writef32(g, c * 4, if r then 1 else 0)
+			elseif op == 63 then -- OP_OR
+				local r = buffer.readf32(g, a * 4) ~= 0 or buffer.readf32(g, b * 4) ~= 0
+				buffer.writef32(g, c * 4, if r then 1 else 0)
+			elseif op == 60 then -- OP_STATE
+				-- offsets are per-VM: the QW progs ABI differs from NQ's
+				local so = vm.stateOffsets
+				local self_ = edicts[buffer.readi32(g, so.globSelf * 4) + 1]
+				vmlib.edSetFloat(self_, so.nextthink, buffer.readf32(g, so.globTime * 4) + 0.1)
+				vmlib.edSetFloat(self_, so.frame, buffer.readf32(g, a * 4))
+				vmlib.edSetInt(self_, so.think, buffer.readi32(g, b * 4))
+			elseif op == 64 then -- OP_BITAND
+				local ia = buffer.readf32(g, a * 4)
+				local ib = buffer.readf32(g, b * 4)
+				local r = bit32.band(if ia >= 0 then math.floor(ia) else -math.floor(-ia), if ib >= 0 then math.floor(ib) else -math.floor(-ib))
+				if r >= 0x80000000 then
+					r -= 0x100000000
+				end
+				buffer.writef32(g, c * 4, r)
+			elseif op == 65 then -- OP_BITOR
+				local ia = buffer.readf32(g, a * 4)
+				local ib = buffer.readf32(g, b * 4)
+				local r = bit32.bor(if ia >= 0 then math.floor(ia) else -math.floor(-ia), if ib >= 0 then math.floor(ib) else -math.floor(-ib))
+				if r >= 0x80000000 then
+					r -= 0x100000000
+				end
+				buffer.writef32(g, c * 4, r)
 			else
-				s = enterFunction(vm, fn)
+				runError(vm, `bad opcode {op}`)
 			end
-		elseif op == 60 then -- OP_STATE
-			-- offsets are per-VM: the QW progs ABI differs from NQ's
-			local so = vm.stateOffsets
-			local self_ = edicts[buffer.readi32(g, so.globSelf * 4) + 1]
-			vmlib.edSetFloat(self_, so.nextthink, buffer.readf32(g, so.globTime * 4) + 0.1)
-			vmlib.edSetFloat(self_, so.frame, buffer.readf32(g, a * 4))
-			vmlib.edSetInt(self_, so.think, buffer.readi32(g, b * 4))
-		elseif op == 61 then -- OP_GOTO
-			s += a - 1 -- offset the s++
-		elseif op == 62 then -- OP_AND
-			local r = buffer.readf32(g, a * 4) ~= 0 and buffer.readf32(g, b * 4) ~= 0
-			buffer.writef32(g, c * 4, if r then 1 else 0)
-		elseif op == 63 then -- OP_OR
-			local r = buffer.readf32(g, a * 4) ~= 0 or buffer.readf32(g, b * 4) ~= 0
-			buffer.writef32(g, c * 4, if r then 1 else 0)
-		elseif op == 64 then -- OP_BITAND
-			local ia = buffer.readf32(g, a * 4)
-			local ib = buffer.readf32(g, b * 4)
-			local r = bit32.band(if ia >= 0 then math.floor(ia) else -math.floor(-ia), if ib >= 0 then math.floor(ib) else -math.floor(-ib))
-			if r >= 0x80000000 then
-				r -= 0x100000000
+		elseif op >= 24 then
+			if op <= 29 then -- OP_LOAD_F/V/S/ENT/FLD/FNC
+				local ed = edicts[buffer.readi32(g, a * 4) + 1]
+				local fofs = buffer.readi32(g, b * 4)
+				if op == 25 then -- OP_LOAD_V
+					buffer.copy(g, c * 4, ed.fields, fofs * 4, 12)
+				else
+					buffer.copy(g, c * 4, ed.fields, fofs * 4, 4)
+				end
+			else -- op == 30, OP_ADDRESS
+				local enum_ = buffer.readi32(g, a * 4)
+				if enum_ == 0 and vm.serverActive then
+					runError(vm, "assignment to world entity")
+				end
+				buffer.writei32(g, c * 4, enum_ * PTR_STRIDE + buffer.readi32(g, b * 4))
 			end
-			buffer.writef32(g, c * 4, r)
-		elseif op == 65 then -- OP_BITOR
-			local ia = buffer.readf32(g, a * 4)
-			local ib = buffer.readf32(g, b * 4)
-			local r = bit32.bor(if ia >= 0 then math.floor(ia) else -math.floor(-ia), if ib >= 0 then math.floor(ib) else -math.floor(-ib))
-			if r >= 0x80000000 then
-				r -= 0x100000000
-			end
-			buffer.writef32(g, c * 4, r)
 		else
-			runError(vm, `bad opcode {op}`)
+			if op == 6 then -- OP_ADD_F
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) + buffer.readf32(g, b * 4))
+			elseif op == 8 then -- OP_SUB_F
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) - buffer.readf32(g, b * 4))
+			elseif op == 1 then -- OP_MUL_F
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) * buffer.readf32(g, b * 4))
+			elseif op == 5 then -- OP_DIV_F
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) / buffer.readf32(g, b * 4))
+			elseif op == 22 then -- OP_LT
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) < buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 23 then -- OP_GT
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) > buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 20 then -- OP_LE
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) <= buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 21 then -- OP_GE
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) >= buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 10 then -- OP_EQ_F
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) == buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 15 then -- OP_NE_F
+				buffer.writef32(g, c * 4, if buffer.readf32(g, a * 4) ~= buffer.readf32(g, b * 4) then 1 else 0)
+			elseif op == 7 then -- OP_ADD_V
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) + buffer.readf32(g, b * 4))
+				buffer.writef32(g, c * 4 + 4, buffer.readf32(g, a * 4 + 4) + buffer.readf32(g, b * 4 + 4))
+				buffer.writef32(g, c * 4 + 8, buffer.readf32(g, a * 4 + 8) + buffer.readf32(g, b * 4 + 8))
+			elseif op == 9 then -- OP_SUB_V
+				buffer.writef32(g, c * 4, buffer.readf32(g, a * 4) - buffer.readf32(g, b * 4))
+				buffer.writef32(g, c * 4 + 4, buffer.readf32(g, a * 4 + 4) - buffer.readf32(g, b * 4 + 4))
+				buffer.writef32(g, c * 4 + 8, buffer.readf32(g, a * 4 + 8) - buffer.readf32(g, b * 4 + 8))
+			elseif op == 2 then -- OP_MUL_V (dot product)
+				buffer.writef32(
+					g,
+					c * 4,
+					buffer.readf32(g, a * 4) * buffer.readf32(g, b * 4)
+						+ buffer.readf32(g, a * 4 + 4) * buffer.readf32(g, b * 4 + 4)
+						+ buffer.readf32(g, a * 4 + 8) * buffer.readf32(g, b * 4 + 8)
+				)
+			elseif op == 3 then -- OP_MUL_FV
+				local f = buffer.readf32(g, a * 4)
+				buffer.writef32(g, c * 4, f * buffer.readf32(g, b * 4))
+				buffer.writef32(g, c * 4 + 4, f * buffer.readf32(g, b * 4 + 4))
+				buffer.writef32(g, c * 4 + 8, f * buffer.readf32(g, b * 4 + 8))
+			elseif op == 4 then -- OP_MUL_VF
+				local f = buffer.readf32(g, b * 4)
+				buffer.writef32(g, c * 4, f * buffer.readf32(g, a * 4))
+				buffer.writef32(g, c * 4 + 4, f * buffer.readf32(g, a * 4 + 4))
+				buffer.writef32(g, c * 4 + 8, f * buffer.readf32(g, a * 4 + 8))
+			elseif op == 11 then -- OP_EQ_V
+				local eq = buffer.readf32(g, a * 4) == buffer.readf32(g, b * 4)
+					and buffer.readf32(g, a * 4 + 4) == buffer.readf32(g, b * 4 + 4)
+					and buffer.readf32(g, a * 4 + 8) == buffer.readf32(g, b * 4 + 8)
+				buffer.writef32(g, c * 4, if eq then 1 else 0)
+			elseif op == 12 then -- OP_EQ_S
+				local sa = vmlib.getString(vm, buffer.readi32(g, a * 4))
+				local sb = vmlib.getString(vm, buffer.readi32(g, b * 4))
+				buffer.writef32(g, c * 4, if sa == sb then 1 else 0)
+			elseif op == 13 or op == 14 then -- OP_EQ_E / OP_EQ_FNC
+				buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) == buffer.readi32(g, b * 4) then 1 else 0)
+			elseif op == 16 then -- OP_NE_V
+				local ne = buffer.readf32(g, a * 4) ~= buffer.readf32(g, b * 4)
+					or buffer.readf32(g, a * 4 + 4) ~= buffer.readf32(g, b * 4 + 4)
+					or buffer.readf32(g, a * 4 + 8) ~= buffer.readf32(g, b * 4 + 8)
+				buffer.writef32(g, c * 4, if ne then 1 else 0)
+			elseif op == 17 then -- OP_NE_S
+				local sa = vmlib.getString(vm, buffer.readi32(g, a * 4))
+				local sb = vmlib.getString(vm, buffer.readi32(g, b * 4))
+				buffer.writef32(g, c * 4, if sa ~= sb then 1 else 0)
+			elseif op == 18 or op == 19 then -- OP_NE_E / OP_NE_FNC
+				buffer.writef32(g, c * 4, if buffer.readi32(g, a * 4) ~= buffer.readi32(g, b * 4) then 1 else 0)
+			elseif op == 0 then -- OP_DONE
+				buffer.copy(g, OFS_RETURN * 4, g, a * 4, 12)
+				vm.profcount = profcount
+				s = leaveFunction(vm)
+				if vm.depth == exitdepth then
+					return -- all done
+				end
+			else
+				runError(vm, `bad opcode {op}`)
+			end
 		end
+	end
+end
+
+-- PR_ExecuteProgram. C's PR_RunError dumps pr_depth (and with it the
+-- locals stack) before Host_Error aborts the frame; this host keeps
+-- running the next frame, so restore this call's entry state as the
+-- error unwinds — otherwise every later exec runs on a corrupted stack
+-- (leaked depth, locals restored into live globals).
+function vmlib.exec(vm: VM, fnum: number)
+	local exitdepth = vm.depth
+	local exitlocals = vm.localstack_used
+	local ok, err = pcall(execLoop, vm, fnum)
+	if not ok then
+		vm.depth = exitdepth
+		vm.localstack_used = exitlocals
+		error(err, 0)
 	end
 end
 
@@ -641,20 +682,21 @@ function vmlib.parseEpair(vm: VM, target: buffer, def: progslib.Def, s: string):
 	if typ == defs.ev_string then
 		buffer.writei32(target, d, vmlib.newString(vm, s))
 	elseif typ == defs.ev_float then
-		buffer.writef32(target, d, com.atof(s))
+		buffer.writef32(target, d, com.atofC(s))
 	elseif typ == defs.ev_vector then
-		local parts = { 0, 0, 0 }
-		local i = 1
-		for w in s:gmatch("[^ ]+") do
-			if i > 3 then
-				break
+		-- C advances to each SINGLE space: "1  2 3" parses as (1, 0, 2)
+		-- (empty token = 0) and tabs are NOT separators — bug-for-bug
+		-- with pr_edict.c so hand-edited ent fields read identically
+		local v = 1
+		local n = #s
+		for i = 0, 2 do
+			local start = v
+			while v <= n and s:sub(v, v) ~= " " do
+				v += 1
 			end
-			parts[i] = com.atof(w)
-			i += 1
+			buffer.writef32(target, d + i * 4, com.atofC(s:sub(start, v - 1)))
+			v += 1
 		end
-		buffer.writef32(target, d, parts[1])
-		buffer.writef32(target, d + 4, parts[2])
-		buffer.writef32(target, d + 8, parts[3])
 	elseif typ == defs.ev_entity then
 		buffer.writei32(target, d, com.atoi(s))
 	elseif typ == defs.ev_field then

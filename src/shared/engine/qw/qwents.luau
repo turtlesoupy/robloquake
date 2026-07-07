@@ -348,8 +348,10 @@ function qwents.parsePacketEntities(
 ): PacketEntities
 	local out: PacketEntities = {}
 	local oldindex = 1
+	-- C refuses BEFORE writing slot MAX_PACKET_ENTITIES (64), so the
+	-- check runs pre-insert against the current count
 	local function capCheck()
-		if #out > qwents.MAX_PACKET_ENTITIES then
+		if #out >= qwents.MAX_PACKET_ENTITIES then
 			error("CL_ParsePacketEntities: newindex == MAX_PACKET_ENTITIES")
 		end
 	end

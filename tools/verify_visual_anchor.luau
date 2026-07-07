@@ -33,6 +33,7 @@ local ANCHORS = {
 
 -- ==== SERVER STAGE (run in the Server datamodel; edit the anchor name)
 local function serverStage(anchor: string)
+	game:GetService("ServerStorage"):SetAttribute("RQDBG", true) -- SVDBG_* hooks are gated (audit H9)
 	game:GetService("ServerStorage"):SetAttribute("SVDBG_SetOrigin", ANCHORS[anchor].pos)
 end
 

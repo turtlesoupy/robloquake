@@ -19,6 +19,7 @@ local cllib = require(engine.client.cl)
 local proto = require(engine.protocol)
 local qcoords = require(engine.client.qcoords)
 
+local avatarlayer = require(script.render.avatarlayer)
 local avatarrender = require(script.render.avatarrender)
 local entrender = require(script.render.entrender)
 local skinforge = require(script.render.skinforge)
@@ -283,6 +284,31 @@ local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, mo
 	re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
 end
 
+-- third-person twin of applyGunSkin for avatarlayer: forge (or fetch) the
+-- picked skin against the held g_ world model's own skin sheet; nil =
+-- authentic. Called per frame, so failed forges are cached to avoid
+-- re-forging every frame.
+local forgeFailed: { [string]: boolean } = {}
+local function localWeaponSkin(vmName: string, worldModel: string, def: entrender.ModelDef): EditableImage?
+	local spec = weaponSkins[vmName]
+	if not spec or not def.skinPixels then
+		return nil
+	end
+	local key = `{worldModel}|{spec}`
+	local img = forgedSkins[key]
+	if not img and not forgeFailed[key] then
+		local forged =
+			skinforge.createImage(spec, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+		if forged then
+			forgedSkins[key] = forged
+			img = forged
+		else
+			forgeFailed[key] = true
+		end
+	end
+	return img
+end
+
 local function getModelDef(modelindex: number): entrender.ModelDef?
 	local def = modelDefs[modelindex]
 	if def then
@@ -370,6 +396,13 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 	return def
 end
 
+-- relinkEntities' EF_* lookup, hoisted so the frame loop doesn't allocate
+-- a closure per frame
+local function modelFlagsFor(mi: number): number
+	local def = getModelDef(mi)
+	return if def then def.flags else 0
+end
+
 local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
 	local root: Instance? = re.part or re.billboardPart or re.model
 	if root then
@@ -380,272 +413,63 @@ end
 --------------------------------------------------------------------------
 -- Roblox avatars mode (product layer, toggled by the roblox_avatars
 -- attribute; live-flippable). Player entities render as the player's own
--- avatar rig; the engine's alias renderer stays for rig loading, death/
--- corpse frames, and toggle-off, so the wire protocol and engine core
--- are untouched. The held weapon (server-mirrored RQWeaponModel attr)
+-- avatar rig (including a scripted death/corpse pose); the engine's
+-- alias renderer stays for rig loading and toggle-off, so the wire
+-- protocol and engine core are untouched. The held weapon (server-mirrored RQWeaponModel attr)
 -- attaches to the rig's right hand as the matching world model.
 
 local avatarLocalFolder = Instance.new("Folder")
 avatarLocalFolder.Name = "QuakeAvatarRigs"
 avatarLocalFolder.Parent = Workspace
 
-local avatarEnts: { [number]: avatarrender.AvatarEnt } = {}
-type AvatarWeapon = {
-	re: entrender.RenderEnt?,
-	model: string?,
-	def: entrender.ModelDef?, -- kept for forging procedural skins
-	skinApplied: string?, -- forged-skin cache key on re (nil = authentic)
-	light: PointLight?,
-	emitter: ParticleEmitter?,
-	flashUntil: number?,
-	wasFlashing: boolean?,
-}
-local avatarWeapons: { [number]: AvatarWeapon } = {}
-
 local function avatarsOn(): boolean
 	return clientAssets:GetAttribute("roblox_avatars") == true
 end
 
-local function playerForSlot(slot: number): Player?
-	for _, p in Players:GetPlayers() do
-		if p:GetAttribute("RQSlot") == slot then
-			return p
-		end
+-- R_AliasSetupLighting: lightmap sample under the entity plus dynamic
+-- light adds — shared by the alias branch and avatar rigs
+local function entityLight(origin: vector): number
+	if not worldModels[1] then
+		return 255
 	end
-	return nil
-end
-
--- held-weapon world models by viewmodel name (id1 has no world model
--- for the axe or starting shotgun beyond g_shot, which doubles up)
-local V_TO_WORLD: { [string]: string } = {
-	["progs/v_shot.mdl"] = "progs/g_shot.mdl",
-	["progs/v_shot2.mdl"] = "progs/g_shot.mdl",
-	["progs/v_nail.mdl"] = "progs/g_nail.mdl",
-	["progs/v_nail2.mdl"] = "progs/g_nail2.mdl",
-	["progs/v_rock.mdl"] = "progs/g_rock.mdl",
-	["progs/v_rock2.mdl"] = "progs/g_rock2.mdl",
-	["progs/v_light.mdl"] = "progs/g_light.mdl",
-}
--- grip: quake models point +X forward; hand forward is -Z. The gun's
--- rear (grip) sits at the palm, so the mesh center shifts forward.
--- RQDBG_GripPos (Vector3) / RQDBG_GripYPR (Vector3, degrees yaw/pitch/
--- roll) workspace attributes override for live tuning.
-local WEAPON_GRIP_POS = Vector3.new(0, -0.1, -0.9)
-local WEAPON_GRIP_YPR = Vector3.new(90, 0, 0)
-local function currentGrip(): CFrame
-	local p = workspace:GetAttribute("RQDBG_GripPos")
-	local y = workspace:GetAttribute("RQDBG_GripYPR")
-	local pos = if typeof(p) == "Vector3" then p else WEAPON_GRIP_POS
-	local ypr = if typeof(y) == "Vector3" then y else WEAPON_GRIP_YPR
-	return CFrame.new(pos) * CFrame.Angles(math.rad(ypr.Y), math.rad(ypr.X), math.rad(ypr.Z))
-end
-
-local function modelIndexByName(name: string): number?
-	for mi = 1, #c.model_precache - 1 do
-		if c.model_precache[mi + 1] == name then
-			return mi
-		end
-	end
-	return nil
-end
-
-local function hideAvatarWeapon(num: number)
-	local aw = avatarWeapons[num]
-	if aw and aw.re then
-		setEntVisible(aw.re :: entrender.RenderEnt, false)
-	end
-end
-
-local function hideAvatarEnt(num: number)
-	local ae = avatarEnts[num]
-	if ae then
-		avatarrender.setVisible(ae, false)
-	end
-	hideAvatarWeapon(num)
-end
-
--- Muzzle-origin blend for projectiles (render-only; the SIMULATION is
--- untouched — W_FireRocket really does spawn at the player's center+16,
--- which looks right in first person but reads as chest-launched from a
--- third-person avatar). A projectile born near an avatar-rendered
--- player renders from that avatar's gun muzzle and converges onto its
--- true position over MUZZLE_BLEND seconds.
-local MUZZLE_BLEND = 0.15
-local PROJECTILE_MODELS: { [string]: boolean } = {
-	["progs/missile.mdl"] = true,
-	["progs/grenade.mdl"] = true,
-	["progs/spike.mdl"] = true,
-	["progs/s_spike.mdl"] = true,
-}
-
-local function tagMuzzleOrigin(re: entrender.RenderEnt, e: any)
-	if not avatarsOn() then
-		return
-	end
-	local name = c.model_precache[e.modelindex + 1]
-	if not name or not PROJECTILE_MODELS[name] then
-		return
-	end
-	local bestPart: MeshPart? = nil
-	local bestDist = 60 -- quake units: projectiles spawn ~8-16 from the owner
-	for slot = 1, c.maxclients do
-		local pe = c.entities[slot]
-		local ae = avatarEnts[slot]
-		local aw = avatarWeapons[slot]
-		if pe and ae and ae.visible and aw and aw.re and aw.re.part then
-			local d = vector.magnitude(e.origin - pe.origin)
-			if d < bestDist then
-				bestDist = d
-				bestPart = aw.re.part :: MeshPart
+	local elight = lightpoint.at(worldModels[1], origin, styleValueFor)
+	for _, dl in dlights do
+		if dl.die >= c.time and dl.radius > 0 then
+			local add = dl.radius - vector.magnitude(origin - dl.origin)
+			if add > 0 then
+				elight += add
 			end
 		end
 	end
-	if bestPart then
-		local tip = bestPart.CFrame * Vector3.new(bestPart.Size.X / 2 + 0.1, 0, 0)
-		local r = re :: any
-		r.muzzleFrom = qcoords.fromRoblox(tip)
-		r.muzzleT0 = c.time
-		workspace:SetAttribute("RQDBG_MuzzleBlends", (workspace:GetAttribute("RQDBG_MuzzleBlends") :: number? or 0) + 1)
-	end
+	return elight
 end
 
-local function muzzleBlendedOrigin(re: entrender.RenderEnt, e: any): vector
-	local r = re :: any
-	local from = r.muzzleFrom
-	if not from then
-		return e.origin
-	end
-	local k = 1 - (c.time - (r.muzzleT0 or 0)) / MUZZLE_BLEND
-	if k <= 0 then
-		r.muzzleFrom = nil
-		return e.origin
-	end
-	return e.origin + (from - e.origin) * k
-end
-
-local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.AvatarEnt, effects: number)
-	local aw = avatarWeapons[num]
-	if not aw then
-		aw = {}
-		avatarWeapons[num] = aw
-	end
-	local vmName = player:GetAttribute("RQWeaponModel")
-	local want = if typeof(vmName) == "string" then V_TO_WORLD[vmName] else nil
-	if aw.model ~= want then
-		if aw.re then
-			entrender.destroy(aw.re :: entrender.RenderEnt)
-			aw.re = nil
-			aw.light = nil -- died with the part
-			aw.emitter = nil
-		end
-		aw.model = want
-		aw.def = nil
-		aw.skinApplied = nil
-		if want then
-			local mi = modelIndexByName(want)
-			local def = if mi then getModelDef(mi) else nil
-			if def and def.kind == "alias" then
-				aw.re = entrender.create(def, entFolder)
-				aw.def = def
+-- engine-agnostic avatar glue (SHARED with the QW boot — single source
+-- of truth): rig lifecycle, weapon-in-hand, death/pain/team-tint rules,
+-- water checks, and the projectile muzzle blend all live in avatarlayer
+local avatarLayer = avatarlayer.new({
+	rigFolder = avatarLocalFolder,
+	entFolder = entFolder,
+	getModelDef = getModelDef,
+	modelIndexByName = function(name: string): number?
+		for mi = 1, #c.model_precache - 1 do
+			if c.model_precache[mi + 1] == name then
+				return mi
 			end
 		end
-	end
-	local re = aw.re
-	local hand = avatarrender.rightHandCFrame(ae)
-	if re and re.part and hand then
-		-- the local player's tweaks-menu skin carries onto their held gun
-		-- (chase cam / other viewers of this client only — skins are
-		-- client-side); forged against the g_ model's own skin sheet. The
-		-- texture is set directly: avatar weapons are posed by hand and
-		-- never pass through updateAlias, where setSkinOverride applies.
-		if player == Players.LocalPlayer then
-			local spec = if typeof(vmName) == "string" then weaponSkins[vmName] else nil
-			local key = if spec and want then `{want}|{spec}` else nil
-			if aw.skinApplied ~= key then
-				aw.skinApplied = key
-				local img: EditableImage? = nil
-				local def = aw.def
-				if key and spec and def and def.skinPixels then
-					img = forgedSkins[key]
-					if not img then
-						local forged = skinforge.createImage(
-							spec,
-							def.skinPixels :: buffer,
-							def.skinW :: number,
-							def.skinH :: number,
-							pal
-						)
-						if forged then
-							forgedSkins[key] = forged
-							img = forged
-						end
-					end
-				end
-				if not img and def then
-					local skinImages = def.skinImages
-					img = if skinImages then skinImages[1] else nil -- authentic
-				end
-				if img then
-					(re.part :: MeshPart).TextureContent = Content.fromObject(img)
-				end
-			end
-		end
-		-- mesh CENTER at the hand (no centerOffset: that re-centers to the
-		-- pickup's floor-level model origin and floats the gun overhead)
-		local part = re.part :: MeshPart
-		setEntVisible(re :: entrender.RenderEnt, true)
-		-- muzzle flash: the world dlight comes from applyEntityEffects;
-		-- the PointLight lights the RIG (rigs use Roblox lighting, not
-		-- the Quake lightmap), the emitter burst + recoil make the shot
-		-- readable at a glance (playtest: "no indication they are firing")
-		if bit32.band(effects, 2) ~= 0 then -- EF_MUZZLEFLASH
-			aw.flashUntil = c.time + 0.15
-		end
-		local flashing = (aw.flashUntil or 0) > c.time
-		local grip = currentGrip()
-		if flashing then
-			grip = grip * CFrame.new(-0.15, 0, 0) -- recoil along the barrel
-		end
-		part.CFrame = hand * grip
-		local light = aw.light
-		if not light or light.Parent ~= part then
-			light = Instance.new("PointLight")
-			light.Enabled = false
-			light.Brightness = 6
-			light.Range = 14
-			light.Color = Color3.fromRGB(255, 190, 90)
-			light.Parent = part
-			aw.light = light
-			local muzzle = Instance.new("Attachment")
-			muzzle.Name = "Muzzle"
-			muzzle.Position = Vector3.new(part.Size.X / 2 + 0.1, 0, 0)
-			muzzle.Parent = part
-			local emitter = Instance.new("ParticleEmitter")
-			emitter.Rate = 0 -- burst-only via Emit()
-			emitter.Lifetime = NumberRange.new(0.06, 0.14)
-			emitter.Speed = NumberRange.new(4, 9)
-			emitter.SpreadAngle = Vector2.new(20, 20)
-			emitter.Color = ColorSequence.new(Color3.fromRGB(255, 220, 120), Color3.fromRGB(255, 120, 30))
-			emitter.LightEmission = 1
-			emitter.Size = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.55),
-				NumberSequenceKeypoint.new(1, 0.05),
-			})
-			emitter.EmissionDirection = Enum.NormalId.Right -- +X = barrel
-			emitter.Parent = muzzle
-			aw.emitter = emitter
-		end
-		if flashing and not aw.wasFlashing and aw.emitter then
-			(aw.emitter :: ParticleEmitter):Emit(6)
-		end
-		aw.wasFlashing = flashing
-		if light.Enabled ~= flashing then
-			light.Enabled = flashing
-		end
-	elseif re then
-		setEntVisible(re :: entrender.RenderEnt, false)
-	end
-end
+		return nil
+	end,
+	entityLight = entityLight,
+	worldHull = function(): any?
+		local wm = worldModels[1]
+		return if wm then wm.hulls[1] else nil
+	end,
+	time = function(): number
+		return c.time
+	end,
+	palette = pal,
+	localWeaponSkin = localWeaponSkin,
+})
 
 -- RQDBG_AvatarDummy (debug hook family): render a mirror avatar N studs
 -- in front of the camera for dialing in rigs/grip/animations WITHOUT a
@@ -654,33 +478,32 @@ end
 --   RQDBG_AvatarDummy      number (distance in studs; 0/nil removes)
 --   RQDBG_AvatarDummyWalk  bool (orbit so the run animation engages)
 --   RQDBG_AvatarDummyFire  bool (muzzle flash burst every 0.7s)
+--   RQDBG_AvatarDummyDead  bool (scripted death tip-over / corpse pose)
+--   RQDBG_AvatarDummyPain  bool (pain flash every 0.7s)
+--   RQDBG_AvatarDummySwim  bool (swim animation state)
+--   RQDBG_AvatarDummyColors number (quake colors byte for the team tint)
+--   RQDBG_AvatarDummyVel   bool (stationary origin + synthetic 200qu/s
+--                          velocity: exercises the QW velocity anim path)
 -- The dummy wears YOUR avatar and holds YOUR current weapon (weapon
 -- switching live-updates it); RQDBG_GripPos/GripYPR tune the grip live.
 local DUMMY_SLOT = 9999
-local dummyAe: avatarrender.AvatarEnt? = nil
+local dummyUp = false
 local dummyCenter: vector? = nil
 local dummyFaceYaw = 0
 local dummyNextFire = 0
 local function updateAvatarDummy()
 	local dist = workspace:GetAttribute("RQDBG_AvatarDummy")
 	if typeof(dist) ~= "number" or dist <= 0 then
-		if dummyAe then
-			avatarrender.destroy(dummyAe)
-			dummyAe = nil
+		if dummyUp then
+			avatarLayer.destroySlot(DUMMY_SLOT)
+			dummyUp = false
 			dummyCenter = nil
-			local aw = avatarWeapons[DUMMY_SLOT]
-			if aw and aw.re then
-				entrender.destroy(aw.re :: entrender.RenderEnt)
-			end
-			avatarWeapons[DUMMY_SLOT] = nil
 		end
 		return
 	end
 	local lp = Players.LocalPlayer
-	if not dummyAe then
-		dummyAe = avatarrender.create(lp.UserId, avatarLocalFolder)
-	end
-	local ae = dummyAe :: avatarrender.AvatarEnt
+	dummyUp = true
+	local ae = avatarLayer.ensure(DUMMY_SLOT, lp)
 	if not avatarrender.ready(ae) then
 		return
 	end
@@ -697,6 +520,7 @@ local function updateAvatarDummy()
 	local center = dummyCenter :: vector
 	local origin = center
 	local yawDeg = dummyFaceYaw
+	local vel: vector? = nil
 	local yawAttr = workspace:GetAttribute("RQDBG_AvatarDummyYaw")
 	if workspace:GetAttribute("RQDBG_AvatarDummyWalk") == true then
 		-- orbit: ~200 qu/s so the measured-speed run threshold engages
@@ -704,19 +528,41 @@ local function updateAvatarDummy()
 		local a = c.time * w
 		origin = center + vector.create(math.cos(a) * r, math.sin(a) * r, 0)
 		yawDeg = math.deg(a) + 90 -- face along the orbit tangent
+	elseif workspace:GetAttribute("RQDBG_AvatarDummyVel") == true then
+		-- velocity path (QW): hold the origin still and feed a synthetic
+		-- forward velocity, so the run anim must come from velocity alone
+		vel = vector.create(math.cos(math.rad(yawDeg)) * 200, math.sin(math.rad(yawDeg)) * 200, 0)
 	elseif workspace:GetAttribute("RQDBG_AvatarDummySpin") == true then
 		yawDeg = c.time * 45 -- turntable for all-angle inspection
 	elseif typeof(yawAttr) == "number" then
 		yawDeg = yawAttr
 	end
+	local dead = workspace:GetAttribute("RQDBG_AvatarDummyDead") == true
+	local swim = workspace:GetAttribute("RQDBG_AvatarDummySwim") == true
 	avatarrender.setVisible(ae, true)
-	avatarrender.update(ae, origin, vector.create(0, yawDeg, 0), c.time)
 	local effects = 0
-	if workspace:GetAttribute("RQDBG_AvatarDummyFire") == true and c.time > dummyNextFire then
+	if c.time > dummyNextFire then
 		dummyNextFire = c.time + 0.7
-		effects = 2 -- EF_MUZZLEFLASH: light + burst + recoil preview
+		if workspace:GetAttribute("RQDBG_AvatarDummyFire") == true then
+			effects = 2 -- EF_MUZZLEFLASH: light + burst + recoil preview
+		end
+		if workspace:GetAttribute("RQDBG_AvatarDummyPain") == true then
+			avatarrender.flashPain(ae, c.time)
+		end
 	end
-	updateAvatarWeapon(DUMMY_SLOT, lp, ae, effects)
+	local colAttr = workspace:GetAttribute("RQDBG_AvatarDummyColors")
+	if typeof(colAttr) == "number" and colAttr ~= 0 then
+		avatarrender.setTeamColors(ae, avatarLayer.shirtColor(colAttr), avatarLayer.pantsColor(colAttr))
+	else
+		avatarrender.setTeamColors(ae, nil, nil)
+	end
+	avatarrender.setLight(ae, entityLight(origin))
+	avatarrender.update(ae, origin, vector.create(0, yawDeg, 0), c.time, dead, swim, vel)
+	if dead then
+		avatarLayer.hideWeapon(DUMMY_SLOT)
+	else
+		avatarLayer.updateWeapon(DUMMY_SLOT, lp, ae, effects)
+	end
 end
 
 -- world load on serverinfo
@@ -728,6 +574,9 @@ c.onServerInfo = function()
 	-- loading plaque holds until the first rendered frame of the new level
 	loadingUp = 1
 	hudlib.setLoading(hud, true)
+	-- no frames present while scr_disabled_for_loading in C, so the mouse
+	-- can't turn the view; svc_setangle still applies through setAngles
+	input.setLookLocked(true)
 	particleslib.clear(psys) -- R_ClearParticles on the map change
 	-- release every mesh from the old level SYNCHRONOUSLY. Destroying
 	-- signals are deferred, so ClearAllChildren alone would still hold the
@@ -750,15 +599,8 @@ c.onServerInfo = function()
 	if gunEnt then
 		entrender.destroy(gunEnt)
 	end
-	for _, aw in avatarWeapons do
-		if aw.re then
-			entrender.destroy(aw.re :: entrender.RenderEnt)
-		end
-	end
-	table.clear(avatarWeapons)
-	for num in avatarEnts do
-		hideAvatarEnt(num) -- rigs persist across levels; weapons do not
-	end
+	avatarLayer.destroyWeapons() -- weapon defs are per-level
+	avatarLayer.hideAll() -- rigs persist across levels
 	for _, pool in beamPool do
 		for _, re in pool do
 			entrender.destroy(re)
@@ -781,6 +623,7 @@ c.onServerInfo = function()
 		img:Destroy()
 	end
 	table.clear(forgedSkins)
+	table.clear(forgeFailed)
 	gunSkinApplied = nil
 	table.clear(beams)
 	table.clear(beamDefs)
@@ -906,9 +749,11 @@ c.onServerInfo = function()
 end
 
 c.print = function(s: string)
-	hudlib.print(hud, s, c.time)
-	consolelib.print(con, s)
-	print("[q] " .. s)
+	-- wire prints arrive in pieces (QC sprints "You got the " and
+	-- "nails\n" separately): the Con_Print append path joins them
+	hudlib.printCon(hud, s, c.time)
+	consolelib.printCon(con, s)
+	print("[q] " .. s:gsub("\n$", ""))
 end
 
 -- Chat compliance: player speech must pass Roblox text filtering, so
@@ -977,6 +822,9 @@ local currentViewsize = 100 -- screen.c viewsize (sb_lines)
 local pitchDrift = viewlib.newPitchDrift()
 local lastDriftPitch: number? = nil
 local lastForwardmove = 0
+-- V_RenderView pause gate: C only recomputes the refdef when not paused
+-- (view.c `if (!cl.paused) V_CalcRefdef()`), freezing bob/drift/kick decay
+local lastRefdef: any = nil
 -- view.c cshift_empty {130,80,50,0}: what CONTENTS_EMPTY looks like;
 -- the v_cshift command edits it
 local cshiftEmpty = { 130, 80, 50, 0 }
@@ -1177,7 +1025,8 @@ execCommand = function(line: string)
 		local v = tonumber(args)
 		if v then
 			currentViewsize = math.clamp(v, 30, 120)
-			hudlib.setViewsize(hud, currentViewsize)
+			hudlib.setViewsize(hud, currentViewsize);
+			(c :: any).viewsize = currentViewsize -- calcRefdef gun-z fudge
 			applyFov()
 		end
 		return
@@ -1202,7 +1051,8 @@ execCommand = function(line: string)
 	elseif cmd == "sizeup" or cmd == "sizedown" then
 		-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
 		currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
-		hudlib.setViewsize(hud, currentViewsize)
+		hudlib.setViewsize(hud, currentViewsize);
+		(c :: any).viewsize = currentViewsize -- calcRefdef gun-z fudge
 		applyFov()
 		return
 	elseif cmd == "v_cshift" then
@@ -1740,11 +1590,12 @@ local UserInputService = game:GetService("UserInputService")
 local directorUiOpen = false
 local tweaksUiOpen = false
 local pauseUiOpen = false
+local lbUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen or tweaksUiOpen or pauseUiOpen then
-		input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
+	if directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen then
+		input.freeMouse() -- the admin/tweaks/pause menus + leaderboard are clickable UI
 	end
 end
 
@@ -1831,6 +1682,41 @@ require(script.tweaksui).attach({
 	end,
 })
 -- ===== end tweaks menu =====
+
+-- ===== leaderboard UI (PRODUCT layer): daily/weekly/all-time boards
+-- from the stats pipeline. REMOVAL: see src/server/stats.luau. =====
+require(script.leaderboardui).attach({
+	playerGui = playerGui,
+	net = net,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		lbUiOpen = open
+		refreshInputMode()
+	end,
+})
+-- ===== end leaderboard UI =====
+
+-- ===== touch + gamepad controls (PRODUCT layer): buttons run console
+-- lines through the bind exec, sticks feed input's analog hooks. See
+-- src/client/controls.luau for the removal note. =====
+require(script.controls).attach({
+	playerGui = playerGui,
+	exec = execLine,
+	isUiOpen = function()
+		return con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen or pauseUiOpen or tweaksUiOpen
+	end,
+	menuKey = function(key: Enum.KeyCode): boolean
+		if not menulib.isOpen(mnu) then
+			return false
+		end
+		menulib.handleKey(mnu, { KeyCode = key, UserInputType = Enum.UserInputType.Keyboard } :: any)
+		refreshInputMode()
+		return true
+	end,
+})
+-- ===== end touch + gamepad controls =====
 
 -- console text entry straight from key codes (no TextBox: Roblox chat and
 -- CoreGui focus never get involved). GetStringForKeyCode gives the layout
@@ -1951,6 +1837,7 @@ dbgAtlas.OnInvoke = function(action: string, arg: string?)
 				lightatlaslib.writeRegion(atlas, r, function()
 					return 264
 				end)
+				lightatlaslib.flushDirty(atlas) -- writes batch to dirty rects now
 				return "rewrote bright"
 			end
 		end
@@ -2058,6 +1945,8 @@ for _, l in {
 	"bind d +moveright",
 	"bind c +movedown",
 	"bind \\ togglemenu",
+	-- Tab toggles the Roblox player list at CoreScript priority and
+	-- can't be unbound, so the scoreboard moves off it
 	"unbind tab",
 	"unbind t",
 	"bind r +showscores",
@@ -2080,6 +1969,16 @@ local sendAccumulator = 0
 local lastStyleFrame = -1
 local diagAccumulator = 0
 local statics_spawned = false
+local activeDlightScratch: { lightatlaslib.Dlight } = {}
+
+-- V_UpdatePalette scratch: constant contents shifts + per-frame mutable
+-- damage/bonus entries, so the tint pass allocates nothing per frame
+local SHIFT_WATER = { 130, 80, 50, 128 }
+local SHIFT_SLIME = { 0, 25, 5, 150 }
+local SHIFT_LAVA = { 255, 80, 0, 150 }
+local shiftsScratch: { { number } } = {}
+local damageShiftScratch = { 0, 0, 0, 0 }
+local bonusShiftScratch = { 215, 186, 69, 0 }
 
 local turtleCount = 0
 local lastReceivedAt = 0
@@ -2178,10 +2077,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 
 	-- interpolate entities
-	cllib.relinkEntities(c, function(mi: number): number
-		local def = getModelDef(mi)
-		return if def then def.flags else 0
-	end)
+	cllib.relinkEntities(c, modelFlagsFor)
 
 	-- R_AnimateLight: lightstyle values tick at 10Hz from the style strings
 	local styleFrame = math.floor(c.time * 10)
@@ -2247,7 +2143,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	-- CL_DecayLights + the dynamic light surface pass
 	do
-		local active: { lightatlaslib.Dlight } = {}
+		local active = activeDlightScratch -- reused per frame
+		table.clear(active)
 		for _, dl in dlights do
 			if dl.die >= c.time and dl.radius > 0 then
 				dl.radius -= dt * dl.decay
@@ -2302,7 +2199,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if re then
 				setEntVisible(re, false)
 			end
-			hideAvatarEnt(num)
+			avatarLayer.hide(num)
 			continue
 		end
 
@@ -2323,46 +2220,46 @@ RunService.Heartbeat:Connect(function(dt: number)
 			end
 			re.modelindex = e.modelindex
 			renderEnts[num] = re
-			tagMuzzleOrigin(re, e)
+			if avatarsOn() then
+				avatarLayer.tagMuzzle(re, c.model_precache[e.modelindex + 1], e.origin)
+			end
 		end
 		setEntVisible(re :: entrender.RenderEnt, true)
 
 		local def = getModelDef(e.modelindex) :: entrender.ModelDef
 		local rr = re :: entrender.RenderEnt
 
-		-- Roblox avatars mode: a LIVE player entity renders as its avatar
-		-- rig (player.mdl death/corpse frames are 41..102 — attacks sit
-		-- above them, so alive covers both bands)
+		-- Roblox avatars mode: a player entity renders as its avatar rig.
+		-- player.mdl death/corpse frames are 41..102 (attacks sit above,
+		-- pain is 29..40): in the death band the rig plays a scripted
+		-- tip-over and holds the lying pose as the corpse. Entities above
+		-- maxclients wearing player.mdl in the death band are bodyque
+		-- corpses (CopyToBodyQue) — their colormap carries the owner's
+		-- slot, so they keep the owner's avatar too.
 		local avatarPlayer: Player? = nil
-		if
-			avatarsOn()
-			and num <= c.maxclients
-			and c.model_precache[e.modelindex + 1] == "progs/player.mdl"
-			and (e.frame < 41 or e.frame > 102)
-		then
-			avatarPlayer = playerForSlot(num)
+		local avatarDead = false
+		if avatarsOn() and c.model_precache[e.modelindex + 1] == "progs/player.mdl" then
+			if num <= c.maxclients then
+				avatarPlayer = avatarLayer.playerForSlot(num)
+				avatarDead = avatarLayer.isDeathFrame(e.frame)
+			elseif avatarLayer.isDeathFrame(e.frame) and e.colormap > 0 and e.colormap <= c.maxclients then
+				avatarPlayer = avatarLayer.playerForSlot(e.colormap)
+				avatarDead = true
+			end
 		end
 		if avatarPlayer then
-			local ae = avatarEnts[num]
-			if not ae or ae.userId ~= avatarPlayer.UserId then
-				if ae then
-					avatarrender.destroy(ae)
-				end
-				ae = avatarrender.create(avatarPlayer.UserId, avatarLocalFolder)
-				avatarEnts[num] = ae :: avatarrender.AvatarEnt
+			local colors: number? = nil
+			if e.colormap > 0 and e.colormap <= c.maxclients and c.scores[e.colormap] then
+				colors = c.scores[e.colormap].colors
 			end
-			local ae2 = ae :: avatarrender.AvatarEnt
-			if avatarrender.ready(ae2) then
+			if avatarLayer.updatePlayer(num, avatarPlayer :: Player, e.origin, e.angles, e.frame, e.effects, colors, avatarDead) then
 				setEntVisible(rr, false)
-				avatarrender.setVisible(ae2, true)
-				avatarrender.update(ae2, e.origin, e.angles, c.time)
-				updateAvatarWeapon(num, avatarPlayer :: Player, ae2, e.effects)
 				applyEntityEffects(num, e) -- muzzleflash/dlights still fire
 				continue
 			end
 			-- rig still loading: fall through to the alias renderer
 		else
-			hideAvatarEnt(num)
+			avatarLayer.hide(num)
 		end
 
 		if rr.kind == "alias" then
@@ -2370,19 +2267,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 			if e.colormap > 0 and e.colormap <= c.maxclients and c.scores[e.colormap] then
 				colors = c.scores[e.colormap].colors
 			end
-			entrender.updateAlias(rr, def, muzzleBlendedOrigin(rr, e), e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
+			entrender.updateAlias(rr, def, avatarLayer.blendOrigin(rr, e.origin), e.angles, e.frame, e.skinnum, e.syncbase, c.time, colors)
 			-- R_AliasSetupLighting: dynamic lights add straight onto the
 			-- lightmap sample
-			local elight = lightpoint.at(worldModels[1], e.origin, styleValueFor)
-			for _, dl in dlights do
-				if dl.die >= c.time and dl.radius > 0 then
-					local add = dl.radius - vector.magnitude(e.origin - dl.origin)
-					if add > 0 then
-						elight += add
-					end
-				end
-			end
-			entrender.setLight(rr, elight)
+			entrender.setLight(rr, entityLight(e.origin))
 
 			-- CL_RelinkEntities: entity effects
 			applyEntityEffects(num, e)
@@ -2426,8 +2314,14 @@ RunService.Heartbeat:Connect(function(dt: number)
 	updateBeams()
 	updateAvatarDummy() -- RQDBG debug hook; no-op unless the attr is set
 
-	-- view / camera
-	local refdef = viewlib.calcRefdef(c, dt)
+	-- view / camera (frozen while paused, per the V_RenderView gate)
+	local refdef
+	if c.paused and lastRefdef then
+		refdef = lastRefdef
+	else
+		refdef = viewlib.calcRefdef(c, dt)
+		lastRefdef = refdef
+	end
 	local forward, right, up = mathlib.angleVectors(refdef.viewangles)
 	if chase_active and worldModels[1] then
 		-- Chase_Update: pull back 100, up 16; re-pitch at the traced
@@ -2507,6 +2401,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	if loadingUp == 2 then
 		loadingUp = 0
 		hudlib.setLoading(hud, false)
+		input.setLookLocked(false)
 	end
 	hudlib.setPaused(hud, c.paused == true)
 	hudlib.updateOverlays(hud, c)
@@ -2519,20 +2414,21 @@ RunService.Heartbeat:Connect(function(dt: number)
 	c.cshift_damage_percent = math.max(c.cshift_damage_percent - dt * 150, 0)
 	c.cshift_bonus_percent = math.max(c.cshift_bonus_percent - dt * 100, 0)
 
-	local shifts: { { number } } = {} -- {r,g,b,percent}
+	local shifts = shiftsScratch -- {r,g,b,percent}, reused per frame
+	table.clear(shifts)
 	local viewLeaf = bsplib.pointInLeaf(refdef.vieworg, worldModels[1])
 	do
 		-- contents shift from the view leaf (V_SetContentsColor); empty
 		-- contents use cshift_empty, which the v_cshift command edits
 		local cont = viewLeaf.contents
 		if cont == -3 then -- water
-			table.insert(shifts, { 130, 80, 50, 128 })
+			table.insert(shifts, SHIFT_WATER)
 		elseif cont == -4 then -- slime
-			table.insert(shifts, { 0, 25, 5, 150 })
+			table.insert(shifts, SHIFT_SLIME)
 		elseif cont == -5 then -- lava
-			table.insert(shifts, { 255, 80, 0, 150 })
+			table.insert(shifts, SHIFT_LAVA)
 		elseif cshiftEmpty[4] > 0 then
-			table.insert(shifts, { cshiftEmpty[1], cshiftEmpty[2], cshiftEmpty[3], cshiftEmpty[4] })
+			table.insert(shifts, cshiftEmpty)
 		end
 	end
 	-- S_UpdateAmbientSounds: leaf-based water/sky ambience
@@ -2544,10 +2440,15 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 	if c.cshift_damage_percent > 0 then
 		local dc = c.cshift_damage_color
-		table.insert(shifts, { dc.x, dc.y, dc.z, c.cshift_damage_percent })
+		damageShiftScratch[1] = dc.x
+		damageShiftScratch[2] = dc.y
+		damageShiftScratch[3] = dc.z
+		damageShiftScratch[4] = c.cshift_damage_percent
+		table.insert(shifts, damageShiftScratch)
 	end
 	if c.cshift_bonus_percent > 0 then
-		table.insert(shifts, { 215, 186, 69, c.cshift_bonus_percent })
+		bonusShiftScratch[4] = c.cshift_bonus_percent
+		table.insert(shifts, bonusShiftScratch)
 	end
 
 	if #shifts > 0 then

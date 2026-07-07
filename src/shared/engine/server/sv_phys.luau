@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Server physics — port of WinQuake sv_phys.c: the movetype simulation
 -- (pushers, toss/bounce, step monsters, walking players) driven each frame
 -- by SV_Physics.
@@ -120,20 +121,28 @@ function sv_phys.clipVelocity(vin: vector, normal: vector, overbounce: number): 
 
 	local backoff = vector.dot(vin, normal) * overbounce
 
-	local function comp(inv: number, n: number): number
-		local out = inv - n * backoff
-		if out > -STOP_EPSILON and out < STOP_EPSILON then
-			out = 0
-		end
-		return out
+	local ox = vin.x - normal.x * backoff
+	local oy = vin.y - normal.y * backoff
+	local oz = vin.z - normal.z * backoff
+	if ox > -STOP_EPSILON and ox < STOP_EPSILON then
+		ox = 0
 	end
-	return blocked, vector.create(comp(vin.x, normal.x), comp(vin.y, normal.y), comp(vin.z, normal.z))
+	if oy > -STOP_EPSILON and oy < STOP_EPSILON then
+		oy = 0
+	end
+	if oz > -STOP_EPSILON and oz < STOP_EPSILON then
+		oz = 0
+	end
+	return blocked, vector.create(ox, oy, oz)
 end
 
 --------------------------------------------------------------------------
 -- SV_FlyMove
 
 -- Returns (clipflags, steptrace?): 1 = floor, 2 = wall/step, 4 = dead stop
+-- planes is C's `vec3_t planes[MAX_CLIP_PLANES]` (stack, but flyMove never
+-- nests: no QC path called from impact() re-enters it)
+local flyPlanes: { vector } = {}
 function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantSteptrace: boolean): (number, world.Trace?)
 	local w = svr.world
 	local numbumps = 4
@@ -141,7 +150,8 @@ function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantS
 	local blocked = 0
 	local original_velocity = vmlib.edVector(ed, ent.velocity)
 	local primal_velocity = original_velocity
-	local planes: { vector } = {}
+	local planes = flyPlanes
+	table.clear(planes)
 	local steptrace: world.Trace? = nil
 
 	local time_left = time
@@ -257,12 +267,18 @@ function sv_phys.flyMove(svr: svlib.Server, ed: vmlib.Edict, time: number, wantS
 	return blocked, steptrace
 end
 
--- SV_AddGravity
+-- SV_AddGravity (fielddef offset resolved once per progs, not per
+-- entity per tick — this runs for every TOSS/STEP entity every frame)
+local gravdefProgs: any, gravdefOfs: number? = nil, nil
 function sv_phys.addGravity(svr: svlib.Server, ed: vmlib.Edict)
 	local ent_gravity = 1.0
-	local gravdef = svr.vm.progs.fielddefsByName["gravity"]
-	if gravdef then
-		local v = vmlib.edFloat(ed, gravdef.ofs)
+	if gravdefProgs ~= svr.vm.progs then
+		gravdefProgs = svr.vm.progs
+		local gravdef = svr.vm.progs.fielddefsByName["gravity"]
+		gravdefOfs = if gravdef then gravdef.ofs else nil
+	end
+	if gravdefOfs then
+		local v = vmlib.edFloat(ed, gravdefOfs)
 		if v ~= 0 then
 			ent_gravity = v
 		end
@@ -842,10 +858,12 @@ function sv_phys.physics(svr: svlib.Server)
 	local vm = svr.vm
 	local g = vm.globals
 
-	-- let the progs know that a new frame has started
+	-- let the progs know that a new frame has started (host.c writes
+	-- pr_global_struct->frametime each Host_ServerFrame before physics)
 	buffer.writei32(g, glob.self * 4, 0)
 	buffer.writei32(g, glob.other * 4, 0)
 	buffer.writef32(g, glob.time * 4, svr.time)
+	buffer.writef32(g, glob.frametime * 4, svr.frametime)
 	vmlib.exec(vm, vmlib.globalInt(vm, glob.StartFrame))
 
 	-- treat each object in turn

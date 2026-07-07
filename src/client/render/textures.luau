@@ -214,14 +214,31 @@ function textures.translatePixels(pixels: buffer, count: number, colors: number)
 	return out
 end
 
+-- Animated-frame scratch: the 10Hz turb/sky recompose used to allocate a
+-- fresh RGBA buffer per tick per texture (sky 256x128 = 131KB). Reused
+-- per byte-size instead; every byte is rewritten each call. The returned
+-- buffer is only valid until the next *FramePixels call of the same size
+-- (both callers upload via WritePixelsBuffer immediately).
+local frameScratch: { [number]: buffer } = {}
+local function scratchBuf(size: number): buffer
+	local b = frameScratch[size]
+	if not b then
+		b = buffer.create(size)
+		frameScratch[size] = b
+	end
+	return b
+end
+local sinxScratch: { number } = {}
+local sinyScratch: { number } = {}
+
 -- Turbulent water/lava warp (D_DrawTurbulent look): the texture scrolls
 -- through a sine displacement on both axes.
 -- pure pixel half (lune-testable); writeTurbFrame uploads it
 function textures.turbFramePixels(pixels: buffer, w: number, h: number, pal: Palette, time: number): buffer
-	local out = buffer.create(w * h * 4)
+	local out = scratchBuf(w * h * 4)
 	local pr, pg, pb = pal.r, pal.g, pal.b
-	local sinx = table.create(w)
-	local siny = table.create(h)
+	local sinx = sinxScratch -- reads bounded by w/h below
+	local siny = sinyScratch
 	for x = 0, w - 1 do
 		sinx[x + 1] = math.floor(8 * math.sin(2 * math.pi * (x / 32) + time * 2) + 0.5)
 	end
@@ -258,7 +275,7 @@ function textures.skyFramePixels(pixels: buffer, w: number, h: number, pal: Pale
 	if half < 1 then
 		return nil
 	end
-	local out = buffer.create(w * h * 4)
+	local out = scratchBuf(w * h * 4)
 	local pr, pg, pb = pal.r, pal.g, pal.b
 	local shiftFront = math.floor(time * 16) % half
 	local shiftBack = math.floor(time * 8) % half

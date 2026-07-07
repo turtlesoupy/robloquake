@@ -42,4 +42,39 @@ t.eq(director.winner(c, { 1, 1, 1 }, "fb"), "dm4", "tie breaks toward rotation o
 t.eq(director.winner(c, { 0, 0, 0 }, "fb"), "fb", "zero votes -> fallback")
 t.eq(director.winner({}, {}, nil), nil, "no candidates, no fallback -> nil")
 
+-- callvote: proposal validation against the VOTABLE view layer
+local ml = director.parseMaplist("dm3 dm4 dm6")
+local p1, e1 = director.validateProposal(ml, "map", "dm4")
+t.eq(e1, nil, "rotation map proposal accepted")
+t.eq((p1 :: any).kind, "map", "map proposal kind")
+t.eq((p1 :: any).desc, "map dm4", "map proposal desc")
+local p2, e2 = director.validateProposal(ml, "map", "e1m1")
+t.eq(p2, nil, "off-rotation map rejected")
+t.eq(e2 ~= nil, true, "off-rotation map has a reason")
+t.eq((director.validateProposal(ml, "map", "dm4; rm -rf")), nil, "map name pattern enforced")
+local p3 = director.validateProposal(ml, "fraglimit", "30")
+t.eq((p3 :: any).value, 30, "rule proposal coerces number")
+t.eq((p3 :: any).desc, "fraglimit 30", "rule proposal desc")
+t.eq((director.validateProposal(ml, "fraglimit", 1000)), nil, "rule out of range rejected")
+t.eq((director.validateProposal(ml, "fraglimit", 2)), nil, "rule below floor rejected")
+local p4 = director.validateProposal(ml, "roblox_avatars", false)
+t.eq((p4 :: any).desc, "roblox_avatars off", "toggle proposal desc")
+t.eq((director.validateProposal(ml, "roblox_avatars", "yes")), nil, "toggle requires boolean")
+t.eq((director.validateProposal(ml, "deathmatch", 0)), nil, "game-defining rule not votable")
+t.eq((director.validateProposal(ml, nil, 1)), nil, "nil key rejected")
+
+-- callvote: early decision against present players
+t.eq(director.cvDecided(2, 0, 3), "pass", "strict majority of present passes early")
+t.eq(director.cvDecided(1, 0, 3), nil, "half is not enough to pass early")
+t.eq(director.cvDecided(1, 2, 4), "fail", "no reaching half fails early")
+t.eq(director.cvDecided(0, 0, 4), nil, "no votes yet -> undecided")
+t.eq(director.cvDecided(1, 0, 1), "pass", "lone player passes own vote")
+t.eq(director.cvDecided(2, 2, 4), "fail", "even split fails early (majority impossible)")
+
+-- callvote: expiry decided by votes cast
+t.eq(director.cvExpired(2, 1), true, "majority of cast passes at expiry")
+t.eq(director.cvExpired(1, 1), false, "tie fails at expiry")
+t.eq(director.cvExpired(0, 0), false, "zero participation fails at expiry")
+t.eq(director.cvExpired(1, 0), true, "single yes passes at expiry")
+
 t.finish("director")

@@ -81,6 +81,7 @@ export type Client = {
 	statics: { ClEntity },
 	lightstyles: { [number]: string },
 	scores: { Score },
+	scoresGen: number, -- bumped on any scores mutation; HUD rebuild gate
 	stats: { [number]: number },
 	items: number,
 	item_gettime: { [number]: number },
@@ -194,6 +195,7 @@ function cl.new(playerName: string, color: number): Client
 		statics = {},
 		lightstyles = {},
 		scores = {},
+		scoresGen = 0,
 		stats = table.create(32, 0) :: { [number]: number }, -- C: int stats[MAX_CL_STATS] (zeroed)
 		items = 0,
 		item_gettime = {},
@@ -341,6 +343,7 @@ local function parseServerInfo(c: Client, r: msg.Reader)
 	for i = 1, c.maxclients do
 		c.scores[i] = { name = "", frags = 0, colors = 0 }
 	end
+	c.scoresGen = (c.scoresGen or 0) + 1 -- HUD frag/scoreboard rebuild gate
 
 	c.gametype = msg.readByte(r)
 	c.levelname = msg.readString(r)
@@ -642,12 +645,15 @@ function cl.parseServerMessage(c: Client, data: buffer)
 		elseif cmd == proto.svc_updatename then
 			local i = msg.readByte(r)
 			c.scores[i + 1].name = msg.readString(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_updatefrags then
 			local i = msg.readByte(r)
 			c.scores[i + 1].frags = msg.readShort(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_updatecolors then
 			local i = msg.readByte(r)
 			c.scores[i + 1].colors = msg.readByte(r)
+			c.scoresGen += 1
 		elseif cmd == proto.svc_particle then
 			local org = vector.create(msg.readCoord(r), msg.readCoord(r), msg.readCoord(r))
 			local dir = vector.create(msg.readChar(r), msg.readChar(r), msg.readChar(r)) * (1 / 16)
@@ -741,6 +747,18 @@ local function lerpPoint(c: Client): number
 	return frac
 end
 
+-- CL_LerpAngle helper, module-level so relinkEntities doesn't allocate a
+-- closure per entity per frame
+local function lerpAngle(new: number, old: number, f: number): number
+	local d = new - old
+	if d > 180 then
+		d -= 360
+	elseif d < -180 then
+		d += 360
+	end
+	return old + f * d
+end
+
 -- CL_RelinkEntities. modelFlags maps a precache index to the model's EF_*
 -- flags (EF_ROTATE etc.), provided by the renderer's model registry.
 function cl.relinkEntities(c: Client, modelFlags: (modelindex: number) -> number)
@@ -796,16 +814,7 @@ function cl.relinkEntities(c: Client, modelFlags: (modelindex: number) -> number
 
 			local a1 = e.msg_angles[1]
 			local a2 = e.msg_angles[2]
-			local function lerpAngle(new: number, old: number): number
-				local d = new - old
-				if d > 180 then
-					d -= 360
-				elseif d < -180 then
-					d += 360
-				end
-				return old + f * d
-			end
-			e.angles = vector.create(lerpAngle(a1.x, a2.x), lerpAngle(a1.y, a2.y), lerpAngle(a1.z, a2.z))
+			e.angles = vector.create(lerpAngle(a1.x, a2.x, f), lerpAngle(a1.y, a2.y, f), lerpAngle(a1.z, a2.z, f))
 		end
 
 		-- rotate binary objects locally

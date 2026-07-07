@@ -121,6 +121,16 @@ for _ = 1, 60 do
 end
 t.check(A.sc.spawned == true and B.sc.spawned == true, "both clients completed the QW handshake")
 
+-- SV_Spawn_f seeds the mod-declared QC gravity/maxspeed fields (audit
+-- D10): Threewave's grapple reads self.gravity before assigning it
+local optfield = svr.qdefs.optfield or {}
+t.check(optfield.gravity ~= nil, "threewave declares the QC gravity field")
+t.check(vmlib.edFloat(A.sc.edict, optfield.gravity) == 1, "spawn seeded self.gravity = 1")
+t.check(
+	optfield.maxspeed ~= nil and vmlib.edFloat(A.sc.edict, optfield.maxspeed) == 320,
+	"spawn seeded self.maxspeed = sv_maxspeed"
+)
+
 local function cmd(opts: { yaw: number?, buttons: number?, impulse: number?, forward: number? }?)
 	local o = opts or {}
 	return {

@@ -1,0 +1,17 @@
+Con_CheckResize live verification (2026-07-07, QW boot, ctf preset, Studio)
+
+Formula under test: cols = clamp(floor(viewportWidth / (8*SCALE)) - 3, 38, 120)
+with SCALE=2 (16px chars) — WinQuake console.c: con_linewidth = (vid.conwidth >> 3) - 3.
+
+Probe (execute_luau, Client datamodel):
+  viewport=1244x687  consoleWidthPx=1184  cols=74     (1244/16 - 3 = 74.75 -> 74)
+  notify row width=1184px = 74 cols                    (hud notify tracks the same count)
+
+Console scrollback line captured at the new width (was wrapping at the old
+fixed 64 cols; now wraps at 74 — a 78-char server print breaks once, as C would):
+  "You are the host - press P (or the gear button, top right) for match contr" / "ols"
+
+Rebuild-on-resize path: checkResize runs every console.update (SCR_UpdateScreen
+cadence, as C) and hud.update; rows are rebuilt only when the column count
+changes. Existing scrollback is not re-flowed, matching C's truncate-copy in
+Con_CheckResize.

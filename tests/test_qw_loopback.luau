@@ -214,6 +214,7 @@ t.check(sawNail, "svc_nails parsed into cl.nails (CL_ParseProjectiles)")
 local fragsBefore = cl.players[0] and cl.players[0].frags or 0
 qwcl.sendStringCmd(cl, "kill")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr) -- boot pairs one reply per packet (lockstep)
 for _ = 1, 3 do
 	tick(0)
 end
@@ -250,21 +251,35 @@ t.eq(cl.lightstyles[11], "azazaza", "runtime PF_lightstyle broadcast reached the
 
 --------------------------------------------------------------------------
 -- changelevel: SV_SaveSpawnparms + full re-handshake over the wire
--- (mirrors qwserver.luau's changelevelTo consumer)
+-- (mirrors qwserver.luau's changelevelTo consumer: SV_Map_f stuffs
+-- changing/reconnect onto the reliable stream and the serverdata rides
+-- the paired reply to the client's "new" — an unsolicited push here
+-- skews the 1:1 sequence lockstep the delta-frame lookup is keyed by)
 vmlib.edSetFloat(player, ent.ammo_nails, 142)
 vmlib.edSetFloat(player, ent.items, bit32.bor(vmlib.edFloat(player, ent.items) // 1, 4)) -- IT_NAILGUN
+
+-- deliver the in-flight old-level frame before the world goes away
+for _, packet in pending do
+	qwcl.processPacket(cl, packet)
+end
+pending = {}
 
 qwsv.saveSpawnparms(svr)
 qwsv.spawnServer(svr, "e1m2")
 t.check(svr.active, "qw server respawned on e1m2")
 sclient.spawned = false
-qwsv.newF(svr, sclient)
-sclient.send_message = true
-qwsv.replyToClient(svr, sclient)
+qwsv.broadcastCommand(svr, "changing\n")
+qwsv.broadcastCommand(svr, "reconnect\n")
 
--- drain and re-run the handshake exactly like the first connect
-pending = {}
+-- the next server frame flushes the stufftext; the client's own move
+-- is the paired packet whose reply delivers it, and its "new" answer
+-- restarts the handshake exactly like the first connect
+tick(0)
 for _ = 1, 20 do
+	for _, packet in pending do
+		qwcl.processPacket(cl, packet)
+	end
+	pending = {}
 	while #toClient > 0 do
 		local packet = table.remove(toClient, 1) :: buffer
 		qwcl.processPacket(cl, packet)
@@ -287,6 +302,32 @@ local player2 = sclient.edict
 t.check(bit32.band(vmlib.edFloat(player2, svr.qdefs.ent.items) // 1, 4) ~= 0, "qw nailgun carried")
 t.eq(vmlib.edFloat(player2, svr.qdefs.ent.ammo_nails), 142, "qw nail count carried")
 
+-- regression (the CTF playtest bug): the delta sequence spaces must
+-- still be locked after the switch — play must produce zero 'from
+-- mismatch' warnings and prediction must converge on the new level
+local mismatches = 0
+local preDprint = cl.dprint
+cl.dprint = function(s: string)
+	if s:find("mismatch") then
+		mismatches += 1
+	end
+end
+yaw = vmlib.edVector(player2, ent.angles).y
+local spawnOrg2 = vmlib.edVector(player2, ent.origin)
+for _ = 1, 20 do
+	tick(400)
+end
+for _ = 1, 25 do
+	tick(0)
+end
+cl.dprint = preDprint
+t.eq(mismatches, 0, "no delta from-mismatch after changelevel (sequence lockstep held)")
+t.check(cl.validsequence > 0, "delta stream validated after changelevel")
+t.eq(cl.state, "active", "client active again after changelevel")
+t.check(vector.magnitude(vmlib.edVector(player2, ent.origin) - spawnOrg2) > 50, "player ran on the new level")
+local err2 = vector.magnitude(cl.simorg - vmlib.edVector(player2, ent.origin))
+t.check(err2 < 1.0, `post-changelevel prediction converged (|simorg - server| = {string.format("%.4f", err2)})`)
+
 --------------------------------------------------------------------------
 -- host tools: SV_ConSay_f reaches the client; SV_Kick_f drops it
 cl.prints = {}
@@ -306,6 +347,7 @@ t.check(sawSay, "conSay reached the client (PRINT_CHAT)")
 cl.prints = {}
 qwcl.sendStringCmd(cl, "say hello all")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr)
 tick(0)
 tick(0)
 local sawChat = false
@@ -318,6 +360,7 @@ t.check(sawChat, "SV_Say_f broadcast the chat line at PRINT_CHAT")
 
 qwcl.sendStringCmd(cl, "pause")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr)
 tick(0)
 t.check(svr.paused == true, "SV_TogglePause paused the server")
 local pausedTime = svr.time
@@ -326,16 +369,19 @@ tick(0)
 t.eq(svr.time, pausedTime, "server time frozen while paused (ServerPaused gate)")
 qwcl.sendStringCmd(cl, "pause")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr)
 tick(0)
 t.check(not svr.paused, "second pause unpaused")
 
 qwcl.sendStringCmd(cl, "setinfo topcolor 4")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr)
 tick(0)
 t.eq(sclient.userinfo.topcolor, "4", "SV_SetInfo_f updated the server-side userinfo")
 
 qwcl.sendStringCmd(cl, "pings")
 qwcl.flush(cl)
+qwsv.sendClientMessages(svr)
 tick(0)
 tick(0)
 t.check(cl.players[0] ~= nil and cl.players[0].ping ~= nil, "SV_Pings_f answered with svc_updateping")
@@ -365,6 +411,7 @@ do
 	cl.stufftext = ""
 	qwcl.parseServerMessage(cl, msg.reader(pkt))
 	qwcl.flush(cl)
+	qwsv.sendClientMessages(svr)
 	tick(0)
 	t.check(cl.servercount ~= nil, "reconnect: client re-sent new and still tracks servercount")
 end
@@ -413,6 +460,20 @@ do
 	local size0 = out.cursize
 	qwsv.fullClientUpdateToClient(svr, svr.clients[1], svr.clients[1])
 	t.check(out.cursize > size0, "fullClientUpdateToClient writes the update onto the target netchan")
+end
+
+-- late joiner announced to already-connected clients: SVC_DirectConnect
+-- sets sendinfo, SV_UpdateToReliableMessages flushes the full client
+-- update into sv.reliable_datagram (the playtest bug: player 2's name
+-- never reached player 1's scoreboard)
+do
+	t.check(cl.players[1] == nil or (cl.players[1].name or "") == "", "slot 1 empty before the late join")
+	qwsv.connectClient(svr, 2, { name = "latecomer" })
+	t.check(svr.clients[2].sendinfo, "connect sets sendinfo (SVC_DirectConnect)")
+	tick(0)
+	tick(0)
+	t.check(not svr.clients[2].sendinfo, "sendinfo consumed by SV_UpdateToReliableMessages")
+	t.check(cl.players[1] ~= nil and cl.players[1].name == "latecomer", "existing client received the joiner's userinfo (name on the scoreboard)")
 end
 
 

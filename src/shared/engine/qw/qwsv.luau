@@ -27,6 +27,9 @@ local pmovelib = require("./pmove")
 local qwsv = {}
 
 local MAX_CLIENTS = 32
+-- read-only baseline for delta-cmd encoding (writeDeltaUsercmd never
+-- mutates its inputs; a fresh nullCmd per player per reply was garbage)
+local NULL_CMD = qwents.nullCmd()
 
 -- C (int) cast: truncation toward zero (// 1 floors, wrong for negatives)
 local function trunc(x: number): number
@@ -62,9 +65,12 @@ export type Client = {
 	chokecount: number,
 	lossage: number,
 	connection_started: number,
+	last_message: number, -- netchan.last_received (svr.realtime clock)
 	userid: number,
+	sendinfo: boolean, -- at end of frame, send info to all (new connect)
 	send_message: boolean, -- reply owed: one datagram per received packet
 	send: ((packet: buffer) -> ())?, -- transport hook (remote/loopback)
+	address: string?, -- PF_infokey("ip"): transport identity (UserId)
 }
 
 export type ClientFrame = {
@@ -110,6 +116,7 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			sv_spectalk = 1,
 			pausable = 1,
 			registered = 1,
+			timeout = 65, -- sv_main.c: seconds without a packet before drop
 		} :: { [string]: number }
 	do
 		-- register QW cvars directly (cvar.new seeds only the NQ defaults)
@@ -143,7 +150,9 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			chokecount = 0,
 			lossage = 0,
 			connection_started = 0,
+			last_message = 0, -- netchan.last_received (SV_CheckTimeouts)
 			userid = i,
+			sendinfo = false,
 			send_message = false,
 			send = nil,
 		}
@@ -155,9 +164,20 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	-- SV_Localinfo_f's store: operator key/values QC reads via
 	-- infokey(world, ...) when serverinfo has no entry (map rotations etc)
 	svr.localinfo = {}
+	svr.realtime = 0 -- wall clock: accrues across pauses/level changes
 	svr.datagram = msg.newBuf(4096)
 	svr.reliable_datagram = msg.newBuf(4096)
-	svr.signon = msg.newBuf(32768)
+	-- signon is a LIST of <=MAX_DATAGRAM buffers like C (sv_init.c):
+	-- SV_PreSpawn_f streams one per round-trip, so baseline-heavy maps
+	-- never have to fit the whole signon in one reliable message
+	svr.signon = msg.newBuf(1450)
+	svr.signon_buffers = { svr.signon }
+	svr.checkSignonSpace = function(s: any)
+		qwsv.checkSignonSpace(s)
+	end
+	svr.calcPing = function(s: any, cl: any): number
+		return qwsv.calcPing(s, cl)
+	end
 	svr.multicast = msg.newBuf(2048)
 	svr.print = function(s: string)
 		print("[qwsv] " .. s)
@@ -210,21 +230,40 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 			table.remove(svr.fraglog, 1)
 		end
 	end
+	-- name -> 0-based precache index maps (modelIndex runs per client
+	-- per reply against the weaponmodel string; the linear scan was hot).
+	-- Maintained lazily: rebuilt when the list length changed.
+	local soundIndexMap: { [string]: number } = {}
+	local soundIndexFor: any, soundIndexCount = nil, -1
+	local modelIndexMap: { [string]: number } = {}
+	local modelIndexFor: any, modelIndexCount = nil, -1
 	svr.soundIndex = function(_svr: any, sample: string): number?
-		for i, name in svr.sound_precache do
-			if name == sample then
-				return i - 1
+		local list = svr.sound_precache
+		if soundIndexFor ~= list or soundIndexCount ~= #list then
+			table.clear(soundIndexMap)
+			for i, name in list do
+				if soundIndexMap[name] == nil then
+					soundIndexMap[name] = i - 1
+				end
 			end
+			soundIndexFor = list
+			soundIndexCount = #list
 		end
-		return nil
+		return soundIndexMap[sample]
 	end
 	svr.modelIndex = function(_svr: any, name: string): number?
-		for i, n in svr.model_precache do
-			if n == name then
-				return i - 1
+		local list = svr.model_precache
+		if modelIndexFor ~= list or modelIndexCount ~= #list then
+			table.clear(modelIndexMap)
+			for i, n in list do
+				if modelIndexMap[n] == nil then
+					modelIndexMap[n] = i - 1
+				end
 			end
+			modelIndexFor = list
+			modelIndexCount = #list
 		end
-		return nil
+		return modelIndexMap[name]
 	end
 	svr.startParticle = function(_svr: any, org: vector, dir: vector, color: number, count: number)
 		table.insert(svr.soundLog, { particle = true, org = org, color = color, count = count })
@@ -287,9 +326,11 @@ function qwsv.spawnServer(svr: any, mapname: string)
 	svr.brushModels = {}
 	svr.lightstyles = {}
 	svr.phsCache = {}
+	svr.pvsCache = {}
 	msg.clear(svr.datagram)
 	msg.clear(svr.reliable_datagram)
-	msg.clear(svr.signon)
+	svr.signon = msg.newBuf(1450)
+	svr.signon_buffers = { svr.signon }
 	msg.clear(svr.multicast)
 
 	svr.progs = progslib.load(svr.qwprogsBuf, defs.PROGHEADER_CRC_QW)
@@ -430,6 +471,7 @@ function qwsv.createBaseline(svr: any)
 		end
 		svr.baselines[entnum] = base
 
+		qwsv.checkSignonSpace(svr)
 		msg.writeByte(svr.signon, qwp.svc_spawnbaseline)
 		msg.writeShort(svr.signon, entnum)
 		msg.writeByte(svr.signon, base.modelindex)
@@ -513,7 +555,16 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	client.chokecount = 0
 	client.lossage = 0
 	client.connection_started = svr.time
+	client.last_message = svr.realtime or 0
 	client.send_message = false
+	-- C zeroes the whole client_t on connect: ad-hoc fields must not
+	-- leak from the slot's previous occupant (stale flood mute etc.)
+	local c = client :: any
+	c.backbuf = {}
+	c.backbufBytes = 0
+	c.floodTimes = nil
+	c.lockedTill = nil
+	c.old_frags = nil
 
 	local ed = client.edict
 	buffer.fill(ed.fields, 0, 0, svr.progs.entityfields * 4)
@@ -528,6 +579,7 @@ function qwsv.allocClient(svr: any, slot: number, userinfo: { [string]: string }
 	end
 	svr.usercount = (svr.usercount or 0) + 1
 	client.userid = svr.usercount
+	client.sendinfo = true
 	return client
 end
 
@@ -590,6 +642,84 @@ local function calcRoll(angles: vector, velocity: vector): number
 end
 
 -- SV_RunCmd
+-- one-shot per modelindex: a SOLID_BSP edict whose model slot isn't a
+-- brush model (C would Sys_Error the server; we omit it from physents)
+local warnedBadPhysentModel: { [number]: boolean } = {}
+
+-- AddLinksToPmove's areanode recursion, hoisted to module scope so runCmd
+-- doesn't allocate a closure per cmd (C: static function over globals)
+local function addLinksToPmove(
+	node: any,
+	player: vmlib.Edict,
+	ent: any,
+	svr: any,
+	pm: pmovelib.PlayerMove,
+	pmins: vector,
+	pmaxs: vector,
+	physentEdicts: { number }
+)
+	local sentinel = node.solid_edicts
+	local l = sentinel.next
+	while l ~= sentinel do
+		local nxt = l.next
+		local ed = l.ed
+		repeat
+			if ed == player then
+				break
+			end
+			local solid = vmlib.edFloat(ed, ent.solid)
+			if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
+				break
+			end
+			if vmlib.edInt(ed, ent.owner) == player.num then
+				break -- player's own missile
+			end
+			if #pm.physents >= 32 then -- MAX_PHYSENTS
+				break
+			end
+			local amin = vmlib.edVector(ed, ent.absmin)
+			local amax = vmlib.edVector(ed, ent.absmax)
+			if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
+				break
+			end
+			if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
+				break
+			end
+			if solid == qd.SOLID_BSP then
+				local mi = vmlib.edFloat(ed, ent.modelindex)
+				local m = svr.models[mi + 1]
+				if m and m.kind == "brush" then
+					table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
+					table.insert(physentEdicts, ed.num)
+				elseif not warnedBadPhysentModel[mi] then
+					-- C Sys_Errors here ("SOLID_BSP with a non bsp model");
+					-- we stay up but the entity is non-solid to players —
+					-- say so once instead of failing silently
+					warnedBadPhysentModel[mi] = true
+					svr.print(`SOLID_BSP edict {ed.num} has non-brush modelindex {mi}; not solid to players`)
+				end
+			else
+				table.insert(pm.physents, {
+					origin = vmlib.edVector(ed, ent.origin),
+					mins = vmlib.edVector(ed, ent.mins),
+					maxs = vmlib.edVector(ed, ent.maxs),
+				})
+				table.insert(physentEdicts, ed.num)
+			end
+		until true
+		l = nxt
+	end
+	if node.axis == -1 then
+		return
+	end
+	if mathlib.comp(pmaxs, node.axis) > node.dist then
+		addLinksToPmove(node.children[1], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
+	end
+	if mathlib.comp(pmins, node.axis) < node.dist then
+		addLinksToPmove(node.children[2], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
+	end
+end
+
 function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 	local vm = svr.vm
 	local qdefs = svr.qdefs
@@ -662,62 +792,36 @@ function qwsv.runCmd(svr: any, client: Client, ucmd: pmovelib.UserCmd)
 		watertype = 0,
 	}
 
-	-- AddLinksToPmove: solid bsp movers and other players within 256
+	-- AddLinksToPmove: solid bsp movers and other players within 256,
+	-- collected by walking the areanode solid lists like C (sv_user.c
+	-- recursion) instead of scanning every edict per cmd
 	local physentEdicts: { number } = { 0 } -- physent index -> edict num
 	local pmins = pm.origin - vector.create(256, 256, 256)
 	local pmaxs = pm.origin + vector.create(256, 256, 256)
-	for i = 1, vm.num_edicts - 1 do
-		local ed = vm.edicts[i + 1]
-		if ed.free or ed == player then
-			continue
-		end
-		local solid = vmlib.edFloat(ed, ent.solid)
-		if solid ~= qd.SOLID_BSP and solid ~= qd.SOLID_BBOX and solid ~= qd.SOLID_SLIDEBOX then
-			continue
-		end
-		if vmlib.edInt(ed, ent.owner) == player.num then
-			continue -- player's own missile
-		end
-		if #pm.physents >= 32 then -- MAX_PHYSENTS
-			continue
-		end
-		local amin = vmlib.edVector(ed, ent.absmin)
-		local amax = vmlib.edVector(ed, ent.absmax)
-		if amin.x > pmaxs.x or amin.y > pmaxs.y or amin.z > pmaxs.z then
-			continue
-		end
-		if amax.x < pmins.x or amax.y < pmins.y or amax.z < pmins.z then
-			continue
-		end
-		if solid == qd.SOLID_BSP then
-			local mi = vmlib.edFloat(ed, ent.modelindex)
-			local m = svr.models[mi + 1]
-			if m and m.kind == "brush" then
-				table.insert(pm.physents, { model = m.brush :: any, origin = vmlib.edVector(ed, ent.origin) })
-				table.insert(physentEdicts, i)
-			end
-		else
-			table.insert(pm.physents, {
-				origin = vmlib.edVector(ed, ent.origin),
-				mins = vmlib.edVector(ed, ent.mins),
-				maxs = vmlib.edVector(ed, ent.maxs),
-			})
-			table.insert(physentEdicts, i)
-		end
-	end
+	addLinksToPmove(svr.world.areanodes[1], player, ent, svr, pm, pmins, pmaxs, physentEdicts)
 
-	local movevars: pmovelib.MoveVars = {
-		gravity = cvarlib.value(svr.cvars, "sv_gravity"),
-		stopspeed = cvarlib.value(svr.cvars, "sv_stopspeed"),
-		maxspeed = client.maxspeed,
-		spectatormaxspeed = cvarlib.value(svr.cvars, "sv_spectatormaxspeed"),
-		accelerate = cvarlib.value(svr.cvars, "sv_accelerate"),
-		airaccelerate = cvarlib.value(svr.cvars, "sv_airaccelerate"),
-		wateraccelerate = cvarlib.value(svr.cvars, "sv_wateraccelerate"),
-		friction = cvarlib.value(svr.cvars, "sv_friction"),
-		waterfriction = cvarlib.value(svr.cvars, "sv_waterfriction"),
-		entgravity = client.entgravity,
-	}
+	-- movevars: the cvar half is rebuilt at most once per server frame
+	-- (9 hash lookups per cmd otherwise); only maxspeed/entgravity vary
+	-- per client
+	local movevars: pmovelib.MoveVars = svr.movevarsScratch
+	if not movevars or svr.movevarsTime ~= svr.realtime then
+		movevars = {
+			gravity = cvarlib.value(svr.cvars, "sv_gravity"),
+			stopspeed = cvarlib.value(svr.cvars, "sv_stopspeed"),
+			maxspeed = 0,
+			spectatormaxspeed = cvarlib.value(svr.cvars, "sv_spectatormaxspeed"),
+			accelerate = cvarlib.value(svr.cvars, "sv_accelerate"),
+			airaccelerate = cvarlib.value(svr.cvars, "sv_airaccelerate"),
+			wateraccelerate = cvarlib.value(svr.cvars, "sv_wateraccelerate"),
+			friction = cvarlib.value(svr.cvars, "sv_friction"),
+			waterfriction = cvarlib.value(svr.cvars, "sv_waterfriction"),
+			entgravity = 1,
+		}
+		svr.movevarsScratch = movevars
+		svr.movevarsTime = svr.realtime
+	end
+	movevars.maxspeed = client.maxspeed
+	movevars.entgravity = client.entgravity
 
 	pmovelib.playerMove(pm, movevars)
 
@@ -795,13 +899,16 @@ function qwsv.postRunCmd(svr: any, client: Client)
 		buffer.writef32(g, qdefs.glob.time * 4, svr.time)
 		buffer.writei32(g, qdefs.glob.self * 4, client.edict.num)
 		vmlib.exec(vm, qdefs.func.PlayerPostThink)
-		-- SV_RunNewmis
+		-- SV_RunNewmis (the lastruntime stamp keeps the next SV_Physics
+		-- scan from moving the missile a second time)
 		local newmis = vmlib.globalInt(vm, qdefs.glob.newmis)
 		if newmis ~= 0 then
 			local ed = vm.edicts[newmis + 1]
 			buffer.writei32(g, qdefs.glob.newmis * 4, 0)
+			local saved = svr.frametime
 			svr.frametime = 0.05
-			qwphys.physicsToss(svr, ed) -- SV_RunNewmis uses the toss path
+			qwphys.runEntity(svr, ed)
+			svr.frametime = saved
 		end
 	elseif qdefs.func.SpectatorThink then
 		buffer.writef32(g, qdefs.glob.time * 4, svr.time)
@@ -939,7 +1046,19 @@ function qwsv.modellistF(svr: any, client: Client, args: { string })
 	writeList(client, qwp.svc_modellist, svr.model_precache, tonumber(args[3]) or 0)
 end
 
--- SV_PreSpawn_f: signon (baselines + statics), then stuff "cmd spawn"
+-- SV_FlushSignon: seal the current signon buffer and start a fresh one
+-- when it nears the datagram limit (called before each signon write)
+function qwsv.checkSignonSpace(svr: any)
+	local sg: msg.SizeBuf = svr.signon
+	if sg.cursize > sg.maxsize - 512 then
+		local fresh = msg.newBuf(1450)
+		table.insert(svr.signon_buffers, fresh)
+		svr.signon = fresh
+	end
+end
+
+-- SV_PreSpawn_f: one signon buffer (baselines + statics) per request;
+-- the continuation stufftext drives the client to ask for the next
 function qwsv.prespawnF(svr: any, client: Client, args: { string })
 	if client.spawned then
 		svr.print("prespawn not valid -- allready spawned")
@@ -950,15 +1069,24 @@ function qwsv.prespawnF(svr: any, client: Client, args: { string })
 		qwsv.newF(svr, client)
 		return
 	end
-	local out = client.netchan.message
-	local pos = out.cursize
-	if pos + svr.signon.cursize > out.maxsize then
-		error("prespawn: signon overflows the reliable stream")
+	local bufIdx = tonumber(args[3]) or 0
+	if bufIdx < 0 or bufIdx >= #svr.signon_buffers then
+		bufIdx = 0
 	end
-	buffer.copy(out.data, pos, svr.signon.data, 0, svr.signon.cursize)
-	out.cursize += svr.signon.cursize
+	local sg: msg.SizeBuf = svr.signon_buffers[bufIdx + 1]
+	local out = client.netchan.message
+	-- SZ_Write of the whole buffer (C: "written to not overflow" — one
+	-- 1450-byte chunk always fits the just-flushed reliable stream)
+	local pos = out.cursize
+	buffer.copy(out.data, pos, sg.data, 0, sg.cursize)
+	out.cursize += sg.cursize
+	bufIdx += 1
 	msg.writeByte(out, qwp.svc_stufftext)
-	msg.writeString(out, `cmd spawn {svr.spawncount} 0\n`)
+	if bufIdx == #svr.signon_buffers then
+		msg.writeString(out, `cmd spawn {svr.spawncount} 0\n`)
+	else
+		msg.writeString(out, `cmd prespawn {svr.spawncount} {bufIdx}\n`)
+	end
 end
 
 -- SV_CalcPing: average of the acked frame round-trips, ms
@@ -1050,6 +1178,15 @@ function qwsv.spawnF(svr: any, client: Client, args: { string })
 	vmlib.edSetInt(ed, ent.netname, vmlib.allocString(svr.vm, client.name))
 	client.entgravity = 1
 	client.maxspeed = cvarlib.value(svr.cvars, "sv_maxspeed")
+	-- C also seeds the QC fields when the mod declares them (QC that
+	-- reads self.gravity before assigning must see 1, not the memset 0)
+	local optfield = svr.qdefs.optfield or {}
+	if optfield.gravity then
+		vmlib.edSetFloat(ed, optfield.gravity, 1)
+	end
+	if optfield.maxspeed then
+		vmlib.edSetFloat(ed, optfield.maxspeed, client.maxspeed)
+	end
 
 	-- force stats to be updated
 	for i = 0, 31 do
@@ -1453,6 +1590,7 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 
 	-- mark time so clients will know how much to predict other players
 	client.localtime = svr.time
+	client.last_message = svr.realtime or 0 -- netchan.last_received
 	client.delta_sequence = -1 -- no delta unless requested
 	client.send_message = true -- one reply per received packet (lockstep
 	-- keeps both sequence counters aligned; prediction depends on it)
@@ -1519,9 +1657,19 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 			return
 		end
 	end
+
+	-- PF_stuffcmd("disconnect\n") sets the drop flag mid-QC; honor it
+	-- once the message batch is done (C sv_main.c)
+	if (client :: any).drop then
+		(client :: any).drop = false
+		if client.active then
+			qwsv.dropClient(svr, client)
+		end
+	end
 end
 
 -- SV_UpdateClientStats: delta update of the stats array over reliable
+local statsScratch: { [number]: number } = {} -- C's `int stats[MAX_CL_STATS]` (stack, but fully rewritten per call)
 function qwsv.updateClientStats(svr: any, client: Client)
 	local ent = svr.qdefs.ent
 	local vm = svr.vm
@@ -1530,7 +1678,8 @@ function qwsv.updateClientStats(svr: any, client: Client)
 		ed = svr.clients[client.spec_track].edict
 	end
 
-	local stats = table.create(32, 0)
+	local stats = statsScratch
+	table.clear(stats)
 	stats[qwp.STAT_HEALTH] = trunc(vmlib.edFloat(ed, ent.health))
 	stats[qwp.STAT_WEAPON] = svr.modelIndex(svr, vmlib.edString(vm, ed, ent.weaponmodel)) or 0
 	stats[qwp.STAT_AMMO] = trunc(vmlib.edFloat(ed, ent.currentammo))
@@ -1605,9 +1754,17 @@ function qwsv.writeClientdataToMessage(svr: any, client: Client, out: msg.SizeBu
 	end
 end
 
--- SV_SendClientDatagram
+-- SV_SendClientDatagram (the C stack buf is a reused per-client scratch:
+-- transmit copies out of it and clears, one reply per received packet)
 function qwsv.sendClientDatagram(svr: any, client: Client)
-	local out = msg.newBuf(MAX_MSGLEN, true)
+	local c = client :: any
+	local out: msg.SizeBuf = c.datagramScratch
+	if not out then
+		out = msg.newBuf(MAX_MSGLEN, true)
+		c.datagramScratch = out
+	end
+	msg.clear(out)
+	out.overflowed = false
 
 	qwsv.writeClientdataToMessage(svr, client, out)
 	qwsv.writeEntitiesToClient(svr, client, out)
@@ -1640,6 +1797,54 @@ end
 
 -- one reply for one received packet: the strict 1:1 exchange keeps the
 -- two sequence spaces identical (server frames are keyed by the client
+-- sv_nchan.c backbuf equivalent: reliable-by-contract data that does
+-- not fit the live stream queues per client as whole-message blocks
+-- (a block must never split across packets — each packet parses as a
+-- complete svc stream) and drains as transmits free space. It is never
+-- silently dropped; a client whose queue ALSO overflows gets dropped
+-- at the sweep, like C's MAX_BACK_BUFFERS drop.
+local BACKBUF_CAP = 32768
+function qwsv.reliableCopy(client: Client, data: buffer, len: number)
+	if len == 0 or not client.send then
+		return
+	end
+	local c = client :: any
+	local out = client.netchan.message
+	if (c.backbufBytes or 0) == 0 and out.cursize + len <= out.maxsize then
+		buffer.copy(out.data, out.cursize, data, 0, len)
+		out.cursize += len
+		return
+	end
+	if (c.backbufBytes or 0) + len > BACKBUF_CAP then
+		out.overflowed = true -- drop at the next checkTimeouts sweep
+		return
+	end
+	local block = buffer.create(len)
+	buffer.copy(block, 0, data, 0, len)
+	c.backbuf = c.backbuf or {}
+	table.insert(c.backbuf, block)
+	c.backbufBytes = (c.backbufBytes or 0) + len
+end
+
+local function drainBackbuf(client: Client)
+	local c = client :: any
+	if not c.backbuf or #c.backbuf == 0 then
+		return
+	end
+	local out = client.netchan.message
+	while #c.backbuf > 0 do
+		local block: buffer = c.backbuf[1]
+		local len = buffer.len(block)
+		if out.cursize + len > out.maxsize then
+			break -- whole blocks only
+		end
+		buffer.copy(out.data, out.cursize, block, 0, len)
+		out.cursize += len
+		table.remove(c.backbuf, 1)
+		c.backbufBytes -= len
+	end
+end
+
 -- packet seq; the client acks with the server packet seq — the delta
 -- lookup depends on those being the same number, as in the C netchan)
 function qwsv.replyToClient(svr: any, client: Client)
@@ -1647,6 +1852,7 @@ function qwsv.replyToClient(svr: any, client: Client)
 		return
 	end
 	client.send_message = false
+	drainBackbuf(client) -- queued reliable blocks ride this packet
 	local send = client.send
 	if client.spawned then
 		qwsv.sendClientDatagram(svr, client)
@@ -1672,13 +1878,24 @@ end
 --------------------------------------------------------------------------
 -- frame updates (sv_ents.c)
 
+-- decompressed PVS rows cached per leaf for the life of the level
+local function leafPVSCached(svr: any, leaf: any): buffer
+	local row = svr.pvsCache[leaf]
+	if not row then
+		row = bsp.leafPVS(leaf, svr.worldmodel)
+		svr.pvsCache[leaf] = row
+	end
+	return row
+end
+qwsv.leafPVSCached = leafPVSCached
+
 local function addToFatPVS(svr: any, org: vector, child: number, fatpvs: buffer, fatbytes: number)
 	local data = svr.worldmodel.brush
 	while true do
 		if child < 0 then
 			local leaf = data.leafs[-child]
 			if leaf.contents ~= qd.CONTENTS_SOLID then
-				local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+				local pvs = leafPVSCached(svr, leaf)
 				for i = 0, math.min(fatbytes, buffer.len(pvs)) - 1 do
 					buffer.writeu8(fatpvs, i, bit32.bor(buffer.readu8(fatpvs, i), buffer.readu8(pvs, i)))
 				end
@@ -1700,12 +1917,21 @@ local function addToFatPVS(svr: any, org: vector, child: number, fatpvs: buffer,
 	end
 end
 
--- SV_FatPVS: inclusive or of all leafs within 8 units of the point
+-- SV_FatPVS: inclusive or of all leafs within 8 units of the point.
+-- The output is C's static fatpvs (reused per call — consumed within
+-- the same reply), and decompressed leaf rows are cached per level
+-- (the map is static; decompressing 10-30 leafs per reply was garbage)
 function qwsv.fatPVS(svr: any, org: vector): buffer
 	local fatbytes = bit32.rshift(svr.worldmodel.numleafs + 31, 3)
-	local fatpvs = buffer.create(fatbytes)
-	addToFatPVS(svr, org, 0, fatpvs, fatbytes)
-	return fatpvs
+	local fatpvs: buffer? = svr.fatpvsScratch
+	if not fatpvs or buffer.len(fatpvs) < fatbytes then
+		fatpvs = buffer.create(fatbytes)
+		svr.fatpvsScratch = fatpvs
+	end
+	local fp = fatpvs :: buffer
+	buffer.fill(fp, 0, 0, fatbytes)
+	addToFatPVS(svr, org, 0, fp, fatbytes)
+	return fp
 end
 
 local function edictInPVS(ed: vmlib.Edict, pvs: buffer): boolean
@@ -1808,14 +2034,26 @@ function qwsv.writePlayersToClient(svr: any, client: Client, pvs: buffer, out: m
 		end
 
 		if bit32.band(pflags, qwp.PF_COMMAND) ~= 0 then
-			local cmd = table.clone(cl.lastcmd)
+			-- C copies into a stack cmd; reuse one scratch table (this
+			-- runs per visible player per client per reply)
+			local cmd = svr.cmdScratch
+			if not cmd then
+				cmd = qwents.nullCmd()
+				svr.cmdScratch = cmd
+			end
+			local lc = cl.lastcmd
+			cmd.msec = lc.msec
+			cmd.angles = lc.angles
+			cmd.forwardmove = lc.forwardmove
+			cmd.sidemove = lc.sidemove
+			cmd.upmove = lc.upmove
 			if health <= 0 then
 				-- don't show the corpse looking around
 				cmd.angles = vector.create(0, vmlib.edVector(ed, ent.angles).y, cmd.angles.z)
 			end
 			cmd.buttons = 0 -- never send buttons
 			cmd.impulse = 0 -- never send impulses
-			qwents.writeDeltaUsercmd(out, qwents.nullCmd(), cmd)
+			qwents.writeDeltaUsercmd(out, NULL_CMD, cmd)
 		end
 
 		if bit32.band(pflags, qwp.PF_VELOCITY1) ~= 0 then
@@ -1956,7 +2194,7 @@ local function pvsRow(svr: any, leafnumC: number): buffer
 		return all
 	end
 	local leaf = svr.worldmodel.brush.leafs[leafnumC + 1]
-	local pvs = bsp.leafPVS(leaf, svr.worldmodel)
+	local pvs = leafPVSCached(svr, leaf)
 	local row = buffer.create(rowbytes)
 	buffer.copy(row, 0, pvs, 0, math.min(rowbytes, buffer.len(pvs)))
 	return row
@@ -2055,10 +2293,16 @@ function qwsv.svMulticast(svr: any, origin: vector, to: number)
 			continue
 		end
 
-		local dest = if reliable then client.netchan.message else client.datagram
-		if dest.cursize + svr.multicast.cursize <= dest.maxsize then
-			buffer.copy(dest.data, dest.cursize, svr.multicast.data, 0, svr.multicast.cursize)
-			dest.cursize += svr.multicast.cursize
+		if reliable then
+			-- ClientReliableWrite: queued if the stream is full, never
+			-- silently dropped
+			qwsv.reliableCopy(client, svr.multicast.data, svr.multicast.cursize)
+		else
+			local dest = client.datagram
+			if dest.cursize + svr.multicast.cursize <= dest.maxsize then
+				buffer.copy(dest.data, dest.cursize, svr.multicast.data, 0, svr.multicast.cursize)
+				dest.cursize += svr.multicast.cursize
+			end
 		end
 	end
 
@@ -2128,7 +2372,14 @@ end
 
 -- SV_Frame (physics portion; players move on cmd arrival)
 function qwsv.frame(svr: any, dt: number)
-	if not svr.active or svr.paused then
+	if not svr.active then
+		return
+	end
+	-- realtime accrues across pauses and level changes (SV_Frame);
+	-- timeouts key off it, never off the per-level sv.time
+	svr.realtime = (svr.realtime or 0) + math.clamp(dt, 0.001, 0.1)
+	qwsv.checkTimeouts(svr)
+	if svr.paused then
 		return
 	end
 	svr.frametime = math.clamp(dt, 0.001, 0.1)
@@ -2137,6 +2388,30 @@ function qwsv.frame(svr: any, dt: number)
 	qwphys.physics(svr)
 
 	qwsv.updateToReliableMessages(svr)
+end
+
+-- SV_CheckTimeouts + the sv_send.c overflow sweep: drop clients that
+-- stopped sending packets, and clients whose reliable stream overflowed
+-- (netchan.message is allowoverflow like C — the write flags + clears
+-- instead of erroring, and the drop happens here)
+function qwsv.checkTimeouts(svr: any)
+	local droptime = svr.realtime - cvarlib.value(svr.cvars, "timeout")
+	for i = 1, svr.maxclients do
+		local cl: Client = svr.clients[i]
+		if not cl.active then
+			continue
+		end
+		if cl.netchan.message.overflowed then
+			msg.clear(cl.netchan.message)
+			cl.netchan.message.overflowed = false
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{cl.name} overflowed\n`)
+			svr.print(`WARNING: reliable overflow on {cl.name}`)
+			qwsv.dropClient(svr, cl)
+		elseif (cl.last_message or 0) < droptime then
+			svr.broadcastPrint(svr, qwp.PRINT_HIGH, `{cl.name} timed out\n`)
+			qwsv.dropClient(svr, cl)
+		end
+	end
 end
 
 -- SV_UpdateToReliableMessages: per-frame reliable-state sync — frag
@@ -2151,6 +2426,10 @@ function qwsv.updateToReliableMessages(svr: any)
 		local hc: Client = svr.clients[i]
 		if not (hc.active and hc.spawned) then
 			continue
+		end
+		if hc.sendinfo then
+			hc.sendinfo = false
+			qwsv.fullClientUpdate(svr, hc, svr.reliable_datagram)
 		end
 		local frags = trunc(vmlib.edFloat(hc.edict, ent.frags))
 		if (hc :: any).old_frags ~= frags then
@@ -2193,11 +2472,9 @@ function qwsv.updateToReliableMessages(svr: any)
 			continue
 		end
 		if rd.cursize > 0 and cl.send then
-			local out = cl.netchan.message
-			if out.cursize + rd.cursize <= out.maxsize then
-				buffer.copy(out.data, out.cursize, rd.data, 0, rd.cursize)
-				out.cursize += rd.cursize
-			end
+			-- reliable-by-contract (frags/setinfo/reconnect stufftexts):
+			-- backbuf'd when the window is full, never silently dropped
+			qwsv.reliableCopy(cl, rd.data, rd.cursize)
 		end
 		-- datagrams only go to spawned
 		if dg.cursize > 0 and cl.spawned then

@@ -19,6 +19,9 @@ export type System = {
 	shown: { boolean },
 	palette: { Color3 }, -- 256 palette colors
 	folder: Folder,
+	lastColor: { number }, -- palette index written to each part
+	moveParts: { Part }, -- BulkMoveTo scratch, rebuilt per frame
+	moveCFrames: { CFrame },
 }
 
 function particles.new(pal: textures.Palette, parent: Instance): System
@@ -48,7 +51,16 @@ function particles.new(pal: textures.Palette, parent: Instance): System
 		shown[i] = false
 	end
 
-	return { sim = particlesim.new(), parts = parts, shown = shown, palette = palette, folder = folder }
+	return {
+		sim = particlesim.new(),
+		parts = parts,
+		shown = shown,
+		palette = palette,
+		folder = folder,
+		lastColor = {},
+		moveParts = {},
+		moveCFrames = {},
+	}
 end
 
 --------------------------------------------------------------------------
@@ -100,8 +112,17 @@ end
 function particles.update(sys: System, time: number, frametime: number)
 	particlesim.update(sys.sim, time, frametime)
 
+	-- positions move through ONE BulkMoveTo (an explosion lights up to
+	-- 1024 particles — per-part Position writes spiked exactly when
+	-- fights are busiest), and Color is written only when the palette
+	-- index changed (ramps step ~10Hz, not per render frame)
 	local parts = sys.parts
 	local shown = sys.shown
+	local lastColor = sys.lastColor
+	local moveParts = sys.moveParts
+	local moveCFrames = sys.moveCFrames
+	table.clear(moveParts)
+	table.clear(moveCFrames)
 	for i, p in sys.sim.pool do
 		local part = parts[i]
 		if not p.alive then
@@ -111,12 +132,20 @@ function particles.update(sys: System, time: number, frametime: number)
 			end
 			continue
 		end
-		part.Position = qcoords.toRoblox(p.org)
-		part.Color = sys.palette[math.clamp(math.floor(p.color), 0, 255) + 1]
+		table.insert(moveParts, part)
+		table.insert(moveCFrames, CFrame.new(qcoords.toRoblox(p.org)))
+		local ci = math.clamp(math.floor(p.color), 0, 255) + 1
+		if lastColor[i] ~= ci then
+			lastColor[i] = ci
+			part.Color = sys.palette[ci]
+		end
 		if not shown[i] then
 			shown[i] = true
 			part.Transparency = 0
 		end
+	end
+	if #moveParts > 0 then
+		workspace:BulkMoveTo(moveParts, moveCFrames, Enum.BulkMoveMode.FireCFrameChanged)
 	end
 end
 

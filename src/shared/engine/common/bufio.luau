@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Binary reading helpers over Luau buffers.
 -- Quake data is all little-endian, which matches buffer.read* natively.
 

@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- Vector/angle math — port of the pieces of WinQuake mathlib.c the engine
 -- uses. Angles follow Quake conventions: PITCH = x, YAW = y, ROLL = z,
 -- degrees.

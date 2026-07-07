@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- QW server physics — port of QW/server/sv_phys.c: the movetype simulation
 -- (pushers, toss/bounce, step entities) driven each frame. Players do NOT
 -- move here in QW — SV_RunCmd runs them through pmove. Algorithms match
@@ -73,24 +74,30 @@ function sv_phys.checkVelocity(svr: any, ed: vmlib.Edict)
 	vmlib.edSetVector(ed, ent.origin, vector.create(ox, oy, oz))
 end
 
--- SV_RunThink: returns false if the entity removed itself
+-- SV_RunThink: returns false if the entity removed itself. QW loops:
+-- nextthink is re-evaluated after each think, so timers shorter than
+-- the frame dt run multiple times per frame (NQ runs at most one)
 function sv_phys.runThink(svr: any, ed: vmlib.Edict): boolean
 	local vm = svr.vm
 
-	local thinktime = vmlib.edFloat(ed, ent.nextthink)
-	if thinktime <= 0 or thinktime > svr.time + svr.frametime then
-		return true
-	end
+	while true do
+		local thinktime = vmlib.edFloat(ed, ent.nextthink)
+		if thinktime <= 0 or thinktime > svr.time + svr.frametime then
+			return true
+		end
 
-	if thinktime < svr.time then
-		thinktime = svr.time -- don't let things stay in the past
+		if thinktime < svr.time then
+			thinktime = svr.time -- don't let things stay in the past
+		end
+		vmlib.edSetFloat(ed, ent.nextthink, 0)
+		buffer.writef32(vm.globals, glob.time * 4, thinktime)
+		buffer.writei32(vm.globals, glob.self * 4, ed.num)
+		buffer.writei32(vm.globals, glob.other * 4, 0)
+		vmlib.exec(vm, vmlib.edInt(ed, ent.think))
+		if ed.free then
+			return false
+		end
 	end
-	vmlib.edSetFloat(ed, ent.nextthink, 0)
-	buffer.writef32(vm.globals, glob.time * 4, thinktime)
-	buffer.writei32(vm.globals, glob.self * 4, ed.num)
-	buffer.writei32(vm.globals, glob.other * 4, 0)
-	vmlib.exec(vm, vmlib.edInt(ed, ent.think))
-	return not ed.free
 end
 
 -- SV_Impact: two entities have touched, so run their touch functions
@@ -264,21 +271,16 @@ function sv_phys.flyMove(svr: any, ed: vmlib.Edict, time: number, wantSteptrace:
 	return blocked, steptrace
 end
 
--- SV_AddGravity
+-- SV_AddGravity (QW): scale is always 1.0 for non-player entities —
+-- the per-entity gravity field affects only PLAYERS, applied through
+-- host_client->entgravity -> movevars in SV_RunCmd (NQ reads the QC
+-- field here; QW deliberately does not)
 function sv_phys.addGravity(svr: any, ed: vmlib.Edict)
-	local ent_gravity = 1.0
-	local gravdef = svr.vm.progs.fielddefsByName["gravity"]
-	if gravdef then
-		local v = vmlib.edFloat(ed, gravdef.ofs)
-		if v ~= 0 then
-			ent_gravity = v
-		end
-	end
 	local vel = vmlib.edVector(ed, ent.velocity)
 	vmlib.edSetVector(
 		ed,
 		ent.velocity,
-		vector.create(vel.x, vel.y, vel.z - ent_gravity * cvarlib.value(svr.cvars, "sv_gravity") * svr.frametime)
+		vector.create(vel.x, vel.y, vel.z - cvarlib.value(svr.cvars, "sv_gravity") * svr.frametime)
 	)
 end
 
@@ -315,26 +317,22 @@ function sv_phys.pushEntity(svr: any, ed: vmlib.Edict, push: vector): world.Trac
 	return trace
 end
 
--- SV_PushMove
-local function pushMove(svr: any, pusher: vmlib.Edict, movetime: number)
+-- SV_Push (QW variant): returns true if the pusher could move. QW's
+-- deliberate changes over NQ SV_PushMove, all reproduced here: riders
+-- move by a direct origin add (no traced move — touch/impact never
+-- fire), entities already stuck in something else are pre-skipped, a
+-- bystander that can stay put is left in place, FL_ONGROUND is never
+-- cleared, and ltime advances only on success (in the caller).
+local function push(svr: any, pusher: vmlib.Edict, move: vector): boolean
 	local vm = svr.vm
 	local w = svr.world
 
-	local pvel = vmlib.edVector(pusher, ent.velocity)
-	if pvel == vector.zero then
-		vmlib.edSetFloat(pusher, ent.ltime, vmlib.edFloat(pusher, ent.ltime) + movetime)
-		return
-	end
-
-	local move = pvel * movetime
 	local mins = vmlib.edVector(pusher, ent.absmin) + move
 	local maxs = vmlib.edVector(pusher, ent.absmax) + move
-
 	local pushorig = vmlib.edVector(pusher, ent.origin)
 
 	-- move the pusher to its final position
 	vmlib.edSetVector(pusher, ent.origin, pushorig + move)
-	vmlib.edSetFloat(pusher, ent.ltime, vmlib.edFloat(pusher, ent.ltime) + movetime)
 	world.linkEdict(w, pusher, false)
 
 	-- see if any solid entities are inside the final position
@@ -348,6 +346,14 @@ local function pushMove(svr: any, pusher: vmlib.Edict, movetime: number)
 		end
 		local movetype = vmlib.edFloat(check, ent.movetype)
 		if movetype == qd.MOVETYPE_PUSH or movetype == qd.MOVETYPE_NONE or movetype == qd.MOVETYPE_NOCLIP then
+			continue
+		end
+
+		-- if the entity is already stuck in something else, leave it be
+		vmlib.edSetFloat(pusher, ent.solid, qd.SOLID_NOT)
+		local prestuck = world.testEntityPosition(w, check)
+		vmlib.edSetFloat(pusher, ent.solid, qd.SOLID_BSP)
+		if prestuck then
 			continue
 		end
 
@@ -374,64 +380,76 @@ local function pushMove(svr: any, pusher: vmlib.Edict, movetime: number)
 			end
 		end
 
-		-- remove the onground flag for non-players
-		if movetype ~= qd.MOVETYPE_WALK then
-			vmlib.edSetFloat(check, ent.flags, bit32.band(vmlib.edFloat(check, ent.flags), bit32.bnot(qd.FL_ONGROUND)))
-		end
-
 		local entorig = vmlib.edVector(check, ent.origin)
 		table.insert(moved_edict, check)
 		table.insert(moved_from, entorig)
 
 		-- try moving the contacted entity
-		vmlib.edSetFloat(pusher, ent.solid, qd.SOLID_NOT)
-		sv_phys.pushEntity(svr, check, move)
-		vmlib.edSetFloat(pusher, ent.solid, qd.SOLID_BSP)
+		vmlib.edSetVector(check, ent.origin, entorig + move)
+		if not world.testEntityPosition(w, check) then
+			-- pushed ok
+			world.linkEdict(w, check, false)
+			continue
+		end
+
+		-- if it is ok to leave in the old position, do it
+		vmlib.edSetVector(check, ent.origin, entorig)
+		if not world.testEntityPosition(w, check) then
+			table.remove(moved_edict)
+			table.remove(moved_from)
+			continue
+		end
 
 		-- if it is still inside the pusher, block
-		local block = world.testEntityPosition(w, check)
-		if block then
-			-- fail the move
-			local cmins = vmlib.edVector(check, ent.mins)
-			local cmaxs = vmlib.edVector(check, ent.maxs)
-			if cmins.x == cmaxs.x then
-				continue
-			end
-			if
-				vmlib.edFloat(check, ent.solid) == qd.SOLID_NOT
-				or vmlib.edFloat(check, ent.solid) == qd.SOLID_TRIGGER
-			then
-				-- corpse
-				vmlib.edSetVector(check, ent.mins, vector.create(0, 0, cmins.z))
-				vmlib.edSetVector(check, ent.maxs, vector.create(0, 0, cmins.z))
-				continue
-			end
-
-			vmlib.edSetVector(check, ent.origin, entorig)
-			world.linkEdict(w, check, true)
-
-			vmlib.edSetVector(pusher, ent.origin, pushorig)
-			world.linkEdict(w, pusher, false)
-			vmlib.edSetFloat(pusher, ent.ltime, vmlib.edFloat(pusher, ent.ltime) - movetime)
-
-			-- if the pusher has a "blocked" function, call it; otherwise just
-			-- stay in place until the obstacle is gone
-			local blockedFn = vmlib.edInt(pusher, ent.blocked)
-			if blockedFn ~= 0 then
-				execTouch(svr, blockedFn, pusher, check)
-			end
-
-			-- move back any entities we already moved
-			for i, moved in moved_edict do
-				vmlib.edSetVector(moved, ent.origin, moved_from[i])
-				world.linkEdict(w, moved, false)
-			end
-			return
+		if vmlib.edVector(check, ent.mins).x == vmlib.edVector(check, ent.maxs).x then
+			world.linkEdict(w, check, false)
+			continue
 		end
+		local csolid = vmlib.edFloat(check, ent.solid)
+		if csolid == qd.SOLID_NOT or csolid == qd.SOLID_TRIGGER then
+			-- corpse: collapse the box
+			local cmins = vmlib.edVector(check, ent.mins)
+			vmlib.edSetVector(check, ent.mins, vector.create(0, 0, cmins.z))
+			vmlib.edSetVector(check, ent.maxs, vector.create(0, 0, cmins.z))
+			world.linkEdict(w, check, false)
+			continue
+		end
+
+		vmlib.edSetVector(pusher, ent.origin, pushorig)
+		world.linkEdict(w, pusher, false)
+
+		-- if the pusher has a "blocked" function, call it; otherwise just
+		-- stay in place until the obstacle is gone
+		local blockedFn = vmlib.edInt(pusher, ent.blocked)
+		if blockedFn ~= 0 then
+			execTouch(svr, blockedFn, pusher, check)
+		end
+
+		-- move back any entities we already moved
+		for i, moved in moved_edict do
+			vmlib.edSetVector(moved, ent.origin, moved_from[i])
+			world.linkEdict(w, moved, false)
+		end
+		return false
+	end
+	return true
+end
+
+-- SV_PushMove
+local function pushMove(svr: any, pusher: vmlib.Edict, movetime: number)
+	local pvel = vmlib.edVector(pusher, ent.velocity)
+	if pvel == vector.zero then
+		vmlib.edSetFloat(pusher, ent.ltime, vmlib.edFloat(pusher, ent.ltime) + movetime)
+		return
+	end
+
+	if push(svr, pusher, pvel * movetime) then
+		vmlib.edSetFloat(pusher, ent.ltime, vmlib.edFloat(pusher, ent.ltime) + movetime)
 	end
 end
 
--- SV_Physics_Pusher
+-- SV_Physics_Pusher (QW): includes the post-think snap — a think that
+-- teleported the pusher more than 1/64 re-pushes riders by the delta
 local function physicsPusher(svr: any, ed: vmlib.Edict)
 	local vm = svr.vm
 	local oldltime = vmlib.edFloat(ed, ent.ltime)
@@ -449,11 +467,20 @@ local function physicsPusher(svr: any, ed: vmlib.Edict)
 	end
 
 	if thinktime > oldltime and thinktime <= vmlib.edFloat(ed, ent.ltime) then
+		local oldorg = vmlib.edVector(ed, ent.origin)
 		vmlib.edSetFloat(ed, ent.nextthink, 0)
 		buffer.writef32(vm.globals, glob.time * 4, svr.time)
 		buffer.writei32(vm.globals, glob.self * 4, ed.num)
 		buffer.writei32(vm.globals, glob.other * 4, 0)
 		vmlib.exec(vm, vmlib.edInt(ed, ent.think))
+		if ed.free then
+			return
+		end
+		local move = vmlib.edVector(ed, ent.origin) - oldorg
+		if vector.magnitude(move) > 1 / 64 then
+			vmlib.edSetVector(ed, ent.origin, oldorg)
+			push(svr, ed, move)
+		end
 	end
 end
 
@@ -852,6 +879,43 @@ end
 --------------------------------------------------------------------------
 -- SV_Physics
 
+local f32buf = buffer.create(4)
+local function tof32(x: number): number
+	buffer.writef32(f32buf, 0, x)
+	return buffer.readf32(f32buf, 0)
+end
+
+-- SV_RunEntity: the lastruntime stamp (a float compare, like C's
+-- `ent->v.lastruntime == (float)realtime`) guards an entity against
+-- running physics twice in the same frame — SV_RunNewmis runs a fresh
+-- missile immediately and the main scan must then skip its slot
+function sv_phys.runEntity(svr: any, ed: vmlib.Edict)
+	if vmlib.edFloat(ed, ent.lastruntime) == tof32(svr.time) then
+		return
+	end
+	vmlib.edSetFloat(ed, ent.lastruntime, svr.time)
+
+	local movetype = vmlib.edFloat(ed, ent.movetype)
+	if movetype == qd.MOVETYPE_PUSH then
+		physicsPusher(svr, ed)
+	elseif movetype == qd.MOVETYPE_NONE then
+		physicsNone(svr, ed)
+	elseif movetype == qd.MOVETYPE_NOCLIP then
+		physicsNoclip(svr, ed)
+	elseif movetype == qd.MOVETYPE_STEP then
+		physicsStep(svr, ed)
+	elseif
+		movetype == qd.MOVETYPE_TOSS
+		or movetype == qd.MOVETYPE_BOUNCE
+		or movetype == qd.MOVETYPE_FLY
+		or movetype == qd.MOVETYPE_FLYMISSILE
+	then
+		sv_phys.physicsToss(svr, ed)
+	else
+		error(`SV_Physics: bad movetype {movetype}`)
+	end
+end
+
 function sv_phys.physics(svr: any)
 	local vm = svr.vm
 	local g = vm.globals
@@ -860,6 +924,7 @@ function sv_phys.physics(svr: any)
 	buffer.writei32(g, glob.self * 4, 0)
 	buffer.writei32(g, glob.other * 4, 0)
 	buffer.writef32(g, glob.time * 4, svr.time)
+	buffer.writef32(g, glob.frametime * 4, svr.frametime)
 	vmlib.exec(vm, svr.qdefs.func.StartFrame)
 
 	-- treat each object in turn
@@ -875,39 +940,24 @@ function sv_phys.physics(svr: any)
 			world.linkEdict(svr.world, ed, true) -- force retouch even for stationary
 		end
 
-		local movetype = vmlib.edFloat(ed, ent.movetype)
 		if i > 0 and i <= svr.maxclients then
 			-- QW: clients move in SV_RunCmd through pmove, never here
 			i += 1
 			continue
-		elseif movetype == qd.MOVETYPE_PUSH then
-			physicsPusher(svr, ed)
-		elseif movetype == qd.MOVETYPE_NONE then
-			physicsNone(svr, ed)
-		elseif movetype == qd.MOVETYPE_NOCLIP then
-			physicsNoclip(svr, ed)
-		elseif movetype == qd.MOVETYPE_STEP then
-			physicsStep(svr, ed)
-		elseif
-			movetype == qd.MOVETYPE_TOSS
-			or movetype == qd.MOVETYPE_BOUNCE
-			or movetype == qd.MOVETYPE_FLY
-			or movetype == qd.MOVETYPE_FLYMISSILE
-		then
-			sv_phys.physicsToss(svr, ed)
-		else
-			error(`SV_Physics: bad movetype {movetype}`)
 		end
+		sv_phys.runEntity(svr, ed)
 
 		-- SV_RunNewmis: a missile spawned by this entity's think gets its
-		-- first 0.05s move immediately (trap_spikeshooter etc.)
+		-- first 0.05s move immediately (trap_spikeshooter etc.); the
+		-- lastruntime stamp keeps the main loop from running it AGAIN
+		-- when the scan reaches its (usually higher) slot
 		local newmis = vmlib.globalInt(vm, glob.newmis)
 		if newmis ~= 0 then
 			local med = vm.edicts[newmis + 1]
 			buffer.writei32(g, glob.newmis * 4, 0)
 			local saved = svr.frametime
 			svr.frametime = 0.05
-			sv_phys.physicsToss(svr, med)
+			sv_phys.runEntity(svr, med)
 			svr.frametime = saved
 		end
 

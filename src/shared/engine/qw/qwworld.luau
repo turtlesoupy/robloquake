@@ -1,5 +1,6 @@
 --!strict
 --!optimize 2
+--!native
 -- QW world query functions — port of QW/server/world.c (box hulls, entity
 -- area links, point contents, SV_Move). Identical algorithms to the NQ
 -- world.c port, but the entvars/globals offsets come from qwdefs at
@@ -256,13 +257,10 @@ function world.hullPointContents(hull: bsp.Hull, num: number, p: vector): number
 	return num
 end
 
--- SV_PointContents
+-- SV_PointContents: QW does NOT collapse CONTENTS_CURRENT_* to WATER
+-- (that collapse is WinQuake-only; QW world.c:489 returns raw contents)
 function world.pointContents(w: World, p: vector): number
-	local cont = world.hullPointContents(w.worldmodel.hulls[1], 0, p)
-	if cont <= qd.CONTENTS_CURRENT_0 and cont >= qd.CONTENTS_CURRENT_DOWN then
-		cont = qd.CONTENTS_WATER
-	end
-	return cont
+	return world.hullPointContents(w.worldmodel.hulls[1], 0, p)
 end
 
 function world.truePointContents(w: World, p: vector): number
@@ -392,8 +390,16 @@ function world.recursiveHullCheck(
 end
 
 -- SV_ClipMoveToEntity
-function world.clipMoveToEntity(w: World, ed: vmlib.Edict, start: vector, mins: vector, maxs: vector, endp: vector): Trace
-	local trace = newTrace()
+-- `into` lets the per-candidate loop reuse a scratch trace (the C stack
+-- struct); the winning result is copied into the one escaping trace
+function world.clipMoveToEntity(w: World, ed: vmlib.Edict, start: vector, mins: vector, maxs: vector, endp: vector, into: Trace?): Trace
+	local trace = into or newTrace()
+	trace.startsolid = false
+	trace.inopen = false
+	trace.inwater = false
+	trace.planeNormal = vector.zero
+	trace.planeDist = 0
+	trace.ent = nil
 	trace.fraction = 1
 	trace.allsolid = true
 	trace.endpos = endp
@@ -613,6 +619,18 @@ type MoveClip = {
 }
 
 -- SV_ClipToLinks: mins and maxs enclose the entire area swept by the move
+local scratchClipTrace: Trace = {
+	allsolid = false,
+	startsolid = false,
+	inopen = false,
+	inwater = false,
+	fraction = 0,
+	endpos = vector.zero,
+	planeNormal = vector.zero,
+	planeDist = 0,
+	ent = nil,
+}
+
 local function clipToLinks(w: World, node: AreaNode, clip: MoveClip)
 	local vm = w.vm
 
@@ -674,18 +692,24 @@ local function clipToLinks(w: World, node: AreaNode, clip: MoveClip)
 			if not skip then
 				local trace
 				if bit32.band(vmlib.edFloat(touch, ent.flags), qd.FL_MONSTER) ~= 0 then
-					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins2, clip.maxs2, clip.endp)
+					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins2, clip.maxs2, clip.endp, scratchClipTrace)
 				else
-					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins, clip.maxs, clip.endp)
+					trace = world.clipMoveToEntity(w, touch, clip.start, clip.mins, clip.maxs, clip.endp, scratchClipTrace)
 				end
 				if trace.allsolid or trace.startsolid or trace.fraction < clip.trace.fraction then
-					trace.ent = touch
-					if clip.trace.startsolid then
-						clip.trace = trace
-						clip.trace.startsolid = true
-					else
-						clip.trace = trace
-					end
+					-- C struct copy of the winner (plus the startsolid
+					-- carry) into the one escaping trace table
+					local ct = clip.trace
+					local prevStartsolid = ct.startsolid
+					ct.allsolid = trace.allsolid
+					ct.startsolid = trace.startsolid or prevStartsolid
+					ct.inopen = trace.inopen
+					ct.inwater = trace.inwater
+					ct.fraction = trace.fraction
+					ct.endpos = trace.endpos
+					ct.planeNormal = trace.planeNormal
+					ct.planeDist = trace.planeDist
+					ct.ent = touch
 				elseif trace.startsolid then
 					clip.trace.startsolid = true
 				end
