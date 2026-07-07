@@ -20,6 +20,7 @@ local vfslib = require(engine.common.vfs)
 local qcoords = require(engine.client.qcoords)
 local qwcl = require(engine.qw.qwcl)
 local qwp = require(engine.qw.qwprotocol)
+local qwplerp = require(engine.qw.qwplerp)
 local qwview = require(engine.qw.qwview)
 
 local bsplib = require(engine.bsp.bsp)
@@ -60,6 +61,93 @@ return function()
 	local cl = qwcl.new(fs)
 	cl.dprint = function(s: string)
 		print("[qwcl] " .. s)
+	end
+
+	-- remote players render on a slightly delayed, interpolated timeline
+	-- (qwplerp) instead of QW's extrapolate-and-snap — every wire state
+	-- is buffered here as it parses, keyed by its state_time
+	local plerpHists: { [number]: qwplerp.Hist } = {}
+	cl.onPlayerState = function(num: number, st: any)
+		local h = plerpHists[num]
+		if not h then
+			h = qwplerp.new()
+			plerpHists[num] = h
+		end
+		qwplerp.push(h, st.messagenum, st.state_time, st.origin, st.viewangles.x, st.viewangles.y, st.velocity, st.frame)
+	end
+
+	-- live net diagnostics: one compact line per rendered remote player
+	-- every 10s to the client log (F9 developer console) — published
+	-- playtests have no attribute access, and these numbers are the
+	-- whole debugging story: rendered step uniformity + which smoothing
+	-- mechanism fired (dups/holds/resyncs) + delay/noise levels
+	type NetDiag = {
+		prev: vector?,
+		n: number,
+		sum: number,
+		sumsq: number,
+		max: number,
+		stalls: number,
+		spikes: number,
+		delayMs: number,
+		pushes: number, -- hist counter baselines (window diffing)
+		dups: number,
+		holds: number,
+		resyncs: number,
+	}
+	local netdiag: { [number]: NetDiag } = {}
+	local lastNetDiagAt = 0
+	local function netDiagStep(num: number, porigin: vector, delay: number)
+		local d = netdiag[num]
+		if not d then
+			d = { n = 0, sum = 0, sumsq = 0, max = 0, stalls = 0, spikes = 0, delayMs = 0, pushes = 0, dups = 0, holds = 0, resyncs = 0 }
+			local h = plerpHists[num]
+			if h then
+				d.pushes, d.dups, d.holds, d.resyncs = h.pushes, h.dups, h.holds, h.resyncs
+			end
+			netdiag[num] = d
+		end
+		d.delayMs = math.max(d.delayMs, delay * 1000)
+		local prev = d.prev
+		d.prev = porigin
+		if prev then
+			local s = vector.magnitude(porigin - prev)
+			d.n += 1
+			d.sum += s
+			d.sumsq += s * s
+			if s > d.max then
+				d.max = s
+			end
+			local m = d.sum / d.n
+			if m > 1 then -- stall/spike shape only means something in motion
+				if s < 0.2 * m then
+					d.stalls += 1
+				elseif s > 2 * m then
+					d.spikes += 1
+				end
+			end
+		end
+	end
+	local function netDiagFlush(now: number)
+		if now - lastNetDiagAt < 10 then
+			return
+		end
+		lastNetDiagAt = now
+		for num, d in netdiag do
+			local h = plerpHists[num]
+			if d.n > 30 and h then
+				local m = d.sum / d.n
+				local sd = math.sqrt(math.max(d.sumsq / d.n - m * m, 0))
+				print(
+					`[qwnet] p{num} snaps={h.pushes - d.pushes}(+{h.dups - d.dups}dup)`
+						.. ` holds={h.holds - d.holds} resyncs={h.resyncs - d.resyncs}`
+						.. ` delay={math.floor(d.delayMs + 0.5)}ms noise={math.floor(math.abs(h.timeErr) * 1000 + 0.5)}ms`
+						.. ` | step qu/frame mean={string.format("%.1f", m)} sd={string.format("%.1f", sd)}`
+						.. ` max={string.format("%.1f", d.max)} stalls={d.stalls} spikes={d.spikes} n={d.n}`
+				)
+			end
+		end
+		table.clear(netdiag)
 	end
 
 	----------------------------------------------------------------------
@@ -954,6 +1042,15 @@ return function()
 		-- solo without a second client
 		local drawSelf = workspace:GetAttribute("RQDBG_QWSelfAvatar") == true
 		local velProbe = workspace:GetAttribute("RQDBG_QWVelProbe") == true
+		-- RQDBG_QWNoLerp: fall back to CL_LinkPlayers extrapolate-and-snap.
+		-- RQDBG_QWLerpSelf: route your OWN avatar through the remote-player
+		-- path (its playerstates arrive at wire rate, a faithful solo proxy
+		-- for how other players render — pair with RQDBG_QWSelfAvatar).
+		local noLerp = workspace:GetAttribute("RQDBG_QWNoLerp") == true
+		local lerpSelf = workspace:GetAttribute("RQDBG_QWLerpSelf") == true
+		local playertime = math.min(cl.realtime - cl.latency + 0.02, cl.realtime)
+		local peakPeerLagMs = 0
+		local peakTimeNoiseMs = 0 -- wire-vs-assigned timeline error (jitter gauge)
 		local peakPeerVel, peakPeerNum = 0, -1
 		for num, ps in frame.playerstate do
 			if ps.messagenum ~= cl.parsecount or (num == cl.playernum and not drawSelf) then
@@ -963,11 +1060,36 @@ return function()
 			if cl.spectator and cl.cam.autocam ~= CAM_NONE and cl.cam.locked and num == cl.cam.spec_track then
 				continue
 			end
-			local angles = vector.create(-ps.viewangles.x / 3, ps.viewangles.y, 0)
-			-- CL_LinkPlayers lean: V_CalcRoll (shared) * 4
-			local roll = viewlib.calcRoll(angles, ps.velocity) * 4
-			angles = vector.create(angles.x, angles.y, roll)
+			-- remote players: interpolated delayed timeline (see qwplerp);
+			-- the local player keeps the live predicted origin
 			local porigin = predicted[num] or ps.origin
+			local ppitch, pyaw = ps.viewangles.x, ps.viewangles.y
+			local pvel = ps.velocity
+			local pframe = ps.frame
+			local remotePath = num ~= cl.playernum or lerpSelf
+			local sampleDelay = 0
+			if remotePath and lerpSelf and num == cl.playernum and noLerp then
+				porigin = ps.origin -- raw wire baseline for the A/B probe
+			elseif remotePath and not noLerp then
+				local h = plerpHists[num]
+				if h then
+					local rt, d = qwplerp.step(h, playertime, cl.realtime)
+					sampleDelay = d
+					peakPeerLagMs = math.max(peakPeerLagMs, d * 1000)
+					peakTimeNoiseMs = math.max(peakTimeNoiseMs, math.abs(h.timeErr) * 1000)
+					local o, pi_, ya, ve, fr = qwplerp.sample(h, rt)
+					if o then
+						porigin, ppitch, pyaw, pvel, pframe = o, pi_, ya, ve, fr
+					end
+				end
+			end
+			if remotePath then
+				netDiagStep(num, porigin, sampleDelay)
+			end
+			local angles = vector.create(-ppitch / 3, pyaw, 0)
+			-- CL_LinkPlayers lean: V_CalcRoll (shared) * 4
+			local roll = viewlib.calcRoll(angles, pvel) * 4
+			angles = vector.create(angles.x, angles.y, roll)
 			-- CL_NewTranslation: shirt/pants byte for the player skin
 			local colors: number? = nil
 			local info = cl.players[num]
@@ -999,7 +1121,7 @@ return function()
 							peakPeerNum = num
 						end
 					end
-					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, ps.frame, effects, colors, nil, nil, ps.velocity) then
+					if avatarLayer.updatePlayer(num + 1, aplayer, porigin, angles, pframe, effects, colors, nil, nil, pvel) then
 						seenAvatars[num + 1] = true
 						avatarDrawn = true
 					end
@@ -1007,14 +1129,14 @@ return function()
 				end
 			end
 			if not avatarDrawn then
-				linkEnt(`p{num}`, ps.modelindex, porigin, angles, ps.frame, ps.skinnum, time, colors)
+				linkEnt(`p{num}`, ps.modelindex, porigin, angles, pframe, ps.skinnum, time, colors)
 			end
 
 			-- CL_AddFlagModels: CTF flag riding on the carrier's back
 			-- (placement math offline-tested in test_qwview)
 			local efFlag = bit32.band(ps.effects, 16 + 32) -- EF_FLAG1|EF_FLAG2
 			if efFlag ~= 0 and cl.flagindex then
-				local forg, fang = qwview.flagPlacement(ps.frame, angles, porigin)
+				local forg, fang = qwview.flagPlacement(pframe, angles, porigin)
 				linkEnt(`pf{num}`, cl.flagindex, forg, fang, 0, if bit32.band(ps.effects, 32) ~= 0 then 1 else 0, time)
 			end
 		end
@@ -1748,6 +1870,9 @@ return function()
 		-- level change: rebuild the render world from scratch
 		if (cl.levelResets or 0) ~= seenLevelResets then
 			seenLevelResets = cl.levelResets or 0
+			table.clear(plerpHists) -- state_time restarts with the level
+			table.clear(netdiag)
+			lastNetDiagAt = 0
 			-- S_StopAllSounds: C calls it from CL_ParseServerData; without
 			-- it looping sounds carry across level changes
 			soundlib.clear(sndsys)

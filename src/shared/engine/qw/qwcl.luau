@@ -699,6 +699,13 @@ local function parsePlayerinfo(cl: any, r: msg.Reader)
 	state.effects = if bit32.band(flags, qwp.PF_EFFECTS) ~= 0 then msg.readByte(r) else 0
 	state.weaponframe = if bit32.band(flags, qwp.PF_WEAPONFRAME) ~= 0 then msg.readByte(r) else 0
 	state.viewangles = state.command.angles
+
+	-- render-layer hook: every wire state, in arrival order — the render
+	-- loop only sees the latest frame, so a multi-packet drain would
+	-- otherwise skip the intermediate states an interpolator needs
+	if cl.onPlayerState then
+		cl.onPlayerState(num, state)
+	end
 end
 
 -- CL_ParsePacketEntities
