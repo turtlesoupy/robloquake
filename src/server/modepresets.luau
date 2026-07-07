@@ -35,7 +35,8 @@ local DM_RULES = {
 	deathmatch = 1,
 	fraglimit = 15,
 	timelimit = 20,
-	maplist = "dm3 dm4 dm6 dm2",
+	-- everything the synced pak1 ships (dm1..dm6)
+	maplist = "dm1 dm2 dm3 dm4 dm5 dm6",
 	votetime = 30,
 	startmap = "dm3",
 }
@@ -85,7 +86,10 @@ modepresets.PRESETS = {
 		fraglimit = 15,
 		timelimit = 20,
 		startmap = "ctf1",
-		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5",
+		-- everything the synced paks ship: ctf1..ctf8 (pak0) + the
+		-- Capture II series ctf2m1..ctf2m8 (pak1); ctfstart is the mod's
+		-- hub map, not a match map
+		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
 		votetime = 30,
 	},
 	-- Rocket Arena (QW): manages its own rotation via localinfo (the mod's

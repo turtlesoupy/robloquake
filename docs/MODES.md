@@ -18,14 +18,14 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `teamplay` | number | both | yes | team rules (CTF needs it) |
 | `fraglimit` / `timelimit` | number | both | yes | round end conditions |
 | `samelevel` / `noexit` | number | both | yes | exit behavior rules |
-| `maplist` | string | both | yes | space-separated rotation, e.g. `"dm3 dm4 dm6 dm2"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
+| `maplist` | string | both | yes | space-separated rotation, e.g. `"dm1 dm2 dm3 dm4 dm5 dm6"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
 | `votetime` | number | both | yes | vote window seconds before auto-advance (default 30) |
 | `roblox_avatars` | bool | both | yes | avatar rigs for players — **default on when absent**; set `false` to opt out |
 | `modekey` | string | both | no (boot) | stats/leaderboard scope label (`dm`, `ctf`, …); absent = derived from the other attributes (`statscore.deriveModeKey`) |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
 Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=20,
-maplist="dm3 dm4 dm6 dm2 dm5"}` · Threewave CTF = `{gamedir="threewave",
+maplist="dm1 dm2 dm3 dm4 dm5 dm6"}` · Threewave CTF = `{gamedir="threewave",
 teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 `deathmatch`, no `maplist` — nothing below activates.
 
