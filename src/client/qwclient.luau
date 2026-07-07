@@ -368,7 +368,9 @@ return function()
 	local seenLevelResets = 0
 	local staticsSpawned = 0
 	local staticSoundsSpawned = 0
-	local staticRes: { entrender.RenderEnt } = {} -- destroyed on level change
+	-- destroyed on level change; def/es kept so framegroup statics (torch
+	-- flames) can re-pose by time each frame like R_DrawEntitiesOnList
+	local staticRes: { { re: entrender.RenderEnt, def: any, es: any } } = {}
 
 	-- model defs come straight from qwcl's loaded models (modellist)
 	local function getModelDef(modelindex: number): entrender.ModelDef?
@@ -499,9 +501,9 @@ return function()
 			if def and def.kind ~= "none" then
 				local re = entrender.create(def, entFolder)
 				if re then
-					table.insert(staticRes, re)
+					table.insert(staticRes, { re = re, def = def, es = es })
 					if def.kind == "alias" then
-						entrender.updateAlias(re, def, es.origin, es.angles, es.frame, es.skinnum, 0, 0)
+						entrender.updateAlias(re, def, es.origin, es.angles, es.frame, es.skinnum, 0, cl.time)
 					elseif def.kind == "sprite" then
 						entrender.updateSprite(re, def, es.origin, es.frame)
 					elseif def.kind == "brush" then
@@ -1763,8 +1765,8 @@ return function()
 				renderDefs[key] = nil
 			end
 			destroyEntPool() -- pooled ents reference the old level's defs
-			for _, re in staticRes do
-				entrender.destroy(re)
+			for _, st in staticRes do
+				entrender.destroy(st.re)
 			end
 			table.clear(staticRes)
 			avatarLayer.destroyWeapons() -- weapon defs are per-level
@@ -1805,6 +1807,14 @@ return function()
 			return
 		end
 		spawnPendingStatics()
+
+		-- statics with framegroup models (torch flames) animate by time, so
+		-- alias statics re-pose every frame like R_DrawEntitiesOnList
+		for _, st in staticRes do
+			if st.re.kind == "alias" then
+				entrender.updateAlias(st.re, st.def, st.es.origin, st.es.angles, st.es.frame, st.es.skinnum, 0, cl.time)
+			end
+		end
 
 		-- server-forced view angles (spawn/teleport fixangle)
 		if cl.setangle then
