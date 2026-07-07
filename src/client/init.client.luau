@@ -1739,11 +1739,12 @@ local UserInputService = game:GetService("UserInputService")
 
 local directorUiOpen = false
 local tweaksUiOpen = false
+local pauseUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen or tweaksUiOpen then
-		input.freeMouse() -- the admin/tweaks menus are clickable UI
+	if directorUiOpen or tweaksUiOpen or pauseUiOpen then
+		input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
 	end
 end
 
@@ -1764,6 +1765,22 @@ require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
+-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on backslash (\),
+-- darkens the world 80% without pausing it; twin of the qwclient block =====
+local pauseHandle = require(script.pausemenu).attach({
+	playerGui = playerGui,
+	fs = fs,
+	pal = pal,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		pauseUiOpen = open
+		refreshInputMode()
+	end,
+})
+-- ===== end pause menu =====
+
 -- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (unbound in
 -- the default binds and not Roblox-reserved); twin of the qwclient block =====
 require(script.tweaksui).attach({
@@ -1775,6 +1792,10 @@ require(script.tweaksui).attach({
 		tweaksUiOpen = open
 		refreshInputMode()
 	end,
+	menuFont = {
+		isBig = pauseHandle.isBigFont,
+		setBig = pauseHandle.setBigFont,
+	},
 	setWeaponSkin = function(mdlName: string, spec: string?)
 		weaponSkins[mdlName] = spec
 		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame

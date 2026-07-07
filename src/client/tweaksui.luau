@@ -79,6 +79,8 @@ export type Opts = {
 	-- flip the chase camera (chase_active) and return the new state;
 	-- omitted when the engine has no self chase cam (QW)
 	toggleThirdPerson: (() -> boolean)?,
+	-- pause-menu (backslash) font style: big bronze plaque vs small classic
+	menuFont: { isBig: () -> boolean, setBig: (on: boolean) -> () }?,
 }
 
 function tweaksui.attach(opts: Opts)
@@ -191,6 +193,31 @@ function tweaksui.attach(opts: Opts)
 				chaseBtn.TextColor3 = if on then ACCENT else TEXT
 			end)
 		end
+	end
+
+	if opts.menuFont then
+		local mf = opts.menuFont
+		local fontLabel = label(scroll, "PAUSE MENU (\\)", 12, DIM, true)
+		fontLabel.Size = UDim2.new(1, 0, 0, 16)
+		fontLabel.TextXAlignment = Enum.TextXAlignment.Left
+		fontLabel.LayoutOrder = order
+		order += 1
+
+		local fontBtn = button(scroll, "")
+		fontBtn.Name = "MenuFont"
+		fontBtn.Size = UDim2.new(1, 0, 0, 44)
+		fontBtn.LayoutOrder = order
+		order += 1
+		local function refresh()
+			local big = mf.isBig()
+			fontBtn.Text = `MENU FONT: {if big then "BIG PLAQUE" else "CLASSIC"}`
+			fontBtn.TextColor3 = if big then ACCENT else TEXT
+		end
+		refresh()
+		fontBtn.Activated:Connect(function()
+			mf.setBig(not mf.isBig())
+			refresh()
+		end)
 	end
 
 	local sectionLabel = label(scroll, "WEAPON SKINS", 12, DIM, true)

@@ -955,12 +955,13 @@ return function()
 
 	local directorUiOpen = false
 	local tweaksUiOpen = false
+	local pauseUiOpen = false
 	local function refreshInputMode()
 		-- while the console, chat line or menu is up the player stops
 		-- moving (Key_ClearStates lives in input.setEnabled(false))
-		input.setEnabled(not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or menulib.isOpen(mnu)))
-		if directorUiOpen or tweaksUiOpen then
-			input.freeMouse() -- the admin/tweaks menus are clickable UI
+		input.setEnabled(not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or pauseUiOpen or menulib.isOpen(mnu)))
+		if directorUiOpen or tweaksUiOpen or pauseUiOpen then
+			input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
 		end
 	end
 
@@ -980,6 +981,22 @@ return function()
 	})
 	-- ===== end match director UI =====
 
+	-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on backslash (\),
+	-- darkens the world 80% without pausing it; twin of the NQ block =====
+	local pauseHandle = require(script.Parent.pausemenu).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		fs = fs,
+		pal = pal,
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+		onUiToggle = function(open: boolean)
+			pauseUiOpen = open
+			refreshInputMode()
+		end,
+	})
+	-- ===== end pause menu =====
+
 	-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (T is
 	-- Quake talk; K is unbound in the default binds and not Roblox-reserved) =====
 	require(script.Parent.tweaksui).attach({
@@ -995,6 +1012,10 @@ return function()
 			weaponSkins[mdlName] = spec
 			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
 		end,
+		menuFont = {
+			isBig = pauseHandle.isBigFont,
+			setBig = pauseHandle.setBigFont,
+		},
 	})
 	-- ===== end tweaks menu =====
 
