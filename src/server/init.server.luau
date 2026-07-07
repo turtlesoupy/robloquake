@@ -333,6 +333,10 @@ local dir = directorlib.attach({
 	getRule = function(name: string)
 		return cvarlib.value(svr.cvars, name)
 	end,
+	broadcastPrint = function(text: string)
+		-- callvote announcements ride the engine notify surface
+		svlib.broadcastPrint(svr, text .. "\n")
+	end,
 	adminCommand = function(cmd: string, arg: string): string?
 		-- Host_Status_f / Host_Ping_f / Host_Kick_f for the admin menu
 		if cmd == "status" then

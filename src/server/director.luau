@@ -91,6 +91,81 @@ function director.winner(candidateMaps: { string }, counts: { number }, fallback
 end
 
 --------------------------------------------------------------------------
+-- callvote (mid-round player votes)
+--
+-- The vote ENGINE is generic — a proposal is any (key, value) pair the
+-- apply layer understands (rules, maps, toggles). What players may
+-- actually propose is the VOTABLE spec below: a view layer over the
+-- full parameter set. Game-defining rules (deathmatch/teamplay/coop/
+-- skill) are deliberately absent — those stay host-only.
+
+export type Proposal = { key: string, kind: string, value: any, desc: string }
+
+director.VOTABLE = {
+	map = { kind = "map" },
+	fraglimit = { kind = "rule", min = 5, max = 200 },
+	timelimit = { kind = "rule", min = 5, max = 120 },
+	samelevel = { kind = "rule", min = 0, max = 1 },
+	roblox_avatars = { kind = "toggle" },
+} :: { [string]: { kind: string, min: number?, max: number? } }
+
+-- validate a raw (key, value) against the view layer; map proposals are
+-- limited to the rotation list (hosts can still force any map)
+function director.validateProposal(maplist: { string }, key: any, value: any): (Proposal?, string?)
+	if typeof(key) ~= "string" then
+		return nil, "bad proposal"
+	end
+	local spec = director.VOTABLE[key]
+	if not spec then
+		return nil, `{key} is not votable`
+	end
+	if spec.kind == "map" then
+		local name = if typeof(value) == "string" then value:match("^[%w_%-]+$") else nil
+		if not name then
+			return nil, "bad map name"
+		end
+		if not table.find(maplist, name) then
+			return nil, `{name} is not in the rotation`
+		end
+		return { key = key, kind = "map", value = name, desc = `map {name}` }
+	elseif spec.kind == "rule" then
+		local v = tonumber(value)
+		if not v then
+			return nil, "bad value"
+		end
+		v = math.floor(v)
+		if v < (spec.min or 0) or v > (spec.max or math.huge) then
+			return nil, `{key} must be {spec.min}..{spec.max}`
+		end
+		return { key = key, kind = "rule", value = v, desc = `{key} {v}` }
+	elseif spec.kind == "toggle" then
+		if typeof(value) ~= "boolean" then
+			return nil, "bad value"
+		end
+		return { key = key, kind = "toggle", value = value, desc = `{key} {if value then "on" else "off"}` }
+	end
+	return nil, "bad proposal"
+end
+
+-- early resolution against everyone present: pass only once yes alone
+-- is a strict majority; fail once no has made that impossible
+function director.cvDecided(yes: number, no: number, present: number): string?
+	if yes * 2 > present then
+		return "pass"
+	end
+	if no * 2 >= present then
+		return "fail"
+	end
+	return nil
+end
+
+-- expiry resolution: majority of the votes actually cast decides —
+-- ties and zero participation fail
+function director.cvExpired(yes: number, no: number): boolean
+	return yes > no
+end
+
+--------------------------------------------------------------------------
 -- runtime
 
 export type Adapter = {
@@ -105,6 +180,9 @@ export type Adapter = {
 	-- host admin tools (Host_Status_f/Host_Ping_f/Host_Kick_f per engine):
 	-- returns a report string for "status"/"ping"; performs "kick <name>"
 	adminCommand: ((cmd: string, arg: string) -> string?)?,
+	-- one console line to every client (vote announcements ride the
+	-- engine's own notify surface, not new UI)
+	broadcastPrint: ((text: string) -> ())?,
 }
 
 -- rules admins may change live (cvars both QC codebases re-read while
@@ -120,6 +198,11 @@ local LIVE_RULES = {
 	"noexit",
 }
 local DEFAULT_VOTETIME = 30
+-- callvote pacing (product tuning, not Quake constants)
+local CV_PLAYER_COOLDOWN = 60 -- seconds between proposals per player
+local CV_GLOBAL_COOLDOWN = 15 -- seconds after any vote before the next
+local CV_MAP_SPACING = 45 -- min seconds after a changelevel before a map vote
+-- (rapid changelevels exhaust the EditableMesh budget; see backlog)
 
 function director.attach(a: Adapter)
 	local Players = game:GetService("Players")
@@ -133,6 +216,20 @@ function director.attach(a: Adapter)
 	local voteDeadline = 0
 	local votes: { [Player]: number } = {}
 	local wasIntermission = false
+
+	-- callvote state: at most one active proposal
+	type ActiveCv = { prop: Proposal, byName: string, deadline: number, votes: { [Player]: boolean } }
+	local cv: ActiveCv? = nil
+	local cvLastProposal: { [Player]: number } = {}
+	local cvLastEnd = -math.huge
+	local lastMapChange = -math.huge
+
+	local function announce(text: string)
+		if a.broadcastPrint then
+			a.broadcastPrint(text)
+		end
+		print("[director] " .. text)
+	end
 
 	local function maplist(): { string }
 		return director.parseMaplist(a.assets:GetAttribute("maplist"))
@@ -181,6 +278,89 @@ function director.attach(a: Adapter)
 		return director.winner(voteMaps, director.tally(votes, #voteMaps), fallback)
 	end
 
+	------------------------------------------------------------------
+	-- callvote lifecycle
+
+	local function cvCounts(c: ActiveCv): (number, number)
+		local yes, no = 0, 0
+		for _, v in c.votes do
+			if v then
+				yes += 1
+			else
+				no += 1
+			end
+		end
+		return yes, no
+	end
+
+	local function cvBroadcastCounts(c: ActiveCv)
+		local yes, no = cvCounts(c)
+		remote:FireAllClients({ t = "cvCounts", yes = yes, no = no })
+	end
+
+	local function applyProposal(prop: Proposal)
+		if prop.kind == "map" then
+			closeVote() -- an intermission vote cannot coexist anyway
+			lastMapChange = os.clock()
+			a.forceChangelevel(prop.value)
+		elseif prop.kind == "rule" then
+			a.setRule(prop.key, prop.value)
+			a.assets:SetAttribute(prop.key, prop.value) -- survives restarts
+			broadcastState()
+		elseif prop.kind == "toggle" then
+			a.assets:SetAttribute(prop.key, prop.value)
+			broadcastState()
+		end
+	end
+
+	local function resolveCv(passed: boolean, why: string?)
+		local c = cv
+		if not c then
+			return
+		end
+		cv = nil
+		cvLastEnd = os.clock()
+		local yes, no = cvCounts(c)
+		announce(if passed
+			then `vote passed ({yes}-{no}): {c.prop.desc}`
+			else `vote failed ({yes}-{no}): {c.prop.desc}{if why then " - " .. why else ""}`)
+		remote:FireAllClients({ t = "cvEnd", passed = passed, desc = c.prop.desc })
+		if passed then
+			applyProposal(c.prop)
+		end
+	end
+
+	-- early pass/fail once the present players make the outcome certain
+	local function cvCheck()
+		local c = cv
+		if not c then
+			return
+		end
+		local yes, no = cvCounts(c)
+		local decided = director.cvDecided(yes, no, #Players:GetPlayers())
+		if decided then
+			resolveCv(decided == "pass")
+		end
+	end
+
+	-- deny reasons for a callvote request; nil = allowed
+	local function cvDenyReason(player: Player): string?
+		if cv then
+			return "a vote is already in progress"
+		end
+		if voteOpen then
+			return "the next-map vote is open"
+		end
+		local now = os.clock()
+		if now - cvLastEnd < CV_GLOBAL_COOLDOWN then
+			return "too soon after the last vote"
+		end
+		if now - (cvLastProposal[player] or -math.huge) < CV_PLAYER_COOLDOWN then
+			return "you called a vote recently"
+		end
+		return nil
+	end
+
 	remote.OnServerEvent:Connect(function(player: Player, msg: any)
 		if typeof(msg) ~= "table" or typeof(msg.t) ~= "string" then
 			return
@@ -194,6 +374,16 @@ function director.attach(a: Adapter)
 					secondsLeft = math.max(0, voteDeadline - os.clock()),
 				})
 				broadcastCounts()
+			end
+			local c = cv
+			if c then
+				remote:FireClient(player, {
+					t = "cvBegin",
+					desc = c.prop.desc,
+					by = c.byName,
+					secondsLeft = math.max(0, c.deadline - os.clock()),
+				})
+				cvBroadcastCounts(c)
 			end
 		elseif msg.t == "vote" then
 			local i = tonumber(msg.i)
@@ -235,6 +425,35 @@ function director.attach(a: Adapter)
 			end
 			a.assets:SetAttribute("roblox_avatars", msg.value == true)
 			broadcastState()
+		elseif msg.t == "callvote" then
+			local deny = cvDenyReason(player)
+			local prop: Proposal?, err: string?
+			if not deny then
+				prop, err = director.validateProposal(maplist(), msg.key, msg.value)
+				deny = err
+				if prop and prop.kind == "map" and os.clock() - lastMapChange < CV_MAP_SPACING then
+					deny = "the map just changed"
+					prop = nil
+				end
+			end
+			if deny or not prop then
+				remote:FireClient(player, { t = "cvDeny", reason = deny or "bad proposal" })
+				return
+			end
+			cvLastProposal[player] = os.clock()
+			local vt = tonumber(a.assets:GetAttribute("votetime")) or DEFAULT_VOTETIME
+			cv = { prop = prop, byName = player.Name, deadline = os.clock() + vt, votes = { [player] = true } }
+			announce(`{player.Name} called a vote: {prop.desc}`)
+			remote:FireAllClients({ t = "cvBegin", desc = prop.desc, by = player.Name, secondsLeft = vt })
+			cvBroadcastCounts(cv :: ActiveCv)
+			cvCheck() -- a lone player's vote passes immediately
+		elseif msg.t == "castvote" then
+			local c = cv
+			if c and typeof(msg.v) == "boolean" then
+				c.votes[player] = msg.v
+				cvBroadcastCounts(c)
+				cvCheck()
+			end
 		elseif msg.t == "admin" then
 			-- host tools: status/ping reports + kick (Host_*_f per engine)
 			if not a.isHost(player) then
@@ -257,6 +476,15 @@ function director.attach(a: Adapter)
 				broadcastCounts()
 			end
 		end
+		cvLastProposal[player] = nil
+		local c = cv
+		if c and c.votes[player] ~= nil then
+			c.votes[player] = nil
+			cvBroadcastCounts(c)
+		end
+		if c then
+			cvCheck() -- fewer present players may decide the outcome
+		end
 	end)
 	Players.PlayerAdded:Connect(function(player)
 		task.delay(2, function()
@@ -270,8 +498,19 @@ function director.attach(a: Adapter)
 	-- rising edge and force-advances when the vote expires (idle players
 	-- would otherwise hold intermission forever)
 	function api.step()
+		-- callvote expiry: majority of the votes cast decides
+		local c = cv
+		if c and os.clock() > c.deadline then
+			local yes, no = cvCounts(c)
+			resolveCv(director.cvExpired(yes, no), "time expired")
+		end
+
 		local inter = a.getIntermission()
 		if inter and not wasIntermission then
+			-- the round ending supersedes any mid-round vote
+			if cv then
+				resolveCv(false, "round ended")
+			end
 			local list = maplist()
 			if #list > 0 then
 				voteMaps = director.candidates(list, a.getCurrentMap(), 3)
@@ -301,6 +540,10 @@ function director.attach(a: Adapter)
 	-- the single engine seam: the boot passes every QC changelevel target
 	-- through here and loads what comes back
 	function api.resolveChangelevel(qcTarget: string): string
+		lastMapChange = os.clock() -- callvote map-spacing guard
+		if cv then
+			resolveCv(false, "map changed")
+		end
 		local current = a.getCurrentMap()
 		local list = maplist()
 		local answer = qcTarget

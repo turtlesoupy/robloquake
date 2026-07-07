@@ -113,6 +113,27 @@ blocks in the four boot files).
 - Studio without DataStore API access: writes disable themselves after
   the characteristic access error and the session runs in-memory.
 
+### Callvote (mid-round player votes)
+
+Any player can propose a change mid-round from the ballot button
+(below the trophy) — one active vote at a time, yes/no via **F1/F2**
+or the banner buttons, `votetime` window. The proposer auto-votes yes.
+Resolution: passes early once yes alone is a strict majority of
+*present* players (a lone player's vote passes instantly); fails early
+once no has made that impossible; at expiry the majority of votes
+*cast* decides — ties and zero participation fail. Round end or any
+map change cancels the vote. Announcements are server console prints
+(the engine notify surface), not UI.
+
+The vote engine is generic — a proposal is any (key, value) the apply
+layer understands. `director.VOTABLE` is the **view layer** deciding
+what non-hosts may propose: map (rotation entries only), `fraglimit`,
+`timelimit`, `samelevel`, `roblox_avatars`. Game-defining rules
+(`deathmatch`/`teamplay`/`coop`/`skill`) are deliberately absent —
+host-only via the admin menu. Guards: 60 s per-player proposal
+cooldown, 15 s global cooldown after any vote, and map votes are
+denied within 45 s of a changelevel (EditableMesh-budget spacing).
+
 ### Admin menu
 
 Hosts (Studio, private-server owner, place creator — same policy as the

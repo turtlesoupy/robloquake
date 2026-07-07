@@ -135,6 +135,10 @@ return function(ctx: Ctx)
 		getRule = function(name: string)
 			return cvarlib.value(svr.cvars, name)
 		end,
+		broadcastPrint = function(text: string)
+			-- callvote announcements ride the engine notify surface
+			svr.broadcastPrint(svr, 2, text .. "\n") -- PRINT_HIGH
+		end,
 		adminCommand = function(cmd: string, arg: string): string?
 			-- SV_Status-style report / pings / SV_Kick_f for the admin menu
 			if cmd == "status" then
