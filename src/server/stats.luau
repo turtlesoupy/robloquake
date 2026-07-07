@@ -6,8 +6,10 @@
 -- the servers already maintain (frags/health/deadflag/weapon).
 --
 -- REMOVAL: delete this file, statscore.luau, statstore.luau,
--- src/client/leaderboardui.luau and the marked "stats" blocks in
--- init.server.luau / qwserver.luau / the client boots.
+-- src/client/leaderboardui.luau (the RANKINGS data source) and the marked
+-- "stats" / "leaderboard data source" blocks in init.server.luau /
+-- qwserver.luau / the client boots; the pause menu's RANKINGS page then falls
+-- dormant on its own (opts.leaderboards is nil, so it shows "unavailable").
 
 local Players = game:GetService("Players")
 

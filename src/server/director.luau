@@ -177,6 +177,10 @@ export type Adapter = {
 	forceChangelevel: (map: string) -> (),
 	setRule: (name: string, value: number) -> (), -- live cvar set
 	getRule: (name: string) -> number?,
+	-- human-readable level name for a rotation map (worldspawn "message",
+	-- read from the BSP by the boot); nil when unknown or unavailable, so
+	-- clients fall back to the raw file name
+	getMapTitle: ((name: string) -> string?)?,
 	-- host admin tools (Host_Status_f/Host_Ping_f/Host_Kick_f per engine):
 	-- returns a report string for "status"/"ping"; performs "kick <name>"
 	adminCommand: ((cmd: string, arg: string) -> string?)?,
@@ -235,6 +239,32 @@ function director.attach(a: Adapter)
 		return director.parseMaplist(a.assets:GetAttribute("maplist"))
 	end
 
+	-- level-name cache: BSP reads are cheap but not free, so remember each
+	-- map's worldspawn "message" the first time we need it (keyed by file
+	-- name; a name absent from the map means "looked up, has no title")
+	local titleCache: { [string]: string } = {}
+	local titleTried: { [string]: boolean } = {}
+	local function mapTitles(list: { string }): { [string]: string }
+		local out: { [string]: string } = {}
+		local get = a.getMapTitle
+		if not get then
+			return out
+		end
+		for _, name in list do
+			if not titleTried[name] then
+				titleTried[name] = true
+				local t = get(name)
+				if t and t ~= "" then
+					titleCache[name] = t
+				end
+			end
+			if titleCache[name] then
+				out[name] = titleCache[name]
+			end
+		end
+		return out
+	end
+
 	local function statePayload(player: Player)
 		local rules: { [string]: number } = {}
 		for _, name in LIVE_RULES do
@@ -246,6 +276,7 @@ function director.attach(a: Adapter)
 			map = a.getCurrentMap(),
 			rules = rules,
 			maplist = a.assets:GetAttribute("maplist") or "",
+			maptitles = mapTitles(maplist()),
 			avatars = a.assets:GetAttribute("roblox_avatars") ~= false,
 			engine = a.assets:GetAttribute("engine") or "nq",
 			game = a.assets:GetAttribute("game") or "id1",

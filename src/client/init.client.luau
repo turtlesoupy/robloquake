@@ -5,7 +5,12 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
+
+-- the Quake scoreboard on TAB (default.cfg's bind) replaces the native
+-- player list, so the CoreGui version stays permanently hidden (both boots)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
@@ -1046,8 +1051,17 @@ execCommand = function(line: string)
 	elseif cmd == "messagemode" or cmd == "messagemode2" then
 		consolelib.print(con, "use say <text> or the Roblox chat")
 		return
-	elseif cmd == "gamma" or cmd == "volume" then
+	elseif cmd == "gamma" then
 		return -- accepted, fixed on this platform
+	elseif cmd == "volume" then
+		-- the "volume" cvar -> soundbank master (also the settings slider)
+		local v = tonumber(args)
+		if v then
+			soundlib.setMasterVolume(snd, v)
+		else
+			consolelib.print(con, `"volume" is "{soundlib.getMasterVolume(snd)}"`)
+		end
+		return
 	elseif cmd == "sizeup" or cmd == "sizedown" then
 		-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
 		currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
@@ -1590,12 +1604,11 @@ local UserInputService = game:GetService("UserInputService")
 local directorUiOpen = false
 local tweaksUiOpen = false
 local pauseUiOpen = false
-local lbUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen or pauseUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen then
-		input.freeMouse() -- the admin/tweaks/pause menus + leaderboard are clickable UI
+	if directorUiOpen or tweaksUiOpen or pauseUiOpen then
+		input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
 	end
 end
 
@@ -1616,9 +1629,48 @@ local directorHandle = require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
+-- ===== prefs bridge (PRODUCT layer): persisted settings + weapon skin
+-- picks (src/server/prefstore.luau). Wraps the setters below so menu
+-- changes push a snapshot; loads + applies saved prefs at boot; twin of
+-- the qwclient block. REMOVAL: see prefstore.luau — pass the raw
+-- settings/setWeaponSkin tables straight to the menus again. =====
+local prefsHandle = require(script.prefs).attach({
+	net = net,
+	-- SETTINGS page rows (menu.c M_Options): look/run live in input,
+	-- volume is the soundbank master
+	settings = {
+		getSensitivity = input.getSensitivity,
+		setSensitivity = input.setSensitivity,
+		getInvertMouse = input.getInvertMouse,
+		setInvertMouse = input.setInvertMouse,
+		getAlwaysRun = input.getAlwaysRun,
+		setAlwaysRun = input.setAlwaysRun,
+		getVolume = function()
+			return soundlib.getMasterVolume(snd)
+		end,
+		setVolume = function(v: number)
+			soundlib.setMasterVolume(snd, v)
+		end,
+	},
+	setWeaponSkin = function(mdlName: string, spec: string?)
+		weaponSkins[mdlName] = spec
+		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+	end,
+	validSpec = function(spec: string)
+		return skinforge.parse(spec) ~= nil
+	end,
+})
+-- ===== end prefs bridge =====
+
+-- ===== leaderboard data source (PRODUCT layer): resolves the server's
+-- Leaderboards RemoteFunction for the pause menu's RANKINGS page; dormant
+-- when the stats pipeline is absent. REMOVAL: see src/server/stats.luau. =====
+local lbHandle = require(script.leaderboardui).attach({ net = net })
+-- ===== end leaderboard data source =====
+
 -- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
--- top-right MENU plaque (pausemenu also owns the SCORE plaque),
--- darkens the world 80% without pausing it; twin of the qwclient block =====
+-- top-right MENU plaque, darkens the world 80% without pausing it;
+-- twin of the qwclient block =====
 local pauseHandle = require(script.pausemenu).attach({
 	playerGui = playerGui,
 	fs = fs,
@@ -1633,16 +1685,15 @@ local pauseHandle = require(script.pausemenu).attach({
 	playSound = function()
 		soundlib.localSound(snd, "misc/menu2.wav") -- S_LocalSound menu click
 	end,
-	setWeaponSkin = function(mdlName: string, spec: string?)
-		weaponSkins[mdlName] = spec
-		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
-	end,
-	setShowScores = function(on: boolean)
-		hudlib.setShowScores(hud, on)
-	end,
-	callMapVote = function()
-		directorHandle.callVote()
-	end,
+	setWeaponSkin = prefsHandle.setWeaponSkin,
+	-- MY SKINS block reads the equipped rocket-launcher pick from the mirror
+	getWeaponSkin = prefsHandle.getWeaponSkin,
+	-- RANKINGS page (L / the RANKINGS block) reads the kill boards from here
+	leaderboards = lbHandle,
+	-- CALL A VOTE page: live state + proposals ride the director bridge
+	callvote = directorHandle.cv,
+	-- SETTINGS page (menu.c M_Options): setters persist via the prefs bridge
+	settings = prefsHandle.settings,
 })
 -- ===== end pause menu =====
 
@@ -1661,10 +1712,7 @@ require(script.tweaksui).attach({
 		isBig = pauseHandle.isBigFont,
 		setBig = pauseHandle.setBigFont,
 	},
-	setWeaponSkin = function(mdlName: string, spec: string?)
-		weaponSkins[mdlName] = spec
-		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
-	end,
+	setWeaponSkin = prefsHandle.setWeaponSkin,
 	giveAll = function()
 		-- Host_Give_f per weapon (2-8), then ammo for each type; the
 		-- server's give port has no deathmatch gate (see host.luau)
@@ -1683,21 +1731,6 @@ require(script.tweaksui).attach({
 })
 -- ===== end tweaks menu =====
 
--- ===== leaderboard UI (PRODUCT layer): daily/weekly/all-time boards
--- from the stats pipeline. REMOVAL: see src/server/stats.luau. =====
-require(script.leaderboardui).attach({
-	playerGui = playerGui,
-	net = net,
-	isTyping = function()
-		return con.open
-	end,
-	onUiToggle = function(open: boolean)
-		lbUiOpen = open
-		refreshInputMode()
-	end,
-})
--- ===== end leaderboard UI =====
-
 -- ===== touch + gamepad controls (PRODUCT layer): buttons run console
 -- lines through the bind exec, sticks feed input's analog hooks. See
 -- src/client/controls.luau for the removal note. =====
@@ -1705,7 +1738,7 @@ require(script.controls).attach({
 	playerGui = playerGui,
 	exec = execLine,
 	isUiOpen = function()
-		return con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen or pauseUiOpen or tweaksUiOpen
+		return con.open or menulib.isOpen(mnu) or directorUiOpen or pauseUiOpen or tweaksUiOpen
 	end,
 	menuKey = function(key: Enum.KeyCode): boolean
 		if not menulib.isOpen(mnu) then
@@ -1935,8 +1968,9 @@ end)
 -- autoexec mechanism (WASD wasn't the default; arrows were). E, M and T
 -- are product hotkeys (pause menu / map vote / tweaks, pausemenu.luau
 -- and tweaksui.luau), so they stay unbound here (+jump swims up anyway;
--- NQ messagemode is a stub), the scoreboard moves off default.cfg's TAB
--- onto R, and the engine menu takes the freed backslash.
+-- NQ messagemode is a stub), the scoreboard keeps default.cfg's TAB (the
+-- native player list CoreGui is disabled at boot, freeing the key), and
+-- the engine menu takes the freed backslash.
 execLine("exec default.cfg")
 for _, l in {
 	"bind w +forward",
@@ -1945,11 +1979,7 @@ for _, l in {
 	"bind d +moveright",
 	"bind c +movedown",
 	"bind \\ togglemenu",
-	-- Tab toggles the Roblox player list at CoreScript priority and
-	-- can't be unbound, so the scoreboard moves off it
-	"unbind tab",
 	"unbind t",
-	"bind r +showscores",
 } do
 	execLine(l)
 end

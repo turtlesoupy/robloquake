@@ -1239,15 +1239,14 @@ return function()
 	local directorUiOpen = false
 	local tweaksUiOpen = false
 	local pauseUiOpen = false
-	local lbUiOpen = false
 	local function refreshInputMode()
 		-- while the console, chat line or menu is up the player stops
 		-- moving (Key_ClearStates lives in input.setEnabled(false))
 		input.setEnabled(
-			not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen or menulib.isOpen(mnu))
+			not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or pauseUiOpen or menulib.isOpen(mnu))
 		)
-		if directorUiOpen or tweaksUiOpen or pauseUiOpen or lbUiOpen then
-			input.freeMouse() -- the admin/tweaks/pause menus + leaderboard are clickable UI
+		if directorUiOpen or tweaksUiOpen or pauseUiOpen then
+			input.freeMouse() -- the admin/tweaks/pause menus are clickable UI
 		end
 	end
 
@@ -1267,9 +1266,46 @@ return function()
 	})
 	-- ===== end match director UI =====
 
+	-- ===== prefs bridge (PRODUCT layer) — twin of the NQ block; persisted
+	-- settings + weapon skin picks; see src/server/prefstore.luau for the
+	-- REMOVAL note =====
+	local prefsHandle = require(script.Parent.prefs).attach({
+		net = net,
+		-- SETTINGS page rows (menu.c M_Options): look/run live in input,
+		-- volume is the soundbank master
+		settings = {
+			getSensitivity = input.getSensitivity,
+			setSensitivity = input.setSensitivity,
+			getInvertMouse = input.getInvertMouse,
+			setInvertMouse = input.setInvertMouse,
+			getAlwaysRun = input.getAlwaysRun,
+			setAlwaysRun = input.setAlwaysRun,
+			getVolume = function()
+				return soundlib.getMasterVolume(sndsys)
+			end,
+			setVolume = function(v: number)
+				soundlib.setMasterVolume(sndsys, v)
+			end,
+		},
+		setWeaponSkin = function(mdlName: string, spec: string?)
+			weaponSkins[mdlName] = spec
+			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+		end,
+		validSpec = function(spec: string)
+			return skinforge.parse(spec) ~= nil
+		end,
+	})
+	-- ===== end prefs bridge =====
+
+	-- ===== leaderboard data source (PRODUCT layer) — resolves the server's
+	-- Leaderboards RemoteFunction for the pause menu's RANKINGS page; dormant
+	-- when the stats pipeline is absent. REMOVAL: see src/server/stats.luau =====
+	local lbHandle = require(script.Parent.leaderboardui).attach({ net = net })
+	-- ===== end leaderboard data source =====
+
 	-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
-	-- top-right MENU plaque (pausemenu also owns the SCORE plaque),
-	-- darkens the world 80% without pausing it; twin of the NQ block =====
+	-- top-right MENU plaque, darkens the world 80% without pausing it;
+	-- twin of the NQ block =====
 	local pauseHandle = require(script.Parent.pausemenu).attach({
 		playerGui = player:WaitForChild("PlayerGui"),
 		fs = fs,
@@ -1284,16 +1320,15 @@ return function()
 		playSound = function()
 			soundlib.localSound(sndsys, "misc/menu2.wav") -- S_LocalSound menu click
 		end,
-		setWeaponSkin = function(mdlName: string, spec: string?)
-			weaponSkins[mdlName] = spec
-			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
-		end,
-		setShowScores = function(on: boolean)
-			hudlib.setShowScores(hud, on)
-		end,
-		callMapVote = function()
-			directorHandle.callVote()
-		end,
+		setWeaponSkin = prefsHandle.setWeaponSkin,
+		-- MY SKINS block reads the equipped rocket-launcher pick from the mirror
+		getWeaponSkin = prefsHandle.getWeaponSkin,
+		-- RANKINGS page (L / the RANKINGS block) reads the kill boards from here
+		leaderboards = lbHandle,
+		-- CALL A VOTE page: live state + proposals ride the director bridge
+		callvote = directorHandle.cv,
+		-- SETTINGS page (menu.c M_Options): setters persist via the prefs bridge
+		settings = prefsHandle.settings,
 	})
 	-- ===== end pause menu =====
 
@@ -1309,31 +1344,13 @@ return function()
 			tweaksUiOpen = open
 			refreshInputMode()
 		end,
-		setWeaponSkin = function(mdlName: string, spec: string?)
-			weaponSkins[mdlName] = spec
-			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
-		end,
+		setWeaponSkin = prefsHandle.setWeaponSkin,
 		menuFont = {
 			isBig = pauseHandle.isBigFont,
 			setBig = pauseHandle.setBigFont,
 		},
 	})
 	-- ===== end tweaks menu =====
-
-	-- ===== leaderboard UI (PRODUCT layer) — twin of the NQ block; see
-	-- src/server/stats.luau for the REMOVAL note =====
-	require(script.Parent.leaderboardui).attach({
-		playerGui = player:WaitForChild("PlayerGui"),
-		net = net,
-		isTyping = function()
-			return con.open or chatOpen
-		end,
-		onUiToggle = function(open: boolean)
-			lbUiOpen = open
-			refreshInputMode()
-		end,
-	})
-	-- ===== end leaderboard UI =====
 
 	-- keys.c bind system (Key_SetBinding/Key_Bind_f family): quake key
 	-- names from the shared keymap; Key_Init seeds default.cfg-parity
@@ -1352,9 +1369,9 @@ return function()
 		pgup = "+lookup", pgdn = "+lookdown",
 		space = "+jump", ctrl = "+attack", shift = "+speed",
 		-- talk sits on Y: T is the product tweaks-menu hotkey (tweaksui.luau).
-		-- Tab toggles the Roblox player list at CoreScript priority and
-		-- can't be unbound, so the scoreboard sits on R instead
-		r = "+showscores", y = "messagemode",
+		-- TAB is the scoreboard, default.cfg-style — the native player list
+		-- CoreGui is disabled at boot (init.client.luau), freeing the key
+		tab = "+showscores", y = "messagemode",
 	}
 	for i = 1, 8 do
 		bindings[tostring(i)] = `impulse {i}`
@@ -1386,7 +1403,7 @@ return function()
 			-- CL_Quit_f / CL_Disconnect_f: N/A on this platform
 			consolelib.print(con, "use the Roblox menu to leave the experience")
 		elseif cmd == "+showscores" or cmd == "-showscores" then
-			-- Sbar_ShowScores / Sbar_DontShowScores (R binds these)
+			-- Sbar_ShowScores / Sbar_DontShowScores (TAB binds these)
 			showScoresDown = cmd == "+showscores"
 			hudlib.setShowScores(hud, showScoresDown)
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
@@ -1473,6 +1490,14 @@ return function()
 		elseif cmd == "soundlist" then
 			-- S_SoundList (bank regions replace file sizes)
 			consolelib.print(con, soundlib.soundList(sndsys))
+		elseif cmd == "volume" then
+			-- the "volume" cvar -> soundbank master (also the settings slider)
+			local v = tonumber(args)
+			if v then
+				soundlib.setMasterVolume(sndsys, v)
+			else
+				consolelib.print(con, `"volume" is "{soundlib.getMasterVolume(sndsys)}"`)
+			end
 		elseif cmd == "sizeup" or cmd == "sizedown" then
 			-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
 			currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
@@ -1622,7 +1647,7 @@ return function()
 		"crosshair", "fullinfo", "record", "rerecord", "stop", "playdemo",
 		"stopdemo", "show_fps", "togglemenu",
 		"say_team", "serverinfo", "setinfo", "toggleconsole", "user",
-		"users", "v_cshift", "version", "viewsize",
+		"users", "v_cshift", "version", "viewsize", "volume",
 		"+showscores", "-showscores", "+showteamscores", "-showteamscores",
 	}
 
@@ -1632,7 +1657,7 @@ return function()
 		playerGui = player:WaitForChild("PlayerGui"),
 		exec = execCommand,
 		isUiOpen = function()
-			return con.open or chatOpen or directorUiOpen or lbUiOpen or menulib.isOpen(mnu)
+			return con.open or chatOpen or directorUiOpen or pauseUiOpen or menulib.isOpen(mnu)
 		end,
 		menuKey = function(key: Enum.KeyCode): boolean
 			if not menulib.isOpen(mnu) then

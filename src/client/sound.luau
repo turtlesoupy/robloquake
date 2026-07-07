@@ -14,6 +14,7 @@
 local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
 
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local qcoords = require(engine.client.qcoords)
@@ -36,12 +37,21 @@ export type System = {
 	ambients: { { sound: Sound?, vol: number } }?,
 	missing: { [string]: boolean },
 	enabled: boolean,
+	-- every bank Sound joins this group; its Volume is the "volume" cvar
+	group: SoundGroup,
 }
 
 function sound.new(parent: Instance): System
 	local folder = Instance.new("Folder")
 	folder.Name = "QuakeSounds"
 	folder.Parent = parent
+
+	-- SoundService (not the folder): clear() empties the folder but the
+	-- master must survive level changes
+	local group = Instance.new("SoundGroup")
+	group.Name = "QuakeSoundMaster"
+	group.Volume = 1
+	group.Parent = SoundService
 
 	local assetId = ""
 	local regions: { [string]: Region } = {}
@@ -75,6 +85,7 @@ function sound.new(parent: Instance): System
 		channels = {},
 		missing = {},
 		enabled = enabled,
+		group = group,
 	}
 end
 
@@ -120,7 +131,18 @@ local function bankSound(sys: System, r: Region, looped: boolean): Sound
 	end
 	s.RollOffMinDistance = 2
 	s.RollOffMode = Enum.RollOffMode.Linear
+	s.SoundGroup = sys.group
 	return s
+end
+
+-- the "volume" cvar: master gain over every bank sound via the shared
+-- SoundGroup (default.cfg's "volume 0.7" lands here at boot, like S_Init)
+function sound.setMasterVolume(sys: System, v: number)
+	sys.group.Volume = math.clamp(v, 0, 1)
+end
+
+function sound.getMasterVolume(sys: System): number
+	return sys.group.Volume
 end
 
 -- S_StartSound

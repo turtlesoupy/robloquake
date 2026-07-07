@@ -666,6 +666,28 @@ end
 
 -- Mod_LoadBrushModel. Returns the list of models: [1] is the world (or the
 -- bmodel itself), [2..] are the "*n" submodels sharing the same BspData.
+-- Worldspawn "message" field (the level's display name, e.g. what the HUD
+-- shows) WITHOUT parsing geometry — reads only the header + entity lump, so
+-- it is cheap enough to run over a whole rotation. Returns nil for a bad
+-- BSP, a missing lump, or no message key. Worldspawn is always the first
+-- entity block, so scanning it alone avoids matching a trigger's message.
+function bsp.readTitle(buf: buffer): string?
+	local ok, title = pcall(function(): string?
+		local lumps = readLumps(buf)
+		local entblob = loadBlob(buf, lumps, LUMP_ENTITIES)
+		if not entblob then
+			return nil
+		end
+		local ents = bufio.cstring(entblob, 0)
+		local worldspawn = ents:match("{(.-)}") -- first block
+		if not worldspawn then
+			return nil
+		end
+		return worldspawn:match('"message"%s*"([^"]*)"')
+	end)
+	return if ok then title else nil
+end
+
 function bsp.load(name: string, buf: buffer): { Model }
 	local lumps = readLumps(buf)
 

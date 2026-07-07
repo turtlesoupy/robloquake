@@ -1,7 +1,8 @@
 --!strict
 -- Match director UI (PRODUCT layer, NOT engine): the map vote panel
--- (intermission or player-called via callVote) and the admin
--- match-control menu. Deliberately built with
+-- (intermission), the callvote wire protocol + yes/no banner (proposals
+-- are made from the pause menu's CALL A VOTE page, see handle.cv and
+-- pausemenu.luau), and the admin match-control menu. Deliberately built with
 -- plain Roblox UI (ScreenGui) so the Quake renderer/HUD/console are
 -- untouched and this file can be deleted at any time (see the REMOVAL
 -- note in src/server/director.luau). Touch-first sizing: every control
@@ -52,15 +53,41 @@ export type Opts = {
 	onUiToggle: ((open: boolean) -> ())?,
 }
 
+-- live match state for the pause menu's CALL A VOTE page
+export type CvState = {
+	map: string,
+	maplist: string,
+	-- file name -> human-readable level name (worldspawn "message"); only
+	-- maps whose BSP resolved a title appear, so the page falls back to the
+	-- raw name for the rest
+	maptitles: { [string]: string },
+	rules: { [string]: number },
+	avatars: boolean,
+}
+
 export type Handle = {
-	-- toggle the callvote propose panel (the top-right MAP plaque / M):
-	-- pick a map/rule there and the server runs the yes/no vote.
-	-- No-op until the Director remote resolves (or forever without one).
-	callVote: () -> (),
+	-- callvote bridge for the pause menu's CALL A VOTE page (the top-right
+	-- MAP plaque / M, pausemenu.luau): getState feeds the page (nil until
+	-- the Director remote resolves and sends state), propose fires the
+	-- proposal, and the server answers cvBegin (yes/no banner here) or
+	-- cvDeny. hooks are assigned by pausemenu to hear those verdicts.
+	cv: {
+		getState: () -> CvState?,
+		propose: (key: string, value: any) -> (),
+		hooks: { onDeny: ((reason: string) -> ())?, onBegin: (() -> ())? },
+	},
 }
 
 function directorui.attach(opts: Opts): Handle
-	local handle: Handle = { callVote = function() end }
+	local handle: Handle = {
+		cv = {
+			getState = function()
+				return nil :: CvState?
+			end,
+			propose = function() end,
+			hooks = {},
+		},
+	}
 	task.spawn(function()
 		local remote = opts.net:WaitForChild("Director", 30)
 		if not remote or not remote:IsA("RemoteEvent") then
@@ -212,18 +239,14 @@ function directorui.attach(opts: Opts): Handle
 		local refreshMenuRef: () -> () = function() end
 	local reportLabelRef: TextLabel? = nil
 	local rebuildPlayersRef = function() end
-		-- the admin menu, the callvote panel, and the map-vote panel (while
-		-- it awaits the local player's pick) share the mouse-freeing
-		-- toggle: input stays UI-mode while any of them is open
-		local cvPanelVisibleRef = function(): boolean
-			return false
-		end
+		-- the admin menu and the map-vote panel (while it awaits the local
+		-- player's pick) share the mouse-freeing toggle: input stays
+		-- UI-mode while either is open
 		pushUiState = function()
 			if opts.onUiToggle then
-				opts.onUiToggle(menu.Visible or voteCursorHeld or cvPanelVisibleRef())
+				opts.onUiToggle(menu.Visible or voteCursorHeld)
 			end
 		end
-		local notifyUi = pushUiState
 		local function setMenuVisible(open: boolean)
 			if menu.Visible == open then
 				return
@@ -559,199 +582,24 @@ function directorui.attach(opts: Opts): Handle
 		end)
 
 		------------------------------------------------------------------
-		-- callvote: propose panel (everyone) + yes/no banner
-
-		-- ballot button below the leaderboard trophy (gear 12, trophy 64)
-		local cvButton = Instance.new("TextButton")
-		cvButton.AnchorPoint = Vector2.new(1, 0)
-		cvButton.Position = UDim2.new(1, -12, 0, 116)
-		cvButton.Size = UDim2.fromOffset(44, 44)
-		cvButton.BackgroundColor3 = BG
-		cvButton.BackgroundTransparency = 0.25
-		cvButton.Font = Enum.Font.GothamBold
-		cvButton.TextSize = 20
-		cvButton.TextColor3 = TEXT
-		cvButton.Text = "\u{2611}"
-		cvButton.Parent = gui
-		corner(cvButton, 22)
-
-		local cvPanel = Instance.new("Frame")
-		cvPanel.AnchorPoint = Vector2.new(0.5, 0.5)
-		cvPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
-		cvPanel.Size = UDim2.new(0, 360, 0.7, 0)
-		cvPanel.BackgroundColor3 = BG
-		cvPanel.BackgroundTransparency = 0.06
-		cvPanel.Visible = false
-		cvPanel.Parent = gui
-		corner(cvPanel, 12)
-		stroke(cvPanel, Color3.new(1, 1, 1), 0.85)
-		local cvSize = Instance.new("UISizeConstraint")
-		cvSize.MaxSize = Vector2.new(360, 560)
-		cvSize.MinSize = Vector2.new(300, 300)
-		cvSize.Parent = cvPanel
-		cvPanelVisibleRef = function()
-			return cvPanel.Visible
-		end
-
-		local cvTitle = label(cvPanel, "CALL A VOTE", 16, ACCENT, true)
-		cvTitle.Position = UDim2.new(0, 16, 0, 12)
-		cvTitle.Size = UDim2.new(1, -70, 0, 20)
-		cvTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-		local cvClose = Instance.new("TextButton")
-		cvClose.AnchorPoint = Vector2.new(1, 0)
-		cvClose.Position = UDim2.new(1, -8, 0, 8)
-		cvClose.Size = UDim2.fromOffset(32, 32)
-		cvClose.BackgroundTransparency = 1
-		cvClose.Font = Enum.Font.GothamBold
-		cvClose.TextSize = 18
-		cvClose.TextColor3 = DIM
-		cvClose.Text = "X"
-		cvClose.Parent = cvPanel
-
-		local cvScroll = Instance.new("ScrollingFrame")
-		cvScroll.Position = UDim2.new(0, 12, 0, 44)
-		cvScroll.Size = UDim2.new(1, -24, 1, -84)
-		cvScroll.BackgroundTransparency = 1
-		cvScroll.BorderSizePixel = 0
-		cvScroll.ScrollBarThickness = 4
-		cvScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-		cvScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-		cvScroll.Parent = cvPanel
-		local cvList = Instance.new("UIListLayout")
-		cvList.Padding = UDim.new(0, 8)
-		cvList.SortOrder = Enum.SortOrder.LayoutOrder
-		cvList.Parent = cvScroll
-
-		local cvFooter = label(cvPanel, "", 12, DIM, false)
-		cvFooter.AnchorPoint = Vector2.new(0.5, 1)
-		cvFooter.Position = UDim2.new(0.5, 0, 1, -10)
-		cvFooter.Size = UDim2.new(1, -24, 0, 28)
-		cvFooter.TextWrapped = true
-
-		local function setCvPanel(open: boolean)
-			if cvPanel.Visible == open then
-				return
+		-- callvote: proposals come from the pause menu's CALL A VOTE page
+		-- via handle.cv; this file keeps the wire protocol + yes/no banner
+		local gotState = false
+		handle.cv.getState = function(): CvState?
+			if not gotState then
+				return nil
 			end
-			cvPanel.Visible = open
-			cvFooter.Text = if open then "majority of votes cast decides; ties fail" else ""
-			notifyUi()
+			return {
+				map = tostring(state.map),
+				maplist = tostring(state.maplist),
+				maptitles = (state.maptitles or {}) :: { [string]: string },
+				rules = (state.rules or {}) :: { [string]: number },
+				avatars = state.avatars == true,
+			}
 		end
-
-		local function propose(key: string, value: any)
+		handle.cv.propose = function(key: string, value: any)
 			re:FireServer({ t = "callvote", key = key, value = value })
 		end
-
-		-- rebuild the proposal list from live state (rotation maps, the
-		-- votable rule steppers, the avatars toggle)
-		local function rebuildCvPanel()
-			for _, ch in cvScroll:GetChildren() do
-				if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then
-					ch:Destroy()
-				end
-			end
-			local order = 0
-			local function cvSection(text: string)
-				order += 1
-				local l = label(cvScroll, text, 12, DIM, true)
-				l.Size = UDim2.new(1, 0, 0, 16)
-				l.TextXAlignment = Enum.TextXAlignment.Left
-				l.LayoutOrder = order
-			end
-
-			cvSection("CHANGE MAP")
-			local mapsFrame = Instance.new("Frame")
-			mapsFrame.BackgroundTransparency = 1
-			mapsFrame.Size = UDim2.new(1, 0, 0, 44)
-			mapsFrame.AutomaticSize = Enum.AutomaticSize.Y
-			order += 1
-			mapsFrame.LayoutOrder = order
-			mapsFrame.Parent = cvScroll
-			local mGrid = Instance.new("UIGridLayout")
-			mGrid.CellSize = UDim2.new(1 / 3, -6, 0, 44)
-			mGrid.CellPadding = UDim2.new(0, 6, 0, 6)
-			mGrid.Parent = mapsFrame
-			local current = tostring(state.map)
-			for name in tostring(state.maplist):gmatch("%S+") do
-				local b = button(mapsFrame, name:upper())
-				if name == current then
-					b.TextColor3 = DIM
-				end
-				b.Activated:Connect(function()
-					propose("map", name)
-				end)
-			end
-
-			cvSection("CHANGE RULE")
-			for _, r in { { key = "fraglimit", step = 5 }, { key = "timelimit", step = 5 }, { key = "samelevel", step = 1 } } do
-				local row = Instance.new("Frame")
-				row.BackgroundColor3 = CARD
-				row.BackgroundTransparency = 0.4
-				row.Size = UDim2.new(1, 0, 0, 44)
-				order += 1
-				row.LayoutOrder = order
-				row.Parent = cvScroll
-				corner(row, 8)
-				local nm = label(row, r.key, 14, TEXT, false)
-				nm.Position = UDim2.new(0, 12, 0, 0)
-				nm.Size = UDim2.new(1, -220, 1, 0)
-				nm.TextXAlignment = Enum.TextXAlignment.Left
-				local pending = tonumber(state.rules and state.rules[r.key]) or 0
-				local minus = button(row, "\u{2013}")
-				minus.Size = UDim2.fromOffset(36, 36)
-				minus.AnchorPoint = Vector2.new(1, 0.5)
-				minus.Position = UDim2.new(1, -168, 0.5, 0)
-				local val = label(row, tostring(pending), 14, ACCENT, true)
-				val.AnchorPoint = Vector2.new(1, 0.5)
-				val.Position = UDim2.new(1, -128, 0.5, 0)
-				val.Size = UDim2.fromOffset(36, 36)
-				local plus = button(row, "+")
-				plus.Size = UDim2.fromOffset(36, 36)
-				plus.AnchorPoint = Vector2.new(1, 0.5)
-				plus.Position = UDim2.new(1, -88, 0.5, 0)
-				local go = button(row, "VOTE")
-				go.Size = UDim2.fromOffset(80, 36)
-				go.AnchorPoint = Vector2.new(1, 0.5)
-				go.Position = UDim2.new(1, -4, 0.5, 0)
-				go.TextColor3 = ACCENT
-				minus.Activated:Connect(function()
-					pending = math.max(0, pending - r.step)
-					val.Text = tostring(pending)
-				end)
-				plus.Activated:Connect(function()
-					pending += r.step
-					val.Text = tostring(pending)
-				end)
-				go.Activated:Connect(function()
-					propose(r.key, pending)
-				end)
-			end
-
-			cvSection("OPTIONS")
-			local avB = button(cvScroll, `vote: Roblox avatars {if state.avatars then "OFF" else "ON"}`)
-			avB.Size = UDim2.new(1, 0, 0, 44)
-			order += 1
-			avB.LayoutOrder = order
-			avB.Activated:Connect(function()
-				propose("roblox_avatars", not (state.avatars == true))
-			end)
-		end
-
-		cvButton.Activated:Connect(function()
-			if not cvPanel.Visible then
-				rebuildCvPanel()
-			end
-			setCvPanel(not cvPanel.Visible)
-		end)
-		handle.callVote = function()
-			if not cvPanel.Visible then
-				rebuildCvPanel()
-			end
-			setCvPanel(not cvPanel.Visible)
-		end
-		cvClose.Activated:Connect(function()
-			setCvPanel(false)
-		end)
 
 		-- active-vote banner (bottom center): F1 yes / F2 no
 		local cvBanner = Instance.new("Frame")
@@ -810,6 +658,7 @@ function directorui.attach(opts: Opts): Handle
 			end
 			if msg.t == "state" then
 				state = msg
+				gotState = true
 				gear.Visible = state.isAdmin == true
 				if not state.isAdmin then
 					setMenuVisible(false)
@@ -834,7 +683,10 @@ function directorui.attach(opts: Opts): Handle
 				voteCursorHeld = false
 				pushUiState()
 			elseif msg.t == "cvBegin" then
-				setCvPanel(false)
+				local began = handle.cv.hooks.onBegin
+				if began then
+					began() -- pausemenu closes its CALL A VOTE page
+				end
 				cvBy.Text = `{tostring(msg.by)} called a vote`
 				cvDesc.Text = tostring(msg.desc):upper()
 				yesBtn.Text = "[F1]  YES  0"
@@ -853,8 +705,9 @@ function directorui.attach(opts: Opts): Handle
 			elseif msg.t == "cvEnd" then
 				cvBanner.Visible = false
 			elseif msg.t == "cvDeny" then
-				if cvPanel.Visible then
-					cvFooter.Text = tostring(msg.reason or "vote denied")
+				local deny = handle.cv.hooks.onDeny
+				if deny then
+					deny(tostring(msg.reason or "vote denied"))
 				end
 			end
 		end)

@@ -312,6 +312,7 @@ local defs = require(engine.progs.defs)
 -- resolveChangelevel calls below, src/server/director.luau and
 -- src/client/directorui.luau. =====
 local directorlib = require(script.director)
+local bsplib = require(engine.bsp.bsp)
 local dir = directorlib.attach({
 	assets = assets,
 	net = net,
@@ -332,6 +333,11 @@ local dir = directorlib.attach({
 	end,
 	getRule = function(name: string)
 		return cvarlib.value(svr.cvars, name)
+	end,
+	getMapTitle = function(name: string): string?
+		-- worldspawn "message" from the map's BSP (entity lump only)
+		local buf = vfs.loadFile(fsys, `maps/{name}.bsp`)
+		return if buf then bsplib.readTitle(buf) else nil
 	end,
 	broadcastPrint = function(text: string)
 		-- callvote announcements ride the engine notify surface
@@ -403,6 +409,12 @@ local statsApi = statslib.attach({
 	competitive = (tonumber(assets:GetAttribute("deathmatch")) or 0) ~= 0,
 })
 -- ===== end stats pipeline =====
+
+-- ===== prefs persistence (PRODUCT layer): saved client settings +
+-- weapon skin picks. REMOVAL: delete this block, its twin in
+-- qwserver.luau, src/server/prefstore.luau and src/client/prefs.luau. =====
+require(script.prefstore)(net)
+-- ===== end prefs persistence =====
 
 -- M_ScanSaves' data: publish {name, comment} for every save so the
 -- client Load/Save menus can list them (comment = savegame line 2)

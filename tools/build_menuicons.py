@@ -19,7 +19,7 @@ import os
 import struct
 import zlib
 
-ICONS = ["gamemodes", "friends", "settings"]
+ICONS = ["gamemodes", "friends", "settings", "leaderboard", "ffa-gamemode", "ctf-gamemode"]
 
 
 def _paeth(a, b, c):
@@ -161,7 +161,7 @@ def main():
         "\tdata = {",
     ]
     for name, b64 in entries:
-        lines.append(f'\t\t{name} = "{b64}",')
+        lines.append(f'\t\t["{name}"] = "{b64}",')
     lines.append("\t},")
     lines.append("}")
     out_path = os.path.abspath(args.out)
