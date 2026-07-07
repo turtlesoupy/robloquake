@@ -2038,6 +2038,7 @@ return function()
 	local turtleCount = 0
 	local lastReceivedAt = 0
 	local fpsFrames, fpsStart = 0, 0
+	local firstFrameStamped = false
 	RunService.Heartbeat:Connect(function(dt: number)
 		cl.realtime += dt
 
@@ -2520,5 +2521,11 @@ return function()
 		end
 		hudlib.updateOverlaysQW(hud, hudC)
 		hudlib.update(hud, hudC)
+
+		-- first completed frame dismisses the ReplicatedFirst cover screen
+		if not firstFrameStamped then
+			firstFrameStamped = true
+			player:SetAttribute("RQ_FirstFrame", true)
+		end
 	end)
 end

@@ -7,20 +7,20 @@ src/client/hud.luau(822,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
 src/client/hud.luau(823,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
 src/client/hud.luau(824,2): TypeError: Key 'ibarRow' not found in table 'Hud'
 src/client/hud.luau(825,17): TypeError: Key 'ibarRow' not found in table 'Hud'
-src/client/init.client.luau(1019,25): TypeError: Expected this to be 'string', but got 'string?'
-src/client/init.client.luau(1022,16): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1070,18): TypeError: Expected this to be 'string', but got 'string?'
-src/client/init.client.luau(1096,14): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1124,12): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1135,24): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1146,29): TypeError: Expected this to be 'number | string', but got 'string?'
-src/client/init.client.luau(1184,14): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1248,9): TypeError: Expected this to be 'buffer', but got 'buffer?'
-src/client/init.client.luau(299,45): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
-src/client/init.client.luau(375,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
-src/client/init.client.luau(384,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
-src/client/init.client.luau(543,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
-src/client/init.client.luau(857,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
+src/client/init.client.luau(1023,25): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1026,16): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1074,18): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1100,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1128,12): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1139,24): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1150,29): TypeError: Expected this to be 'number | string', but got 'string?'
+src/client/init.client.luau(1188,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1252,9): TypeError: Expected this to be 'buffer', but got 'buffer?'
+src/client/init.client.luau(303,45): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
+src/client/init.client.luau(379,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/init.client.luau(388,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
+src/client/init.client.luau(547,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
+src/client/init.client.luau(861,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
 src/client/menu.luau(530,15): TypeError: Cannot cast 'nil' into 'TextLabel' because the types are unrelated
 src/client/prefs.luau(138,21): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(1010,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'

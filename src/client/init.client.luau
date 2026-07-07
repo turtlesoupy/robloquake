@@ -50,10 +50,14 @@ local viewmodellib = require(script.render.viewmodel)
 -- filesystem from the server-published client bundle (gfx + precached
 -- models + current map); the full paks stay server-side
 
+-- boot milestones for the ReplicatedFirst cover screen (loadingscreen/):
+-- a fresh server publishes the bundle at boot, so this wait can run long
+Players.LocalPlayer:SetAttribute("RQ_BootStatus", "waiting for server")
 local clientAssets = ReplicatedStorage:WaitForChild("QuakeClientFS")
 while clientAssets:GetAttribute("ready") ~= true do
 	clientAssets.AttributeChanged:Wait()
 end
+Players.LocalPlayer:SetAttribute("RQ_BootStatus", "loading assets")
 
 -- mild mode (content softening, display-only) is stamped before ready;
 -- read once here for BOTH engine clients (the QW module requires below)
@@ -2069,6 +2073,7 @@ local bonusShiftScratch = { 215, 186, 69, 0 }
 
 local turtleCount = 0
 local lastReceivedAt = 0
+local firstFrameStamped = false
 RunService.Heartbeat:Connect(function(dt: number)
 	cbufFrame()
 	input.updateTurn(dt)
@@ -2586,6 +2591,12 @@ RunService.Heartbeat:Connect(function(dt: number)
 		if e then
 			workspace:SetAttribute("RQ_Origin", qcoords.toRoblox(e.origin))
 		end
+	end
+
+	-- first completed frame dismisses the ReplicatedFirst cover screen
+	if not firstFrameStamped then
+		firstFrameStamped = true
+		player:SetAttribute("RQ_FirstFrame", true)
 	end
 end)
 

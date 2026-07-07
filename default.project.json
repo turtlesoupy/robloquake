@@ -2,6 +2,12 @@
   "name": "robloquake",
   "tree": {
     "$className": "DataModel",
+    "ReplicatedFirst": {
+      "$className": "ReplicatedFirst",
+      "LoadingScreen": {
+        "$path": "src/loadingscreen"
+      }
+    },
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"
