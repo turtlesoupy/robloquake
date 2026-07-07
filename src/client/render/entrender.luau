@@ -38,6 +38,9 @@ export type ModelDef = {
 	skinH: number?,
 	palRef: any?, -- palette, kept for fallback tinting
 	fullbrightSkin: boolean?, -- mostly palette-224+ skin: render unlit
+	-- mild mode gibs: skip skin images entirely so the untextured path
+	-- renders Part.Color = white × entity light (set before prepareImages)
+	forceWhite: boolean?,
 }
 
 -- One rendered entity instance
@@ -94,9 +97,13 @@ local function buildAliasBoxEnt(def: ModelDef, parent: Instance): RenderEnt
 	local maxs = f0.bboxmax * am.scale + am.scale_origin
 	local size = (maxs - mins) * qcoords.SCALE
 	part.Size = Vector3.new(math.max(size.x, 0.5), math.max(size.z, 0.5), math.max(size.y, 0.5))
-	local skin = am.skins[1]
-	local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
-	part.Color = textures.averageColor(pixels, am.skinwidth * am.skinheight, def.palRef :: any)
+	if def.forceWhite then
+		part.Color = Color3.new(1, 1, 1)
+	else
+		local skin = am.skins[1]
+		local pixels = if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
+		part.Color = textures.averageColor(pixels, am.skinwidth * am.skinheight, def.palRef :: any)
+	end
 	part.Parent = parent
 	return {
 		kind = "aliasbox",
@@ -583,6 +590,9 @@ end
 -- build the shared images for a model definition
 function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 	def.palRef = pal
+	if def.kind == "alias" and def.forceWhite then
+		return -- no skin images: the untextured path lights Part.Color
+	end
 	if def.kind == "alias" then
 		local am = def.alias :: mdl.AliasModel
 		local imgs: { EditableImage } = {}

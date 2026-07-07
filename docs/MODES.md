@@ -21,6 +21,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `maplist` | string | both | yes | space-separated rotation, e.g. `"dm1 dm2 dm3 dm4 dm5 dm6"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
 | `votetime` | number | both | yes | vote window seconds before auto-advance (default 30) |
 | `roblox_avatars` | bool | both | yes | avatar rigs for players — **default on when absent**; set `false` to opt out |
+| `mildmode` | bool | both | no (boot) | content softening for classification: gib models render untextured white, blood particles display white, player (bodyque) corpses fade out 10s after death. Render-only — the engine sim, wire protocol, and QC are untouched. **Default on when absent**; set `false` for the original presentation. See `src/client/render/mildmode.luau`. |
 | `modekey` | string | both | no (boot) | stats/leaderboard scope label (`dm`, `ctf`, …); absent = derived from the other attributes (`statscore.deriveModeKey`) |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
@@ -33,7 +34,10 @@ teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 
 Dev state is NOT hand-edited in Roblox: `src/server/modepresets.luau`
 defines complete named states (campaign, nq-dm, qw-dm, ctf, arena,
-instagib) and `src/server/modeconfig.luau` selects the active one. The
+instagib) plus composable **modifiers** that overlay any preset as
+`<preset>+<modifier>` — e.g. `qw-dm+original` or `campaign+original`
+(the `original` modifier sets `mildmode=false` for the untouched engine
+presentation). `src/server/modeconfig.luau` selects the active one. The
 server boot applies the preset onto QuakeAssets attributes before
 anything reads them — every key written, absent keys cleared, so the
 running state always equals the file. Switch/inspect from the terminal:

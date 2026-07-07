@@ -30,6 +30,14 @@ function clientbundle.new(
 	if modDir then
 		clientFS:SetAttribute("gamedir", modDir)
 	end
+	-- mild mode (content softening, render-only; see client/render/
+	-- mildmode.luau): a product-layer default like roblox_avatars —
+	-- ON when absent, explicit false = the original presentation.
+	-- Mirrored before the folder replicates so clients read it at boot.
+	local assets = gameFolder.Parent
+	if assets then
+		clientFS:SetAttribute("mildmode", assets:GetAttribute("mildmode") ~= false)
+	end
 	clientFS.Parent = ReplicatedStorage
 
 	local publishedFiles: { [string]: boolean } = {}

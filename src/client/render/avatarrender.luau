@@ -102,6 +102,7 @@ export type AvatarEnt = {
 	deathT0: number,
 	painUntil: number,
 	highlight: Highlight?,
+	fadeAlpha: number?, -- mild mode corpse fade (0 visible .. 1 gone)
 	shirtColor: Color3?,
 	pantsColor: Color3?,
 	baseColors: { [BasePart]: Color3 },
@@ -491,6 +492,29 @@ function avatarrender.update(
 		highlight.Enabled = true
 	elseif highlight and highlight.Enabled then
 		highlight.Enabled = false
+	end
+end
+
+-- mild mode corpse fade: LocalTransparencyModifier on every part. The
+-- rig's Highlight ignores part transparency (it would keep drawing a
+-- solid silhouette), so it stays forced off while any fade is active —
+-- update() re-enables it each frame, so this runs after update().
+function avatarrender.setFade(ae: AvatarEnt, alpha: number)
+	local model = ae.model
+	if not model then
+		return
+	end
+	if alpha > 0 and ae.highlight then
+		(ae.highlight :: Highlight).Enabled = false
+	end
+	if ae.fadeAlpha == alpha or (alpha <= 0 and ae.fadeAlpha == nil) then
+		return
+	end
+	ae.fadeAlpha = if alpha > 0 then alpha else nil
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = alpha
+		end
 	end
 end
 

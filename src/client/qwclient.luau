@@ -30,6 +30,7 @@ local avatarlayer = require(script.Parent.render.avatarlayer)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local lightatlaslib = require(script.Parent.render.lightatlas)
+local mildmode = require(script.Parent.render.mildmode)
 local lightpoint = require(engine.client.lightpoint)
 local viewlib = require(engine.client.view)
 local particleslib = require(script.Parent.render.particles)
@@ -473,7 +474,13 @@ return function()
 			return nil
 		end
 		if m.kind == "alias" then
-			def = { kind = "alias" :: "alias", alias = m.alias, flags = m.alias.flags }
+			def = {
+				kind = "alias" :: "alias",
+				alias = m.alias,
+				flags = m.alias.flags,
+				-- mild mode: gibs/heads render untextured white
+				forceWhite = if mildmode.enabled and mildmode.isGibModel(name) then true else nil,
+			}
 			entrender.prepareImages(def, pal)
 		elseif m.kind == "sprite" then
 			def = { kind = "sprite" :: "sprite", sprite = m.sprite, flags = 0 }
@@ -775,7 +782,11 @@ return function()
 		elseif t == qwp.TE_BLOOD then
 			particleslib.runEffect(psys, te.pos, vector.zero, 73, 20 * (te.count or 1), cl.time, true)
 		elseif t == qwp.TE_LIGHTNINGBLOOD then
-			particleslib.runEffect(psys, te.pos, vector.zero, 225, 50, cl.time, true)
+			-- mild mode: 225's palette band is shared with lava splashes
+			-- and knight spikes, so whiten by substituting the regular
+			-- blood color here instead of remapping the band
+			local lbColor = if mildmode.enabled then 73 else 225
+			particleslib.runEffect(psys, te.pos, vector.zero, lbColor, 50, cl.time, true)
 		elseif t == qwp.TE_EXPLOSION or t == qwp.TE_TAREXPLOSION then
 			particleslib.explosion(psys, te.pos, cl.time)
 			if t == qwp.TE_EXPLOSION then
@@ -931,6 +942,9 @@ return function()
 			renderEnts[key] = re
 			renderDefs[key] = def
 		end
+		-- a pooled/reused ent may carry a mild-mode corpse fade; restore
+		-- it (no-op otherwise; the corpse path re-applies after linking)
+		mildmode.applyFade(re, 0)
 		if def.kind == "alias" then
 			if bit32.band(def.flags, mdllib.EF_ROTATE) ~= 0 then
 				-- items spin: autorotate = anglemod(100*cl.time)
@@ -954,6 +968,15 @@ return function()
 			-- bodyque corpses (CopyToBodyQue): player.mdl packet entities in
 			-- the death band keep the owner's avatar — colormap carries the
 			-- owner's slot, exactly like the NQ boot
+			-- mild mode: bodyque corpses fade after a hold. Packet entities
+			-- in player.mdl death frames ARE corpses (live players arrive
+			-- via playerinfo); a recycled bodyque slot resets the timer via
+			-- its origin jump (see mildmode.corpseAlpha)
+			local mildCorpse = mildmode.enabled
+				and es.modelindex == cl.playerindex
+				and avatarLayer.isDeathFrame(es.frame)
+			local corpseFade = if mildCorpse then mildmode.corpseAlpha(`e{es.number}`, es.origin, cl.time) else 0
+
 			local corpsePlayer: Player? = nil
 			local corpseColors: number? = nil
 			if
@@ -977,6 +1000,7 @@ return function()
 				corpsePlayer
 				and avatarLayer.updatePlayer(1000 + es.number, corpsePlayer, es.origin, es.angles, es.frame, 0, corpseColors, true)
 			then
+				avatarLayer.setFade(1000 + es.number, corpseFade) -- after update: 0 restores
 				seenAvatars[1000 + es.number] = true
 			else
 				-- projectile muzzle blend: tag fresh projectiles near an
@@ -984,6 +1008,9 @@ return function()
 				local re0 = renderEnts[key]
 				local org = if re0 and avatarsOn() then avatarLayer.blendOrigin(re0, es.origin) else es.origin
 				linkEnt(key, es.modelindex, org, es.angles, es.frame, es.skinnum, time)
+				if mildCorpse then
+					mildmode.applyFade(renderEnts[key], corpseFade)
+				end
 				if not re0 and avatarsOn() then
 					local re1 = renderEnts[key]
 					if re1 then
