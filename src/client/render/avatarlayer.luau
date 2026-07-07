@@ -130,13 +130,58 @@ function avatarlayer.new(deps: Deps): Layer
 
 	local layer = {} :: Layer
 
-	function layer.playerForSlot(slot: number): Player?
-		for _, p in Players:GetPlayers() do
-			if p:GetAttribute("RQSlot") == slot then
-				return p
+	-- slot -> Player map maintained event-driven (PlayerAdded/Removing +
+	-- RQSlot attribute changes) so the per-avatar-per-frame lookup doesn't
+	-- scan GetPlayers()×GetAttribute (O(players²) reflected calls at 60Hz)
+	local playerBySlot: { [number]: Player } = {}
+	local weaponAttr: { [Player]: string } = {} -- RQWeaponModel cache, same discipline
+	local slotConns: { [Player]: { RBXScriptConnection } } = {}
+	local function reindexPlayer(p: Player)
+		for slot, q in playerBySlot do
+			if q == p then
+				playerBySlot[slot] = nil
 			end
 		end
-		return nil
+		local slot = p:GetAttribute("RQSlot")
+		if typeof(slot) == "number" then
+			playerBySlot[slot] = p
+		end
+	end
+	local function refreshWeaponAttr(p: Player)
+		local v = p:GetAttribute("RQWeaponModel")
+		weaponAttr[p] = if typeof(v) == "string" then v else nil
+	end
+	local function watchPlayer(p: Player)
+		slotConns[p] = {
+			p:GetAttributeChangedSignal("RQSlot"):Connect(function()
+				reindexPlayer(p)
+			end),
+			p:GetAttributeChangedSignal("RQWeaponModel"):Connect(function()
+				refreshWeaponAttr(p)
+			end),
+		}
+		reindexPlayer(p)
+		refreshWeaponAttr(p)
+	end
+	for _, p in Players:GetPlayers() do
+		watchPlayer(p)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
+	Players.PlayerRemoving:Connect(function(p)
+		for _, conn in slotConns[p] or {} do
+			conn:Disconnect()
+		end
+		slotConns[p] = nil
+		weaponAttr[p] = nil
+		for slot, q in playerBySlot do
+			if q == p then
+				playerBySlot[slot] = nil
+			end
+		end
+	end)
+
+	function layer.playerForSlot(slot: number): Player?
+		return playerBySlot[slot]
 	end
 
 	function layer.isDeathFrame(frame: number): boolean
@@ -269,8 +314,8 @@ function avatarlayer.new(deps: Deps): Layer
 			aw = {}
 			weapons[slot] = aw
 		end
-		local vmName = player:GetAttribute("RQWeaponModel")
-		local want = if typeof(vmName) == "string" then V_TO_WORLD[vmName] else nil
+		local vmName = weaponAttr[player]
+		local want = if vmName then V_TO_WORLD[vmName] else nil
 		if aw.model ~= want then
 			if aw.re then
 				entrender.destroy(aw.re :: entrender.RenderEnt)
