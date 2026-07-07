@@ -141,6 +141,10 @@ def build(sources: list[pathlib.Path], game: str) -> None:
     )
     wav_path.write_bytes(hdr + pcm)
 
+    # the uploaded-bank asset id must survive a sync_assets rebuild (which
+    # rmtree's this dir). Prefer the existing soundmap, else fall back to the
+    # committed durable store (tools/soundbank_assets.json) so a rebuild never
+    # silently drops the reference and leaves the place running silent.
     map_path = out_dir / "soundmap.txt"
     old_asset = ""
     if map_path.exists():
@@ -148,7 +152,17 @@ def build(sources: list[pathlib.Path], game: str) -> None:
             old_asset = json.loads(map_path.read_text()).get("assetId", "")
         except (json.JSONDecodeError, AttributeError):
             pass
+    if not old_asset:
+        store = ROOT / "tools" / "soundbank_assets.json"
+        if store.exists():
+            try:
+                old_asset = json.loads(store.read_text()).get(game, "")
+            except (json.JSONDecodeError, AttributeError):
+                pass
     map_path.write_text(json.dumps({"assetId": old_asset, "rate": RATE, "regions": regions}))
+    if not old_asset:
+        print(f"WARNING: no soundbank assetId for {game} — upload {wav_path.name} and "
+              f"record its id in tools/soundbank_assets.json (place will run silent)")
 
     dur = len(bank) / RATE
     print(f"{wav_path}: {len(regions)} sounds, {dur/60:.1f} min, {len(pcm)/1e6:.1f} MB")

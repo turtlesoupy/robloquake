@@ -1,0 +1,4 @@
+{
+  "_comment": "Durable map of game -> uploaded Roblox soundbank audio asset id. build_soundbank.py seeds soundmap.txt's assetId from here when the (gitignored) build artifact has been wiped by a sync_assets rebuild. Not secret; the wav content itself is LibreQuake-licensed. Update when a bank is re-uploaded.",
+  "lq1": "rbxassetid://104249490546747"
+}
