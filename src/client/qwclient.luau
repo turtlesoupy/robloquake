@@ -31,6 +31,7 @@ local lightatlaslib = require(script.Parent.render.lightatlas)
 local lightpoint = require(engine.client.lightpoint)
 local viewlib = require(engine.client.view)
 local particleslib = require(script.Parent.render.particles)
+local skinforge = require(script.Parent.render.skinforge)
 local textures = require(script.Parent.render.textures)
 local worldmesh = require(script.Parent.render.worldmesh)
 local consolelib = require(script.Parent.console)
@@ -338,6 +339,7 @@ return function()
 	local lastStyleFrame = -1
 	local modelDefs: { [number]: entrender.ModelDef } = {}
 	local brushTemplates: { [string]: Model } = {}
+	local buildingTemplates: { [string]: boolean } = {}
 	local worldBuilt = false
 	local seenLevelResets = 0
 	local staticsSpawned = 0
@@ -367,8 +369,16 @@ return function()
 			-- boxes, b_*.bsp) — everything but the world itself
 			local template = brushTemplates[name]
 			if not template then
+				-- worldmesh.build can YIELD (budget backoff); a relink during
+				-- that yield must not start a second build of the same
+				-- template (each re-parse leaks fresh light-atlas regions)
+				if buildingTemplates[name] then
+					return nil -- build in flight; caller retries next frame
+				end
+				buildingTemplates[name] = true
 				local anim
 				template, anim = worldmesh.build(m.brush, pal, nil :: any, name)
+				buildingTemplates[name] = nil
 				for _, e in anim do
 					table.insert(lightAnim, e)
 				end
@@ -653,6 +663,49 @@ return function()
 	local gunEnt: entrender.RenderEnt? = nil
 	local gunModelIndex = 0
 
+	-- procedural weapon skins: forged per (model, spec) and cached for the
+	-- session. The tweaks menu (T) picks a spec per viewmodel name; the
+	-- RQ_WeaponSkin workspace attribute (e.g. "camo:7") is a debug override
+	-- applied to weapons without a menu selection. nil/empty spec restores
+	-- the authentic skin.
+	local forgedSkins: { [string]: EditableImage } = {}
+	local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
+	local gunSkinApplied: string? = nil
+	local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
+	local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
+		local name = cl.model_name[modelindex]
+		local spec: string? = if name then weaponSkins[name] else nil
+		if not spec then
+			local attr = Workspace:GetAttribute("RQ_WeaponSkin")
+			if type(attr) == "string" and attr ~= "" then
+				spec = attr
+			end
+		end
+		local key = if spec then `{name or modelindex}|{spec}` else nil
+		if key == gunSkinApplied then
+			return
+		end
+		gunSkinApplied = key
+		if not key or not spec then
+			entrender.setSkinOverride(re, nil)
+			re.fullbrightSkin = def.fullbrightSkin
+			return
+		end
+		local img = forgedSkins[key]
+		if not img and def.skinPixels then
+			local forged =
+				skinforge.createImage(spec :: string, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+			if forged then
+				forgedSkins[key] = forged
+				img = forged
+			end
+		end
+		entrender.setSkinOverride(re, img)
+		-- saturated skins are marked unlit so setLight keeps them vivid
+		-- in dark rooms (same path as torch flames)
+		re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
+	end
+
 	local function linkEnt(key: string, modelindex: number, origin: vector, angles: vector, frame: number, skinnum: number, time: number, colors: number?)
 		local def = getModelDef(modelindex)
 		if not def or def.kind == "none" then
@@ -901,12 +954,13 @@ return function()
 	local UserInputService = game:GetService("UserInputService")
 
 	local directorUiOpen = false
+	local tweaksUiOpen = false
 	local function refreshInputMode()
 		-- while the console, chat line or menu is up the player stops
 		-- moving (Key_ClearStates lives in input.setEnabled(false))
-		input.setEnabled(not (con.open or chatOpen or directorUiOpen or menulib.isOpen(mnu)))
-		if directorUiOpen then
-			input.freeMouse() -- the admin menu is clickable UI
+		input.setEnabled(not (con.open or chatOpen or directorUiOpen or tweaksUiOpen or menulib.isOpen(mnu)))
+		if directorUiOpen or tweaksUiOpen then
+			input.freeMouse() -- the admin/tweaks menus are clickable UI
 		end
 	end
 
@@ -925,6 +979,24 @@ return function()
 		end,
 	})
 	-- ===== end match director UI =====
+
+	-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (T is
+	-- Quake talk; K is unbound in the default binds and not Roblox-reserved) =====
+	require(script.Parent.tweaksui).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+		onUiToggle = function(open: boolean)
+			tweaksUiOpen = open
+			refreshInputMode()
+		end,
+		setWeaponSkin = function(mdlName: string, spec: string?)
+			weaponSkins[mdlName] = spec
+			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+		end,
+	})
+	-- ===== end tweaks menu =====
 
 	-- keys.c bind system (Key_SetBinding/Key_Bind_f family): quake key
 	-- names from the shared keymap; Key_Init seeds default.cfg-parity
@@ -1475,6 +1547,14 @@ return function()
 				gunEnt = nil
 			end
 			gunModelIndex = 0
+			-- precache indices renumber across levels, so the forged-skin
+			-- cache keys go stale; images are ours to release (same budget
+			-- pressure as destroyDef)
+			for _, img in forgedSkins do
+				img:Destroy()
+			end
+			table.clear(forgedSkins)
+			gunSkinApplied = nil
 			for _, child in worldFolder:GetChildren() do
 				worldmesh.destroyBuild(child)
 			end
@@ -1676,6 +1756,7 @@ return function()
 					entrender.destroy(gunEnt)
 					gunEnt = nil
 				end
+				gunSkinApplied = nil -- fresh RenderEnt: reapply any forged skin
 				gunModelIndex = gunModel
 				local def = getModelDef(gunModel)
 				if def and def.kind == "alias" then
@@ -1686,6 +1767,7 @@ return function()
 			local ge = gunEnt
 			if ge then
 				local def = getModelDef(gunModel) :: entrender.ModelDef
+				applyGunSkin(ge, def, gunModel)
 				local gunorg = eye + fwd * (math.sqrt(cl.simvel.x * cl.simvel.x + cl.simvel.y * cl.simvel.y) * 0.02 * 0.4)
 				-- vrect: in C the gun hugs the 3D view bottom, which ends
 				-- ABOVE the sbar; rotate it up by the vrect center offset

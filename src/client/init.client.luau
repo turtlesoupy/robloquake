@@ -21,6 +21,7 @@ local qcoords = require(engine.client.qcoords)
 
 local avatarrender = require(script.render.avatarrender)
 local entrender = require(script.render.entrender)
+local skinforge = require(script.render.skinforge)
 local particleslib = require(script.render.particles)
 local textures = require(script.render.textures)
 local worldmesh = require(script.render.worldmesh)
@@ -176,6 +177,12 @@ crosshairLabel.Parent = overlayGui
 local modelDefs: { [number]: entrender.ModelDef } = {}
 -- brush submodel templates by name ("*1", ...)
 local brushTemplates: { [string]: Model } = {}
+-- worldmesh.build can YIELD (budget backoff in its chunk builder); a
+-- Heartbeat that relinks entities during that yield would re-enter
+-- getModelDef and start ANOTHER build of the same template — each one
+-- re-parses the bsp and leaks fresh light-atlas regions (LibreQuake's
+-- lightmapped ammo boxes rebuilt 700x, filling the atlas with orphans)
+local buildingTemplates: { [string]: boolean } = {}
 local worldModels: { bsplib.Model } = {}
 
 -- animated lightstyle vertices across all built brush geometry
@@ -233,6 +240,49 @@ local staticEnts: { { re: entrender.RenderEnt, se: any, def: entrender.ModelDef 
 local gunEnt: entrender.RenderEnt? = nil
 local gunModelIndex = 0
 
+-- procedural weapon skins: forged per (model, spec) and cached until the
+-- level changes. The tweaks menu (K) picks a spec per viewmodel name; the
+-- RQ_WeaponSkin workspace attribute (e.g. "camo:7") is a debug override
+-- for weapons without a menu selection. nil/empty spec restores the
+-- authentic skin. Twin of the qwclient.luau block.
+local forgedSkins: { [string]: EditableImage } = {}
+local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
+local gunSkinApplied: string? = nil
+local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
+local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
+	local name = c.model_precache[modelindex + 1]
+	local spec: string? = if name then weaponSkins[name] else nil
+	if not spec then
+		local attr = Workspace:GetAttribute("RQ_WeaponSkin")
+		if type(attr) == "string" and attr ~= "" then
+			spec = attr
+		end
+	end
+	local key = if spec then `{name or modelindex}|{spec}` else nil
+	if key == gunSkinApplied then
+		return
+	end
+	gunSkinApplied = key
+	if not key or not spec then
+		entrender.setSkinOverride(re, nil)
+		re.fullbrightSkin = def.fullbrightSkin
+		return
+	end
+	local img = forgedSkins[key]
+	if not img and def.skinPixels then
+		local forged =
+			skinforge.createImage(spec :: string, def.skinPixels :: buffer, def.skinW :: number, def.skinH :: number, pal)
+		if forged then
+			forgedSkins[key] = forged
+			img = forged
+		end
+	end
+	entrender.setSkinOverride(re, img)
+	-- saturated skins are marked unlit so setLight keeps them vivid in
+	-- dark rooms (same path as torch flames)
+	re.fullbrightSkin = def.fullbrightSkin or (img ~= nil and skinforge.isUnlit(spec :: string))
+end
+
 local function getModelDef(modelindex: number): entrender.ModelDef?
 	local def = modelDefs[modelindex]
 	if def then
@@ -247,8 +297,13 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 		local sub = tonumber(name:sub(2)) :: number
 		local template = brushTemplates[name]
 		if not template and worldModels[sub + 1] then
+			if buildingTemplates[name] then
+				return nil -- build in flight; caller retries next frame
+			end
+			buildingTemplates[name] = true
 			local anim
 			template, anim = worldmesh.build(worldModels[sub + 1], pal, nil :: any, name)
+			buildingTemplates[name] = nil
 			for _, e in anim do
 				table.insert(lightAnim, e)
 			end
@@ -286,9 +341,14 @@ local function getModelDef(modelindex: number): entrender.ModelDef?
 			local buf = vfslib.loadFile(fs, name, true)
 			local template = brushTemplates[name]
 			if not template and buf then
+				if buildingTemplates[name] then
+					return nil -- build in flight; caller retries next frame
+				end
+				buildingTemplates[name] = true
 				local models = bsplib.load(name, buf)
 				local anim
 				template, anim = worldmesh.build(models[1], pal, nil :: any, name)
+				buildingTemplates[name] = nil
 				for _, e in anim do
 					table.insert(lightAnim, e)
 				end
@@ -333,6 +393,8 @@ local avatarEnts: { [number]: avatarrender.AvatarEnt } = {}
 type AvatarWeapon = {
 	re: entrender.RenderEnt?,
 	model: string?,
+	def: entrender.ModelDef?, -- kept for forging procedural skins
+	skinApplied: string?, -- forged-skin cache key on re (nil = authentic)
 	light: PointLight?,
 	emitter: ParticleEmitter?,
 	flashUntil: number?,
@@ -477,17 +539,57 @@ local function updateAvatarWeapon(num: number, player: Player, ae: avatarrender.
 			aw.emitter = nil
 		end
 		aw.model = want
+		aw.def = nil
+		aw.skinApplied = nil
 		if want then
 			local mi = modelIndexByName(want)
 			local def = if mi then getModelDef(mi) else nil
 			if def and def.kind == "alias" then
 				aw.re = entrender.create(def, entFolder)
+				aw.def = def
 			end
 		end
 	end
 	local re = aw.re
 	local hand = avatarrender.rightHandCFrame(ae)
 	if re and re.part and hand then
+		-- the local player's tweaks-menu skin carries onto their held gun
+		-- (chase cam / other viewers of this client only — skins are
+		-- client-side); forged against the g_ model's own skin sheet. The
+		-- texture is set directly: avatar weapons are posed by hand and
+		-- never pass through updateAlias, where setSkinOverride applies.
+		if player == Players.LocalPlayer then
+			local spec = if typeof(vmName) == "string" then weaponSkins[vmName] else nil
+			local key = if spec and want then `{want}|{spec}` else nil
+			if aw.skinApplied ~= key then
+				aw.skinApplied = key
+				local img: EditableImage? = nil
+				local def = aw.def
+				if key and spec and def and def.skinPixels then
+					img = forgedSkins[key]
+					if not img then
+						local forged = skinforge.createImage(
+							spec,
+							def.skinPixels :: buffer,
+							def.skinW :: number,
+							def.skinH :: number,
+							pal
+						)
+						if forged then
+							forgedSkins[key] = forged
+							img = forged
+						end
+					end
+				end
+				if not img and def then
+					local skinImages = def.skinImages
+					img = if skinImages then skinImages[1] else nil -- authentic
+				end
+				if img then
+					(re.part :: MeshPart).TextureContent = Content.fromObject(img)
+				end
+			end
+		end
 		-- mesh CENTER at the hand (no centerOffset: that re-centers to the
 		-- pickup's floor-level model origin and floats the gun overhead)
 		local part = re.part :: MeshPart
@@ -673,6 +775,13 @@ c.onServerInfo = function()
 	table.clear(staticEnts)
 	gunEnt = nil
 	gunModelIndex = 0
+	-- model defs were just destroyed, so the forged-skin cache is stale;
+	-- images are ours to release (same budget pressure as destroyDef)
+	for _, img in forgedSkins do
+		img:Destroy()
+	end
+	table.clear(forgedSkins)
+	gunSkinApplied = nil
 	table.clear(beams)
 	table.clear(beamDefs)
 	table.clear(beamPool)
@@ -709,6 +818,23 @@ c.onServerInfo = function()
 			table.insert(textureAnims, ta)
 		end
 		print(`[cl] world built: {worldName} ({#textureAnims} animated textures)`)
+		-- prebuild pickup brush templates (maps/b_*.bsp) here, paced: at
+		-- first entity link they otherwise all build in one Heartbeat
+		-- burst, outrunning the engine's ASYNC fixed-mesh budget refunds.
+		-- LibreQuake's lightmapped multi-texture ammo boxes starve the
+		-- whole budget that way — one fixed copy fails, its dynamic mesh
+		-- (full 60k-vertex reservation) is retained, and every later
+		-- build (including the view weapon) drops to box fallback.
+		for mi = 1, #c.model_precache - 1 do
+			local mname = c.model_precache[mi + 1]
+			if mname and mname:sub(1, 7) == "maps/b_" then
+				if gen ~= worldBuildGen then
+					return -- level changed under us
+				end
+				getModelDef(mi)
+				task.wait() -- let the previous template's refund land
+			end
+		end
 		loadingUp = 2
 		-- RQDBG_SelfTest: zombie-image characterization — the executor VM
 		-- cannot reproduce boot-burst zombies, so make the GAME VM create
@@ -1612,11 +1738,12 @@ input.lockMouse()
 local UserInputService = game:GetService("UserInputService")
 
 local directorUiOpen = false
+local tweaksUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or tweaksUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen then
-		input.freeMouse() -- the admin menu is clickable UI
+	if directorUiOpen or tweaksUiOpen then
+		input.freeMouse() -- the admin/tweaks menus are clickable UI
 	end
 end
 
@@ -1636,6 +1763,39 @@ require(script.directorui).attach({
 	end,
 })
 -- ===== end match director UI =====
+
+-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (unbound in
+-- the default binds and not Roblox-reserved); twin of the qwclient block =====
+require(script.tweaksui).attach({
+	playerGui = playerGui,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		tweaksUiOpen = open
+		refreshInputMode()
+	end,
+	setWeaponSkin = function(mdlName: string, spec: string?)
+		weaponSkins[mdlName] = spec
+		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+	end,
+	giveAll = function()
+		-- Host_Give_f per weapon (2-8), then ammo for each type; the
+		-- server's give port has no deathmatch gate (see host.luau)
+		for w = 2, 8 do
+			sendStringCmd(`give {w}`)
+		end
+		sendStringCmd("give s 100")
+		sendStringCmd("give n 200")
+		sendStringCmd("give r 100")
+		sendStringCmd("give c 100")
+	end,
+	toggleThirdPerson = function(): boolean
+		chase_active = not chase_active
+		return chase_active
+	end,
+})
+-- ===== end tweaks menu =====
 
 -- console text entry straight from key codes (no TextBox: Roblox chat and
 -- CoreGui focus never get involved). GetStringForKeyCode gives the layout
@@ -2262,6 +2422,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 				entrender.destroy(gunEnt)
 				gunEnt = nil
 			end
+			gunSkinApplied = GUN_SKIN_STALE -- fresh RenderEnt: reapply any forged skin
 			gunModelIndex = refdef.gunmodel
 			local def = getModelDef(refdef.gunmodel)
 			if def and def.kind == "alias" then
@@ -2271,7 +2432,16 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 		local ge = gunEnt
 		if ge then
+			-- setEntVisible(gunEnt, false) parents to nil when the chase cam
+			-- or corpse view hides the gun; restore to the viewmodel's
+			-- WorldModel (NOT entFolder — the gun draws through its own
+			-- ViewportFrame projection)
+			local root: Instance? = ge.part or ge.billboardPart or ge.model
+			if root and root.Parent == nil then
+				root.Parent = vmgun.world
+			end
 			local def = getModelDef(refdef.gunmodel) :: entrender.ModelDef
+			applyGunSkin(ge, def, refdef.gunmodel)
 			entrender.updateAlias(ge, def, refdef.gunorg, refdef.gunangles, refdef.gunframe, 0, 0, c.time)
 			-- R_DrawViewModel: "allways give some light on gun"
 			local glight = lightpoint.at(worldModels[1], refdef.vieworg, styleValueFor)
