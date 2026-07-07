@@ -11,6 +11,14 @@ local list = director.parseMaplist("dm3 dm4  dm6\tdm2")
 t.eq(#list, 4, "maplist splits on whitespace")
 t.eq(list[3], "dm6", "maplist order kept")
 
+-- mapLabel: sanitized title + codename
+t.eq(director.mapLabel("lqdm1", "Solstice"), "Solstice (lqdm1)", "clean title keeps codename")
+t.eq(director.mapLabel("lqdm2", "Torture Pit"), "Grotto (lqdm2)", "unsuitable title overridden")
+t.eq(director.mapLabel("lqdm10", "Lucifer's Gambit"), "Midnight Gambit (lqdm10)", "occult title overridden")
+t.eq(director.mapLabel("lqdm13", "Death Provides No Return"), "No Way Back (lqdm13)", "dark title overridden")
+t.eq(director.mapLabel("lqdm5", nil), "lqdm5", "no title -> just codename")
+t.eq(director.mapLabel("lqdm5", ""), "lqdm5", "empty title -> just codename")
+
 -- rotationNext
 t.eq(director.rotationNext(list, "dm3"), "dm4", "rotation successor")
 t.eq(director.rotationNext(list, "dm2"), "dm3", "rotation wraps")

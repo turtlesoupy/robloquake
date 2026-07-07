@@ -57,9 +57,8 @@ export type Opts = {
 export type CvState = {
 	map: string,
 	maplist: string,
-	-- file name -> human-readable level name (worldspawn "message"); only
-	-- maps whose BSP resolved a title appear, so the page falls back to the
-	-- raw name for the rest
+	-- file name -> menu label ("<title> (<codename>)", sanitized +
+	-- server-composed); falls back to the raw name when absent
 	maptitles: { [string]: string },
 	rules: { [string]: number },
 	avatars: boolean,

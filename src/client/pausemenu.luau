@@ -130,8 +130,8 @@ export type Opts = {
 export type CallvoteState = {
 	map: string,
 	maplist: string,
-	-- file name -> human-readable level name; the CHANGE MAP row shows the
-	-- title where present, falling back to the raw name
+	-- file name -> menu label, e.g. "Grotto (lqdm2)" (sanitized title +
+	-- codename; server-composed). Falls back to the raw name if absent.
 	maptitles: { [string]: string },
 	rules: { [string]: number },
 	avatars: boolean,
@@ -1276,8 +1276,8 @@ function pausemenu.attach(opts: Opts): Handle
 			local ry = rowY()
 			label(ry, "LEVEL")
 			local name = maps[cvMapIdx]
-			-- prefer the level's real name (worldspawn "message"); the raw
-			-- file name is the fallback when the BSP had no title
+			-- server-composed menu label ("<title> (<codename>)"); the raw
+			-- file name is the fallback when no label was supplied
 			local shown = (st.maptitles[name] or name):upper()
 			-- the current map shows greyed (a same-map proposal is pointless)
 			stepper(ry, "map", shown, name == st.map, function()

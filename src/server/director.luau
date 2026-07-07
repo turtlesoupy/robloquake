@@ -19,6 +19,27 @@ local director = {}
 --------------------------------------------------------------------------
 -- pure logic (lune-tested; no services touched)
 
+-- Kid-friendly menu names for the handful of LibreQuake levels whose
+-- worldspawn "message" isn't right for a young audience (mostly violence
+-- / occult wording). Keyed by BSP file name; the value replaces the real
+-- title in the UI only — the shipped maps and assets are untouched.
+local TITLE_OVERRIDES: { [string]: string } = {
+	lqdm2 = "Grotto", -- "Torture Pit"
+	lqdm10 = "Midnight Gambit", -- "Lucifer's Gambit"
+	lqdm13 = "No Way Back", -- "Death Provides No Return"
+}
+
+-- Menu label for a map: the (possibly overridden) level title with the
+-- codename appended, e.g. "Grotto (lqdm2)". Falls back to just the
+-- codename when the map has no worldspawn title.
+function director.mapLabel(name: string, rawTitle: string?): string
+	local title = TITLE_OVERRIDES[name] or rawTitle
+	if title and title ~= "" then
+		return `{title} ({name})`
+	end
+	return name
+end
+
 function director.parseMaplist(s: any): { string }
 	local list: { string } = {}
 	if typeof(s) == "string" then
@@ -247,20 +268,17 @@ function director.attach(a: Adapter)
 	local function mapTitles(list: { string }): { [string]: string }
 		local out: { [string]: string } = {}
 		local get = a.getMapTitle
-		if not get then
-			return out
-		end
 		for _, name in list do
-			if not titleTried[name] then
+			if get and not titleTried[name] then
 				titleTried[name] = true
 				local t = get(name)
 				if t and t ~= "" then
 					titleCache[name] = t
 				end
 			end
-			if titleCache[name] then
-				out[name] = titleCache[name]
-			end
+			-- always emit a label so the codename shows even for maps with
+			-- no BSP title; override table sanitizes unsuitable names
+			out[name] = director.mapLabel(name, titleCache[name])
 		end
 		return out
 	end
