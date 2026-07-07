@@ -279,6 +279,28 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	local ok, conchars = pcall(wadlib.getRaw, w, "conchars")
 	h.conchars = if ok then conchars else nil
 
+	-- SCR_TileClear: the band beside the 320px sbar shows the tiled
+	-- 64x64 gfx.wad backtile, not black (Draw_TileClear). The black strip
+	-- Frame stays as the fallback. C anchors the tile phase at screen
+	-- (0,0); this anchors at the band's top-left — indistinguishable for
+	-- the uniform pattern short of a pixel diff.
+	do
+		local okPic, pic = pcall(wadlib.getPic, w, "backtile")
+		local img = if okPic then textures.createImage(pic.pixels, pic.width, pic.height, pal, false) else nil
+		if img then
+			local tile = Instance.new("ImageLabel")
+			tile.Name = "backtile"
+			tile.BackgroundTransparency = 1
+			tile.BorderSizePixel = 0
+			tile.ImageContent = Content.fromObject(img :: EditableImage)
+			tile.ResampleMode = Enum.ResamplerMode.Pixelated
+			tile.ScaleType = Enum.ScaleType.Tile
+			tile.TileSize = UDim2.fromOffset(pic.width * SCALE, pic.height * SCALE)
+			tile.Size = UDim2.fromScale(1, 1)
+			tile.Parent = strip
+		end
+	end
+
 	-- static backgrounds: ibar at canvas y=0 (sbar-space -24), sbar at y=24.
 	-- the whole inventory row lives in its own frame: screen.c's
 	-- sb_lines drops it first as viewsize rises
