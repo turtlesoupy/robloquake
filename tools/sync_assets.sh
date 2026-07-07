@@ -25,9 +25,10 @@ Built build/QuakeAssets.rbxl. To import into Studio:
   1. Open build/QuakeAssets.rbxl in Studio.
   2. Copy the ServerStorage.QuakeAssets folder.
   3. In your game place: delete ServerStorage.QuakeAssets, paste the new one.
-  4. Re-set attributes on QuakeAssets (they live in the place, not in rojo):
-       engine    = "qw" for QuakeWorld places (absent/other = NetQuake)
-       startmap  = e.g. "dm3" (default per-game start otherwise)
-       deathmatch/coop/skill/fraglimit/timelimit/teamplay/samelevel as needed
+  4. Re-stamp the mode attributes (they live in the place, not in rojo):
+       lune run tools/mode stamp <preset>
+     and paste the printed snippet into the Studio command bar. Never
+     hand-type attribute sets — a missing fraglimit/timelimit silently
+     boots a no-limit server.
   5. Save the place.
 EOF

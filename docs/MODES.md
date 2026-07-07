@@ -43,6 +43,15 @@ running state always equals the file. Switch/inspect from the terminal:
     lune run tools/mode off          # place attributes rule (ship mode)
 
 Shipped places run with presets off and own their attributes per-place.
+To set a place's attributes, stamp a preset instead of hand-typing them:
+
+    lune run tools/mode stamp qw-dm  # prints a command-bar snippet
+
+Paste the snippet into the Studio command bar and save the place. The
+snippet writes every KEY (absent keys cleared), so the place state equals
+the preset exactly. A place missing `fraglimit`/`timelimit` silently boots
+with no round-end limits — the rule cvars default to 0 and QC `CheckRules`
+never fires.
 
 ## The director (rotation · voting · admin control)
 

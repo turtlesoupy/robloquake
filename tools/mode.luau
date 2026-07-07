@@ -3,8 +3,13 @@
 --   lune run tools/mode              -> show active preset + all states
 --   lune run tools/mode qw-dm        -> activate a preset
 --   lune run tools/mode off          -> disable presets (place attrs rule)
+--   lune run tools/mode stamp qw-dm  -> print a Studio command-bar snippet
+--                                       that writes the preset's attributes
+--                                       onto ServerStorage.QuakeAssets
 -- The switch rewrites src/server/modeconfig.luau; rojo syncs it live and
--- the next Play session boots into that state.
+-- the next Play session boots into that state. `stamp` is for places that
+-- run with presets off (ship mode): attributes live in the place, so bake
+-- the chosen state in and save — never hand-type attribute sets.
 
 local fs = require("@lune/fs")
 local process = require("@lune/process")
@@ -41,6 +46,27 @@ local function describe(name: string): string
 	return table.concat(parts, "  ")
 end
 
+-- one SetAttribute line per KEY, mirroring modepresets.apply exactly:
+-- absent keys are cleared (nil), so the stamped place == the preset
+local function stampSnippet(name: string): string
+	local preset = modepresets.PRESETS[name] :: { [string]: any }
+	local lines = { 'local a = game:GetService("ServerStorage").QuakeAssets' }
+	for _, key in modepresets.KEYS do
+		local v = preset[key]
+		local lit: string
+		if v == nil then
+			lit = "nil"
+		elseif type(v) == "string" then
+			lit = string.format("%q", v)
+		else -- number | boolean
+			lit = tostring(v)
+		end
+		table.insert(lines, `a:SetAttribute("{key}", {lit})`)
+	end
+	table.insert(lines, `print("QuakeAssets stamped: {name}")`)
+	return table.concat(lines, " ")
+end
+
 local arg = process.args[1]
 if not arg then
 	local active = currentPreset()
@@ -56,6 +82,14 @@ if not arg then
 		print(`    {describe(name)}`)
 	end
 	print("\nswitch: lune run tools/mode <preset>   disable: lune run tools/mode off")
+elseif arg == "stamp" then
+	local name = process.args[2]
+	if not name or not modepresets.PRESETS[name] then
+		print(`usage: lune run tools/mode stamp <preset>   (unknown preset "{name or ""}")`)
+		process.exit(1)
+	end
+	print(`-- paste into the Studio command bar, then SAVE the place:`)
+	print(stampSnippet(name :: string))
 elseif arg == "off" then
 	writeConfig(nil)
 	print("presets disabled — the place's QuakeAssets attributes rule")
