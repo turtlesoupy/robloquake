@@ -2009,6 +2009,10 @@ return function()
 				if def and def.kind == "alias" then
 					-- the gun renders through its own projection (viewmodel.luau)
 					gunEnt = entrender.create(def, vmgun.world)
+					if gunEnt then
+						-- viewports ignore part/SA tints; light rides the frame
+						gunEnt.lightFrame = vmgun.frame
+					end
 				end
 			end
 			local ge = gunEnt

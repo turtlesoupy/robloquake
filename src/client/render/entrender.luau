@@ -27,6 +27,12 @@ export type ModelDef = {
 	spriteImages: { EditableImage }?,
 	-- translated player skins by colors byte (shirt/pants)
 	translatedSkins: { [number]: EditableImage }?,
+	translatedPixels: { [number]: buffer }?, -- kept for lit variants
+	-- light-baked skin variants by (skin, colors, bucket) key: Part.Color
+	-- does not modulate MeshPart textures and SurfaceAppearance content
+	-- props are plugin-gated at runtime, so entity light is baked into
+	-- the skin pixels (the software renderer's colormap, quantized)
+	litSkins: { [number]: EditableImage }?,
 	skinPixels: buffer?, -- kept for building translations
 	skinW: number?,
 	skinH: number?,
@@ -42,6 +48,17 @@ export type RenderEnt = {
 	-- alias
 	em: EditableMesh?,
 	part: MeshPart?,
+	defRef: ModelDef?, -- lit-skin source (pixels/palette/caches)
+	-- ViewportFrames ignore part-level tints entirely; the view weapon's
+	-- light rides the frame's ImageColor3 instead of baked skins (set by
+	-- the caller that owns the viewmodel frame)
+	lightFrame: ViewportFrame?,
+	lastLightL: number?,
+	untextured: boolean?, -- no skin image: Part.Color renders, tint it directly
+	skinnum: number?, -- last skin/colors updateAlias applied (lit rebake source)
+	colors: number?,
+	lightBucket: number?, -- quantized light from setLight
+	appliedBucket: number?, -- bucket baked into the current TextureContent
 	vids: { number }?, -- vertex ids by mdl vertex index (front + back seam copies)
 	backVids: { number }?,
 	lastFrame: number,
@@ -202,11 +219,99 @@ local function buildAliasEnt(def: ModelDef, parent: Instance): RenderEnt?
 		modelindex = 0,
 		em = em,
 		part = part,
+		defRef = def,
+		untextured = not (skinImages and skinImages[1]),
 		vids = vids,
 		backVids = backVids,
 		lastFrame = 0,
 		centerOffset = centerOffset,
 	}
+end
+
+-- entity light quantization: lit skin variants are baked per bucket and
+-- cached (software quake equivalently buckets via the 64-row colormap);
+-- bucket LIGHT_BUCKETS = full intensity = the original unlit images
+local LIGHT_BUCKETS = 16
+
+-- unlit image for (skinnum, colors): the base skin, or the player skin
+-- translated into the colors byte (cached, pixels kept for lit rebakes)
+local function unlitSkinImage(def: ModelDef, skinnum: number, colors: number?): EditableImage?
+	if colors and def.translatedSkins and def.skinPixels then
+		local cache = def.translatedSkins :: { [number]: EditableImage }
+		local img = cache[colors]
+		if not img then
+			local translated = textures.translatePixels(
+				def.skinPixels :: buffer,
+				(def.skinW :: number) * (def.skinH :: number),
+				colors
+			)
+			local tp = def.translatedPixels
+			if tp then
+				tp[colors] = translated
+			end
+			img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
+			if img then
+				cache[colors] = img
+			end
+		end
+		if img then
+			return img
+		end
+	end
+	local skinImages = def.skinImages
+	return if skinImages then skinImages[skinnum + 1] else nil
+end
+
+-- palettized source pixels for (skinnum, colors) lit rebakes
+local function skinPixelsFor(def: ModelDef, skinnum: number, colors: number?): buffer?
+	if colors and def.skinPixels then
+		local tp = def.translatedPixels
+		local buf = if tp then tp[colors] else nil
+		if not buf then
+			buf = textures.translatePixels(
+				def.skinPixels :: buffer,
+				(def.skinW :: number) * (def.skinH :: number),
+				colors
+			)
+			if tp then
+				tp[colors] = buf
+			end
+		end
+		return buf
+	end
+	local am = def.alias
+	local skin = if am then am.skins[skinnum + 1] else nil
+	if not skin then
+		return def.skinPixels
+	end
+	return if skin.group then (skin.frames :: { buffer })[1] else skin.pixels :: buffer
+end
+
+-- skin image with the entity light baked in (cached per skin/colors/
+-- bucket); falls back to the unlit image when the image budget is out
+local function litSkinImage(def: ModelDef, skinnum: number, colors: number?, bucket: number): EditableImage?
+	if bucket >= LIGHT_BUCKETS then
+		return unlitSkinImage(def, skinnum, colors)
+	end
+	local cache = def.litSkins
+	if not cache then
+		return unlitSkinImage(def, skinnum, colors)
+	end
+	local key = bucket + (skinnum + 1) * 100 + (if colors then (colors + 1) * 100000 else 0)
+	local img = cache[key]
+	if not img then
+		local px = skinPixelsFor(def, skinnum, colors)
+		local w, h = def.skinW, def.skinH
+		if not px or not w or not h then
+			return unlitSkinImage(def, skinnum, colors)
+		end
+		img = textures.createLitImage(px, w, h, def.palRef :: any, bucket / LIGHT_BUCKETS)
+		if not img then
+			return unlitSkinImage(def, skinnum, colors)
+		end
+		cache[key] = img
+	end
+	return img
 end
 
 -- pick the frame (handling framegroups by time)
@@ -261,32 +366,18 @@ function entrender.updateAlias(
 		end
 	end
 
-	-- skins (player entities get color-translated variants)
+	-- skins (player entities get color-translated variants), baked at
+	-- the entity's current light bucket (setLight owns the bucket)
+	local bucket = re.lightBucket or LIGHT_BUCKETS
 	local wantSkinKey = (skinnum + 1) + (if colors then (colors + 1) * 1000 else 0)
-	if re.lastSkinKey ~= wantSkinKey then
+	if re.lastSkinKey ~= wantSkinKey or re.appliedBucket ~= bucket then
 		re.lastSkinKey = wantSkinKey
-		local img: EditableImage? = nil
-		if colors and def.translatedSkins and def.skinPixels then
-			local cache = def.translatedSkins :: { [number]: EditableImage }
-			img = cache[colors]
-			if not img then
-				local translated = textures.translatePixels(
-					def.skinPixels :: buffer,
-					(def.skinW :: number) * (def.skinH :: number),
-					colors
-				)
-				img = textures.createImage(translated, def.skinW :: number, def.skinH :: number, def.palRef :: any, false)
-				if img then
-					cache[colors] = img
-				end
-			end
-		end
-		if not img then
-			local skinImages = def.skinImages
-			img = if skinImages then skinImages[skinnum + 1] else nil
-		end
+		re.skinnum = skinnum
+		re.colors = colors
+		local img = litSkinImage(def, skinnum, colors, bucket)
 		if img then
 			part.TextureContent = Content.fromObject(img)
+			re.appliedBucket = bucket
 		end
 	end
 
@@ -398,7 +489,12 @@ function entrender.create(def: ModelDef, parent: Instance): RenderEnt?
 end
 
 -- R_LightPoint tint: models are shaded by the floor lightmap under them
--- (software adds an ambient floor so nothing goes fully black)
+-- (software adds an ambient floor so nothing goes fully black).
+-- Part.Color does not modulate MeshPart textures and SurfaceAppearance
+-- content properties are plugin-gated at runtime, so the light bakes
+-- into cached lit skin variants (quantized; swapped via TextureContent).
+-- The view weapon instead rides its ViewportFrame's ImageColor3 —
+-- smooth, and viewports ignore part-level tints anyway.
 function entrender.setLight(re: RenderEnt, light: number)
 	local part = re.part
 	if not part then
@@ -409,7 +505,33 @@ function entrender.setLight(re: RenderEnt, light: number)
 	end
 	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
 	l = l ^ 0.7 -- match the world lighting gamma
-	part.Color = Color3.new(l, l, l)
+	local frame = re.lightFrame
+	if frame then
+		local last = re.lastLightL
+		if last and math.abs(l - last) < 0.02 then
+			return
+		end
+		re.lastLightL = l
+		frame.ImageColor3 = Color3.new(l, l, l)
+		return
+	end
+	if re.untextured then
+		part.Color = Color3.new(l, l, l) -- no skin: the part color renders
+		return
+	end
+	local bucket = math.clamp((l * LIGHT_BUCKETS + 0.5) // 1, 1, LIGHT_BUCKETS)
+	if bucket == re.lightBucket then
+		return
+	end
+	re.lightBucket = bucket
+	local def = re.defRef
+	if def and re.appliedBucket ~= bucket then
+		local img = litSkinImage(def, re.skinnum or 0, re.colors, bucket)
+		if img then
+			part.TextureContent = Content.fromObject(img)
+			re.appliedBucket = bucket
+		end
+	end
 end
 
 -- release a ModelDef's EditableImages NOW (skins/sprites/translations):
@@ -429,6 +551,13 @@ function entrender.destroyDef(def: ModelDef)
 		end
 		def.translatedSkins = nil
 	end
+	if def.litSkins then
+		for _, img in def.litSkins do
+			img:Destroy()
+		end
+		def.litSkins = nil
+	end
+	def.translatedPixels = nil
 	def.skinImages = nil
 	def.spriteImages = nil
 end
@@ -483,6 +612,8 @@ function entrender.prepareImages(def: ModelDef, pal: textures.Palette)
 		def.skinW = am.skinwidth
 		def.skinH = am.skinheight
 		def.translatedSkins = {}
+		def.translatedPixels = {}
+		def.litSkins = {}
 	elseif def.kind == "sprite" then
 		local sm = def.sprite :: spr.SpriteModel
 		local imgs: { EditableImage } = {}
