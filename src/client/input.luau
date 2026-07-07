@@ -16,9 +16,10 @@ export type InputState = {
 	impulse: number,
 }
 
--- cl_* cvars (defaults)
-local cl_forwardspeed = 200
-local cl_backspeed = 200
+-- cl_* cvars (defaults). ALWAYS RUN ships ON (cl_forwardspeed 400):
+-- deathmatch is unplayable at walk speed and every tester toggled it
+local cl_forwardspeed = 400
+local cl_backspeed = 400
 local cl_sidespeed = 350
 local cl_upspeed = 200
 local cl_movespeedkey = 2
@@ -28,7 +29,7 @@ local cl_anglespeedkey = 1.5
 local m_yaw = 0.022
 local m_pitch = 0.022 -- sign flips with INVERT MOUSE (menu.c M_AdjustSliders)
 local sensitivity = 3
-local alwaysRun = false -- ALWAYS RUN: cl_forwardspeed/backspeed 400 vs 200
+local alwaysRun = true -- ALWAYS RUN: cl_forwardspeed/backspeed 400 vs 200
 
 -- kbutton_t states (down or not; edge latches for attack/jump)
 local buttons: { [string]: boolean } = {}
