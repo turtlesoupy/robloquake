@@ -74,7 +74,22 @@ place (they live in the place file, so re-set them after an asset import):
 
 ### Tests
 
-Every subsystem has offline tests that run against the real shareware data:
+Every subsystem has offline tests that run against the real shareware data.
+The full pipeline — `luau-lsp analyze` strict-mode checking, then the test
+sweep — is one script:
+
+```sh
+tools/check.sh            # analyze + all tests
+tools/check.sh --analyze  # static analysis only
+```
+
+Analysis is baselined per-diagnostic against `tools/analyze_baseline.txt`
+(file, line/col, kind, message — normalized and deduped): a diagnostic not
+already listed there fails the run, so pre-existing debt doesn't re-flag on
+every unrelated commit. Fixing a listed diagnostic shrinks the baseline
+automatically (commit the updated file). To grandfather in new debt
+intentionally, run `tools/check.sh --update-baseline`. The raw report lands
+in `build/analyze.txt`. To run just the tests by hand:
 
 ```sh
 for f in tests/test_*.luau; do lune run "$f"; done
