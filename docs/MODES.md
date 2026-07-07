@@ -21,6 +21,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `maplist` | string | both | yes | space-separated rotation, e.g. `"dm3 dm4 dm6 dm2"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
 | `votetime` | number | both | yes | vote window seconds before auto-advance (default 30) |
 | `roblox_avatars` | bool | both | yes | avatar rigs for players — **default on when absent**; set `false` to opt out |
+| `modekey` | string | both | no (boot) | stats/leaderboard scope label (`dm`, `ctf`, …); absent = derived from the other attributes (`statscore.deriveModeKey`) |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
 Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=20,
@@ -73,6 +74,44 @@ fixed at boot). No engine file is involved.
   rotation such as Rocket Arena's localinfo cycling), **the mod wins**
   and the vote is discarded. The director only replaces the stock DM
   same-map loop.
+
+## Stats & leaderboards
+
+Product layer, engine-agnostic, same removal contract as the director
+(delete `src/server/stats.luau` + `statscore.luau` + `statstore.luau` +
+`src/client/leaderboardui.luau` and the marked `===== stats =====`
+blocks in the four boot files).
+
+- `src/server/statscore.luau` — pure counters/period/bucket math,
+  lune-tested (`tests/test_stats.luau`).
+- `src/server/stats.luau` — capture adapter: reads each client edict's
+  `frags/health/deadflag/weapon` per heartbeat. Frag increases = kills
+  (attributed to the killer's current weapon), decreases = suicides,
+  `deadflag` edges = deaths, intermission snapshot = wins/matches
+  (competitive places only), map change = round end. No engine edits.
+- `src/server/statstore.luau` — persistence. Profiles in DataStore
+  `rq-stats-1` (key `u<UserId>`), written as add-only delta merges via
+  `UpdateAsync` (no session locks needed; safe across servers).
+  Counters land in buckets `(all | day | week) × (global | m:<modekey>)`;
+  stale period buckets are pruned. Leaderboards are OrderedDataStores
+  `lb1:<stat>:<scope>:<period>` re-written from bucket totals on each
+  flush (autosave ~120 s staggered, plus leave + server close); a
+  period's stores freeze naturally when its day/week passes. A
+  `leaderstats` folder feeds the native playerlist (Frags/Deaths), and
+  the `Leaderboards` RemoteFunction serves top-50 pages (cached 45 s,
+  per-player rate-limited) to the client UI. A `friends` scope ranks
+  the requester's friends (self included) by reading their profiles
+  directly (friend list cached 5 min, profiles 90 s, never-played
+  misses 10 min, ≤100 reads per fetch) against the period's global
+  bucket — OrderedDataStores can't be filtered by user.
+- Tracked per scope: kills, deaths, suicides, net frags, wins, matches,
+  rounds, playtime, joins, per-weapon kills, best round frags, best
+  kill streak. Profile-level activity: `firstSeen`/`lastSeen` unix
+  timestamps plus `daysActive`, `streakDays` (consecutive UTC days,
+  updated on every write — stored eagerly because a streak cannot be
+  reconstructed later), `bestStreakDays`, `lastActiveDay`.
+- Studio without DataStore API access: writes disable themselves after
+  the characteristic access error and the session runs in-memory.
 
 ### Admin menu
 

@@ -180,6 +180,56 @@ return function(ctx: Ctx)
 	-- player <-> client slot bridging
 	local slotByPlayer: { [Player]: number } = {}
 
+	-- ===== stats pipeline (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/stats.luau for the REMOVAL note =====
+	local statscorelib = require(script.Parent.statscore)
+	local statstorelib = require(script.Parent.statstore)
+	local statslib = require(script.Parent.stats)
+	local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
+	local statsApi = statslib.attach({
+		store = statstorelib.new({
+			modekey = statscorelib.deriveModeKey({
+				modekey = ctx.assets:GetAttribute("modekey") :: any,
+				engine = ctx.assets:GetAttribute("engine") :: any,
+				gamedir = ctx.assets:GetAttribute("gamedir") :: any,
+				deathmatch = ctx.assets:GetAttribute("deathmatch") :: any,
+				coop = ctx.assets:GetAttribute("coop") :: any,
+				teamplay = ctx.assets:GetAttribute("teamplay") :: any,
+			}),
+			net = ctx.reliable.Parent :: Instance,
+		}),
+		maxclients = svr.maxclients,
+		playerBySlot = function(slot: number): Player?
+			for p, s in slotByPlayer do
+				if s == slot then
+					return p
+				end
+			end
+			return nil
+		end,
+		readSlot = function(slot: number): statslib.SlotRead?
+			local cl = svr.clients[slot]
+			if not (cl and cl.active and cl.edict) or cl.spectator then
+				return nil
+			end
+			local ent = svr.qdefs.ent
+			statsRead.frags = vmlib.edFloat(cl.edict, ent.frags)
+			statsRead.health = vmlib.edFloat(cl.edict, ent.health)
+			statsRead.deadflag = vmlib.edFloat(cl.edict, ent.deadflag)
+			statsRead.weapon = vmlib.edFloat(cl.edict, ent.weapon)
+			return statsRead
+		end,
+		getIntermission = function()
+			local d = svr.vm.progs.globaldefsByName["intermission_running"]
+			return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+		end,
+		getCurrentMap = function()
+			return svr.name
+		end,
+		competitive = (tonumber(ctx.assets:GetAttribute("deathmatch")) or 1) ~= 0,
+	})
+	-- ===== end stats pipeline =====
+
 	local function connectPlayer(player: Player): number?
 		local slot: number? = nil
 		for i = 1, svr.maxclients do
@@ -256,6 +306,7 @@ return function(ctx: Ctx)
 		-- that "new" packet: an unsolicited push here skews the strict
 		-- 1:1 sequence exchange the delta-frame lookup is keyed by
 		dir.step() -- match director: vote lifecycle + idle expiry
+		statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 
 		local nextLevel = svr.changelevelTo
 		if nextLevel then

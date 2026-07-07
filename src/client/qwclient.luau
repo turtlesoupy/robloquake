@@ -1148,12 +1148,13 @@ return function()
 	local UserInputService = game:GetService("UserInputService")
 
 	local directorUiOpen = false
+	local lbUiOpen = false
 	local function refreshInputMode()
 		-- while the console, chat line or menu is up the player stops
 		-- moving (Key_ClearStates lives in input.setEnabled(false))
-		input.setEnabled(not (con.open or chatOpen or directorUiOpen or menulib.isOpen(mnu)))
-		if directorUiOpen then
-			input.freeMouse() -- the admin menu is clickable UI
+		input.setEnabled(not (con.open or chatOpen or directorUiOpen or lbUiOpen or menulib.isOpen(mnu)))
+		if directorUiOpen or lbUiOpen then
+			input.freeMouse() -- the admin menu / leaderboard is clickable UI
 		end
 	end
 
@@ -1172,6 +1173,21 @@ return function()
 		end,
 	})
 	-- ===== end match director UI =====
+
+	-- ===== leaderboard UI (PRODUCT layer) — twin of the NQ block; see
+	-- src/server/stats.luau for the REMOVAL note =====
+	require(script.Parent.leaderboardui).attach({
+		playerGui = player:WaitForChild("PlayerGui"),
+		net = net,
+		isTyping = function()
+			return con.open or chatOpen
+		end,
+		onUiToggle = function(open: boolean)
+			lbUiOpen = open
+			refreshInputMode()
+		end,
+	})
+	-- ===== end leaderboard UI =====
 
 	-- keys.c bind system (Key_SetBinding/Key_Bind_f family): quake key
 	-- names from the shared keymap; Key_Init seeds default.cfg-parity
@@ -1469,7 +1485,7 @@ return function()
 		playerGui = player:WaitForChild("PlayerGui"),
 		exec = execCommand,
 		isUiOpen = function()
-			return con.open or chatOpen or directorUiOpen or menulib.isOpen(mnu)
+			return con.open or chatOpen or directorUiOpen or lbUiOpen or menulib.isOpen(mnu)
 		end,
 		menuKey = function(key: Enum.KeyCode): boolean
 			if not menulib.isOpen(mnu) then

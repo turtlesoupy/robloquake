@@ -327,6 +327,58 @@ local dir = directorlib.attach({
 })
 -- ===== end match director =====
 
+-- ===== stats pipeline (PRODUCT layer): persistent per-player stats,
+-- leaderstats, daily/weekly/all-time leaderboards. REMOVAL: delete
+-- this block + the statsApi.step call in the heartbeat below,
+-- src/server/stats.luau, statscore.luau, statstore.luau and
+-- src/client/leaderboardui.luau. =====
+local statscorelib = require(script.statscore)
+local statstorelib = require(script.statstore)
+local statslib = require(script.stats)
+local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
+local statsApi = statslib.attach({
+	store = statstorelib.new({
+		modekey = statscorelib.deriveModeKey({
+			modekey = assets:GetAttribute("modekey") :: any,
+			engine = assets:GetAttribute("engine") :: any,
+			gamedir = assets:GetAttribute("gamedir") :: any,
+			deathmatch = assets:GetAttribute("deathmatch") :: any,
+			coop = assets:GetAttribute("coop") :: any,
+			teamplay = assets:GetAttribute("teamplay") :: any,
+		}),
+		net = net,
+	}),
+	maxclients = svr.maxclients,
+	playerBySlot = function(slot: number): Player?
+		for p, s in slotByPlayer do
+			if s == slot then
+				return p
+			end
+		end
+		return nil
+	end,
+	readSlot = function(slot: number): statslib.SlotRead?
+		local cl = svr.clients[slot]
+		if not (cl and cl.active and cl.edict) then
+			return nil
+		end
+		statsRead.frags = vmlib.edFloat(cl.edict, defs.ent.frags)
+		statsRead.health = vmlib.edFloat(cl.edict, defs.ent.health)
+		statsRead.deadflag = vmlib.edFloat(cl.edict, defs.ent.deadflag)
+		statsRead.weapon = vmlib.edFloat(cl.edict, defs.ent.weapon)
+		return statsRead
+	end,
+	getIntermission = function()
+		local d = svr.vm.progs.globaldefsByName["intermission_running"]
+		return d ~= nil and vmlib.globalFloat(svr.vm, d.ofs) ~= 0
+	end,
+	getCurrentMap = function()
+		return svr.name
+	end,
+	competitive = (tonumber(assets:GetAttribute("deathmatch")) or 0) ~= 0,
+})
+-- ===== end stats pipeline =====
+
 -- M_ScanSaves' data: publish {name, comment} for every save so the
 -- client Load/Save menus can list them (comment = savegame line 2)
 local saveListValue = Instance.new("StringValue")
@@ -571,6 +623,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	end
 
 	dir.step() -- match director: vote lifecycle + idle expiry
+	statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo

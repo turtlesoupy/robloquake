@@ -27,6 +27,8 @@ modepresets.KEYS = {
 	"votetime",
 	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
+	-- stats/leaderboard scope label; absent = derived (statscore.deriveModeKey)
+	"modekey",
 }
 
 local DM_RULES = {
@@ -44,10 +46,12 @@ modepresets.PRESETS = {
 		engine = "nq",
 		game = "id1",
 		startmap = "start",
+		modekey = "campaign",
 	},
 	["nq-dm"] = {
 		engine = "nq",
 		game = "id1",
+		modekey = "dm",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
@@ -58,6 +62,7 @@ modepresets.PRESETS = {
 	["qw-dm"] = {
 		engine = "qw",
 		game = "id1",
+		modekey = "dm",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
@@ -70,6 +75,7 @@ modepresets.PRESETS = {
 	ctf = {
 		engine = "qw",
 		game = "id1",
+		modekey = "ctf",
 		gamedir = "threewave",
 		-- threewave overloads teamplay as a bitfield: 256 enables CTF (flags
 		-- don't spawn without it). 419 = the mod's shipped server.cfg value
@@ -89,6 +95,7 @@ modepresets.PRESETS = {
 	arena = {
 		engine = "qw",
 		game = "id1",
+		modekey = "arena",
 		gamedir = "arena",
 		deathmatch = 1,
 		fraglimit = 15,
@@ -98,6 +105,7 @@ modepresets.PRESETS = {
 	instagib = {
 		engine = "nq",
 		game = "id1",
+		modekey = "instagib",
 		gamedir = "instagib",
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,

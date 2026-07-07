@@ -1467,11 +1467,12 @@ input.lockMouse()
 local UserInputService = game:GetService("UserInputService")
 
 local directorUiOpen = false
+local lbUiOpen = false
 refreshInputMode = function()
-	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen
+	local uiOpen = con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen
 	input.setEnabled(not uiOpen)
-	if directorUiOpen then
-		input.freeMouse() -- the admin menu is clickable UI
+	if directorUiOpen or lbUiOpen then
+		input.freeMouse() -- the admin menu / leaderboard is clickable UI
 	end
 end
 
@@ -1492,6 +1493,21 @@ require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
+-- ===== leaderboard UI (PRODUCT layer): daily/weekly/all-time boards
+-- from the stats pipeline. REMOVAL: see src/server/stats.luau. =====
+require(script.leaderboardui).attach({
+	playerGui = playerGui,
+	net = net,
+	isTyping = function()
+		return con.open
+	end,
+	onUiToggle = function(open: boolean)
+		lbUiOpen = open
+		refreshInputMode()
+	end,
+})
+-- ===== end leaderboard UI =====
+
 -- ===== touch + gamepad controls (PRODUCT layer): buttons run console
 -- lines through the bind exec, sticks feed input's analog hooks. See
 -- src/client/controls.luau for the removal note. =====
@@ -1499,7 +1515,7 @@ require(script.controls).attach({
 	playerGui = playerGui,
 	exec = execLine,
 	isUiOpen = function()
-		return con.open or menulib.isOpen(mnu) or directorUiOpen
+		return con.open or menulib.isOpen(mnu) or directorUiOpen or lbUiOpen
 	end,
 	menuKey = function(key: Enum.KeyCode): boolean
 		if not menulib.isOpen(mnu) then
