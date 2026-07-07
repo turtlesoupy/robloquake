@@ -1,7 +1,8 @@
 --!strict
 -- Match director (PRODUCT layer, NOT engine). Owns map rotation,
--- intermission map voting, and live admin control of the match
--- parameter set, for BOTH engine boots via a small adapter.
+-- map voting (opened at intermission, or mid-game by any player via
+-- "callvote"), and live admin control of the match parameter set, for
+-- BOTH engine boots via a small adapter.
 --
 -- REMOVAL: delete this file, src/client/directorui.luau, and the
 -- marked "match director" attach blocks in init.server.luau /
@@ -120,6 +121,7 @@ local LIVE_RULES = {
 	"noexit",
 }
 local DEFAULT_VOTETIME = 30
+local CALLVOTE_COOLDOWN = 60 -- seconds after a player-called vote closes
 
 function director.attach(a: Adapter)
 	local Players = game:GetService("Players")
@@ -129,6 +131,8 @@ function director.attach(a: Adapter)
 	remote.Parent = a.net
 
 	local voteOpen = false
+	local voteCalled = false -- current vote was player-called (mid-game)
+	local nextCallvoteAt = 0
 	local voteMaps: { string } = {}
 	local voteDeadline = 0
 	local votes: { [Player]: number } = {}
@@ -171,8 +175,27 @@ function director.attach(a: Adapter)
 			voteOpen = false
 			remote:FireAllClients({ t = "voteEnd" })
 		end
+		if voteCalled then
+			nextCallvoteAt = os.clock() + CALLVOTE_COOLDOWN
+		end
+		voteCalled = false
 		table.clear(votes)
 		voteMaps = {}
+	end
+
+	-- open the 3-candidate map vote; false when the maplist yields none
+	local function openVote(): boolean
+		voteMaps = director.candidates(maplist(), a.getCurrentMap(), 3)
+		if #voteMaps == 0 then
+			return false
+		end
+		table.clear(votes)
+		voteOpen = true
+		local vt = tonumber(a.assets:GetAttribute("votetime")) or DEFAULT_VOTETIME
+		voteDeadline = os.clock() + vt
+		remote:FireAllClients({ t = "voteBegin", maps = voteMaps, secondsLeft = vt })
+		broadcastCounts()
+		return true
 	end
 
 	local function currentWinner(): string?
@@ -201,6 +224,25 @@ function director.attach(a: Adapter)
 			if voteOpen and i and i >= 1 and i <= #voteMaps then
 				votes[player] = i
 				broadcastCounts()
+			end
+		elseif msg.t == "callvote" then
+			-- rock-the-vote (top-right MAP plaque / M): anyone may open
+			-- the map vote mid-game. An already-open vote is just re-sent
+			-- to the caller; the cooldown blunts spam after one closes.
+			if voteOpen then
+				remote:FireClient(player, {
+					t = "voteBegin",
+					maps = voteMaps,
+					secondsLeft = math.max(0, voteDeadline - os.clock()),
+				})
+				broadcastCounts()
+			elseif os.clock() >= nextCallvoteAt then
+				voteCalled = true
+				if openVote() then
+					print(`[director] vote called by {player.Name}: {table.concat(voteMaps, ",")}`)
+				else
+					voteCalled = false
+				end
 			end
 		elseif msg.t == "set" then
 			if not a.isHost(player) then
@@ -271,28 +313,25 @@ function director.attach(a: Adapter)
 	-- would otherwise hold intermission forever)
 	function api.step()
 		local inter = a.getIntermission()
-		if inter and not wasIntermission then
-			local list = maplist()
-			if #list > 0 then
-				voteMaps = director.candidates(list, a.getCurrentMap(), 3)
-				if #voteMaps > 0 then
-					table.clear(votes)
-					voteOpen = true
-					local vt = tonumber(a.assets:GetAttribute("votetime")) or DEFAULT_VOTETIME
-					voteDeadline = os.clock() + vt
-					print(`[director] vote open: {table.concat(voteMaps, ",")} for {vt}s`)
-					remote:FireAllClients({ t = "voteBegin", maps = voteMaps, secondsLeft = vt })
-					broadcastCounts()
-				end
-			end
+		if inter and not wasIntermission and openVote() then
+			-- an open called vote is absorbed: fresh candidates + clock
+			voteCalled = false
+			print(`[director] vote open: {table.concat(voteMaps, ",")}`)
 		end
 		wasIntermission = inter
 		if voteOpen and os.clock() > voteDeadline then
 			local counts = director.tally(votes, #voteMaps)
+			local total = 0
+			for _, n in counts do
+				total += n
+			end
 			local w = currentWinner()
-			print(`[director] vote expired: {table.concat(voteMaps, ",")} counts={table.concat(counts, ",")} -> {w or "?"}`)
+			local fizzle = voteCalled and total == 0
+			print(`[director] vote expired: {table.concat(voteMaps, ",")} counts={table.concat(counts, ",")} -> {if fizzle then "fizzled" else w or "?"}`)
 			closeVote()
-			if w then
+			-- a called vote nobody voted in fizzles; the intermission vote
+			-- must always advance (idle players would hold it forever)
+			if w and not fizzle then
 				a.forceChangelevel(w)
 			end
 		end

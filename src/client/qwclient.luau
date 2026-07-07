@@ -968,7 +968,7 @@ return function()
 	-- ===== match director UI (PRODUCT layer) — twin of the NQ block;
 	-- see src/server/director.luau for the REMOVAL note. Placed after
 	-- refreshInputMode so onUiToggle can drive input mode. =====
-	require(script.Parent.directorui).attach({
+	local directorHandle = require(script.Parent.directorui).attach({
 		playerGui = player:WaitForChild("PlayerGui"),
 		net = net,
 		isTyping = function()
@@ -981,7 +981,8 @@ return function()
 	})
 	-- ===== end match director UI =====
 
-	-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on backslash (\),
+	-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
+	-- top-right MENU plaque (pausemenu also owns the SCORE plaque),
 	-- darkens the world 80% without pausing it; twin of the NQ block =====
 	local pauseHandle = require(script.Parent.pausemenu).attach({
 		playerGui = player:WaitForChild("PlayerGui"),
@@ -994,11 +995,25 @@ return function()
 			pauseUiOpen = open
 			refreshInputMode()
 		end,
+		playSound = function()
+			soundlib.localSound(sndsys, "misc/menu2.wav") -- S_LocalSound menu click
+		end,
+		setWeaponSkin = function(mdlName: string, spec: string?)
+			weaponSkins[mdlName] = spec
+			gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+		end,
+		setShowScores = function(on: boolean)
+			hudlib.setShowScores(hud, on)
+		end,
+		callMapVote = function()
+			directorHandle.callVote()
+		end,
 	})
 	-- ===== end pause menu =====
 
-	-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on K (T is
-	-- Quake talk; K is unbound in the default binds and not Roblox-reserved) =====
+	-- ===== tweaks menu (PRODUCT layer) — weapon skin picker on T (its
+	-- authentic talk job moved to Y; M calls a map vote, backslash is
+	-- the engine menu) =====
 	require(script.Parent.tweaksui).attach({
 		playerGui = player:WaitForChild("PlayerGui"),
 		isTyping = function()
@@ -1035,7 +1050,8 @@ return function()
 		leftarrow = "+left", rightarrow = "+right",
 		pgup = "+lookup", pgdn = "+lookdown",
 		space = "+jump", ctrl = "+attack", shift = "+speed",
-		tab = "+showscores", t = "messagemode",
+		-- talk sits on Y: T is the product tweaks-menu hotkey (tweaksui.luau)
+		r = "+showscores", y = "messagemode",
 	}
 	for i = 1, 8 do
 		bindings[tostring(i)] = `impulse {i}`
@@ -1067,7 +1083,7 @@ return function()
 			-- CL_Quit_f / CL_Disconnect_f: N/A on this platform
 			consolelib.print(con, "use the Roblox menu to leave the experience")
 		elseif cmd == "+showscores" or cmd == "-showscores" then
-			-- Sbar_ShowScores / Sbar_DontShowScores (TAB binds these)
+			-- Sbar_ShowScores / Sbar_DontShowScores (R binds these)
 			showScoresDown = cmd == "+showscores"
 			hudlib.setShowScores(hud, showScoresDown)
 		elseif cmd == "+showteamscores" or cmd == "-showteamscores" then
@@ -1435,8 +1451,10 @@ return function()
 				refreshInputMode()
 				return
 			end
-			if key == Enum.KeyCode.M then
-				menulib.toggle(mnu) -- M_ToggleMenu_f (Escape is platform-reserved)
+			if key == Enum.KeyCode.BackSlash then
+				-- M_ToggleMenu_f (Escape is platform-reserved; M calls the
+				-- product map vote, see pausemenu.luau)
+				menulib.toggle(mnu)
 				refreshInputMode()
 				return
 			end

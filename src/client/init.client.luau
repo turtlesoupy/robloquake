@@ -1752,7 +1752,7 @@ end
 -- REMOVAL: delete this block, src/client/directorui.luau, and the
 -- server-side twin (see src/server/director.luau). Placed after
 -- refreshInputMode's assignment so onUiToggle can drive input mode. =====
-require(script.directorui).attach({
+local directorHandle = require(script.directorui).attach({
 	playerGui = playerGui,
 	net = net,
 	isTyping = function()
@@ -1765,7 +1765,8 @@ require(script.directorui).attach({
 })
 -- ===== end match director UI =====
 
--- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on backslash (\),
+-- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
+-- top-right MENU plaque (pausemenu also owns the SCORE plaque),
 -- darkens the world 80% without pausing it; twin of the qwclient block =====
 local pauseHandle = require(script.pausemenu).attach({
 	playerGui = playerGui,
@@ -1777,6 +1778,19 @@ local pauseHandle = require(script.pausemenu).attach({
 	onUiToggle = function(open: boolean)
 		pauseUiOpen = open
 		refreshInputMode()
+	end,
+	playSound = function()
+		soundlib.localSound(snd, "misc/menu2.wav") -- S_LocalSound menu click
+	end,
+	setWeaponSkin = function(mdlName: string, spec: string?)
+		weaponSkins[mdlName] = spec
+		gunSkinApplied = GUN_SKIN_STALE -- re-evaluate the held gun next frame
+	end,
+	setShowScores = function(on: boolean)
+		hudlib.setShowScores(hud, on)
+	end,
+	callMapVote = function()
+		directorHandle.callVote()
 	end,
 })
 -- ===== end pause menu =====
@@ -1983,8 +1997,9 @@ UserInputService.InputBegan:Connect(function(io: InputObject, _processed: boolea
 		return
 	end
 
-	-- the Quake menu lives on M (Escape is reserved by Roblox for its own menu)
-	if key == Enum.KeyCode.M and not menulib.isOpen(mnu) then
+	-- the Quake menu lives on backslash (Escape is reserved by Roblox for
+	-- its own menu; M calls the product map vote, see pausemenu.luau)
+	if key == Enum.KeyCode.BackSlash and not menulib.isOpen(mnu) then
 		menulib.toggle(mnu)
 		refreshInputMode()
 		return
@@ -2030,16 +2045,22 @@ UserInputService.InputEnded:Connect(function(io: InputObject)
 end)
 
 -- quake.rc: the 1996 defaults, then the modern layout as the authentic
--- autoexec mechanism (WASD wasn't the default; arrows were)
+-- autoexec mechanism (WASD wasn't the default; arrows were). E, M and T
+-- are product hotkeys (pause menu / map vote / tweaks, pausemenu.luau
+-- and tweaksui.luau), so they stay unbound here (+jump swims up anyway;
+-- NQ messagemode is a stub), the scoreboard moves off default.cfg's TAB
+-- onto R, and the engine menu takes the freed backslash.
 execLine("exec default.cfg")
 for _, l in {
 	"bind w +forward",
 	"bind s +back",
 	"bind a +moveleft",
 	"bind d +moveright",
-	"bind e +moveup",
 	"bind c +movedown",
-	"bind m togglemenu",
+	"bind \\ togglemenu",
+	"unbind tab",
+	"unbind t",
+	"bind r +showscores",
 } do
 	execLine(l)
 end

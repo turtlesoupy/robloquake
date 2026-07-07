@@ -1,6 +1,7 @@
 --!strict
--- Match director UI (PRODUCT layer, NOT engine): the intermission map
--- vote panel and the admin match-control menu. Deliberately built with
+-- Match director UI (PRODUCT layer, NOT engine): the map vote panel
+-- (intermission or player-called via callVote) and the admin
+-- match-control menu. Deliberately built with
 -- plain Roblox UI (ScreenGui) so the Quake renderer/HUD/console are
 -- untouched and this file can be deleted at any time (see the REMOVAL
 -- note in src/server/director.luau). Touch-first sizing: every control
@@ -46,18 +47,29 @@ export type Opts = {
 	playerGui: Instance,
 	net: Instance,
 	isTyping: () -> boolean,
-	-- fired when the admin menu opens/closes so the boot can free the
-	-- mouse cursor (the vote panel stays keyboard-first and never locks)
+	-- fired when the admin menu opens/closes, and while the vote panel
+	-- awaits the local player's pick, so the boot can free the mouse
 	onUiToggle: ((open: boolean) -> ())?,
 }
 
-function directorui.attach(opts: Opts)
+export type Handle = {
+	-- ask the server to open a mid-game map vote (the top-right MAP
+	-- plaque / M); the panel appears when the voteBegin broadcast lands.
+	-- No-op until the Director remote resolves (or forever without one).
+	callVote: () -> (),
+}
+
+function directorui.attach(opts: Opts): Handle
+	local handle: Handle = { callVote = function() end }
 	task.spawn(function()
 		local remote = opts.net:WaitForChild("Director", 30)
 		if not remote or not remote:IsA("RemoteEvent") then
 			return -- server-side director removed: UI stays dormant
 		end
 		local re = remote :: RemoteEvent
+		handle.callVote = function()
+			re:FireServer({ t = "callvote" })
+		end
 
 		local gui = Instance.new("ScreenGui")
 		gui.Name = "QuakeDirector"
@@ -69,7 +81,11 @@ function directorui.attach(opts: Opts)
 		local state: any = { isAdmin = false, rules = {}, maplist = "", map = "" }
 
 		------------------------------------------------------------------
-		-- vote panel (bottom center)
+		-- vote panel (bottom center). It frees the cursor like a menu
+		-- until the local player votes; the boot's single ui-open flag is
+		-- shared with the admin menu, hence the forward-declared push.
+		local voteCursorHeld = false
+		local pushUiState = function() end -- real one defined with the menu
 		local votePanel = Instance.new("Frame")
 		votePanel.AnchorPoint = Vector2.new(0.5, 1)
 		votePanel.Position = UDim2.new(0.5, 0, 1, -18)
@@ -124,6 +140,8 @@ function directorui.attach(opts: Opts)
 					card.strokeObj.Transparency = if k == i then 0.1 else 0.8
 				end
 				re:FireServer({ t = "vote", i = i })
+				voteCursorHeld = false -- voted: hand mouse/movement back
+				pushUiState()
 			end
 		end
 
@@ -160,6 +178,8 @@ function directorui.attach(opts: Opts)
 				voteCards[i] = { btn = btn, count = ct, strokeObj = st }
 			end
 			votePanel.Visible = true
+			voteCursorHeld = true
+			pushUiState()
 			task.spawn(function()
 				while votePanel.Visible and os.clock() < voteEndsAt do
 					voteClock.Text = `auto {math.max(0, math.ceil(voteEndsAt - os.clock()))}s`
@@ -195,6 +215,11 @@ function directorui.attach(opts: Opts)
 		local refreshMenuRef: () -> () = function() end
 	local reportLabelRef: TextLabel? = nil
 	local rebuildPlayersRef = function() end
+		pushUiState = function()
+			if opts.onUiToggle then
+				opts.onUiToggle(menu.Visible or voteCursorHeld)
+			end
+		end
 		local function setMenuVisible(open: boolean)
 			if menu.Visible == open then
 				return
@@ -203,9 +228,7 @@ function directorui.attach(opts: Opts)
 			if open then
 				refreshMenuRef()
 			end
-			if opts.onUiToggle then
-				opts.onUiToggle(open)
-			end
+			pushUiState()
 		end
 		corner(menu, 12)
 		stroke(menu, Color3.new(1, 1, 1), 0.85)
@@ -560,6 +583,8 @@ function directorui.attach(opts: Opts)
 				end
 			elseif msg.t == "voteEnd" then
 				votePanel.Visible = false
+				voteCursorHeld = false
+				pushUiState()
 			end
 		end)
 
@@ -583,6 +608,7 @@ function directorui.attach(opts: Opts)
 
 		re:FireServer({ t = "hello" })
 	end)
+	return handle
 end
 
 return directorui

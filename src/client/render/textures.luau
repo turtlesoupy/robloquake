@@ -290,6 +290,24 @@ function textures.writeSkyFrame(img: EditableImage, pixels: buffer, w: number, h
 	end
 end
 
+-- Create an EditableImage from raw RGBA8 pixels (already un-palettized;
+-- e.g. product-menu icons baked by tools/build_menuicons.py). Returns nil
+-- when the Mesh & Image APIs are unavailable or the budget is exhausted.
+function textures.createRGBAImage(rgba: buffer, width: number, height: number): EditableImage?
+	local ok, img = pcall(function(): EditableImage?
+		local image = AssetService:CreateEditableImage({ Size = Vector2.new(width, height) })
+		if not image then
+			return nil
+		end
+		image:WritePixelsBuffer(Vector2.zero, Vector2.new(width, height), rgba)
+		return image
+	end)
+	if not ok then
+		return nil
+	end
+	return img
+end
+
 -- Average color of a palettized image (fallback tint when images are
 -- unavailable).
 function textures.averageColor(pixels: buffer, count: number, pal: Palette): Color3

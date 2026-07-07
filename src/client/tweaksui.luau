@@ -1,10 +1,10 @@
 --!strict
 -- Tweaks menu (PRODUCT layer, NOT engine): client-side visual tweaks,
--- currently procedural weapon skins per weapon. Toggled with K (T is
--- Quake talk, and Roblox core scripts reserve keys like I/O/Esc), built
--- with plain Roblox UI like directorui.luau so the Quake renderer/HUD
--- stay untouched and this file can be deleted at any time. Selections
--- are local to this client and session.
+-- currently procedural weapon skins per weapon. Toggled with T (Quake
+-- talk sits on Y in the QW boot, and Roblox core scripts reserve keys
+-- like I/O/Esc), built with plain Roblox UI like directorui.luau so the
+-- Quake renderer/HUD stay untouched and this file can be deleted at any
+-- time. Selections are local to this client and session.
 
 local UserInputService = game:GetService("UserInputService")
 
@@ -79,7 +79,7 @@ export type Opts = {
 	-- flip the chase camera (chase_active) and return the new state;
 	-- omitted when the engine has no self chase cam (QW)
 	toggleThirdPerson: (() -> boolean)?,
-	-- pause-menu (backslash) font style: big bronze plaque vs small classic
+	-- pause-menu (E) font style: big bronze plaque vs small classic
 	menuFont: { isBig: () -> boolean, setBig: (on: boolean) -> () }?,
 }
 
@@ -338,7 +338,7 @@ function tweaksui.attach(opts: Opts)
 		if gameProcessed or opts.isTyping() then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.K then
+		if input.KeyCode == Enum.KeyCode.T then
 			setMenuVisible(not menu.Visible)
 		end
 	end)
