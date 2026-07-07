@@ -735,6 +735,76 @@ return function()
 	local gunEnt: entrender.RenderEnt? = nil
 	local gunModelIndex = 0
 
+	-- Render-ent pool: QW delta compression drops entities freely (PVS
+	-- edges, packet overflow) and they return a frame or two later. C keeps
+	-- cl_entities render state forever and just skips drawing; destroying
+	-- the EditableMesh on drop meant an async ms-scale rebuild (and mesh-
+	-- budget churn) on return, with the entity invisible meanwhile. Instead
+	-- retired ents hide into a per-modeldef pool and are reused on return;
+	-- entries idle past POOL_GRACE are destroyed for real.
+	local entPool: { [entrender.ModelDef]: { entrender.RenderEnt } } = {}
+	local entPoolAt: { [entrender.RenderEnt]: number } = {}
+	local POOL_GRACE = 5 -- seconds hidden before a pooled ent is freed
+
+	local function setEntVisible(re: entrender.RenderEnt, visible: boolean)
+		local root: Instance? = re.part or re.billboardPart or re.model
+		if root then
+			(root :: any).Parent = if visible then entFolder else nil
+		end
+	end
+
+	local function retireEnt(key: string, time: number)
+		local re = renderEnts[key]
+		local def = renderDefs[key]
+		renderEnts[key] = nil
+		renderDefs[key] = nil
+		if not re then
+			return
+		end
+		if not def then
+			entrender.destroy(re)
+			return
+		end
+		setEntVisible(re, false)
+		local pool = entPool[def]
+		if not pool then
+			pool = {}
+			entPool[def] = pool
+		end
+		table.insert(pool, re)
+		entPoolAt[re] = time
+	end
+
+	local function sweepEntPool(time: number)
+		for def, pool in entPool do
+			local i = 1
+			while i <= #pool do
+				local re = pool[i]
+				if time - (entPoolAt[re] or 0) > POOL_GRACE then
+					entrender.destroy(re)
+					entPoolAt[re] = nil
+					pool[i] = pool[#pool]
+					pool[#pool] = nil
+				else
+					i += 1
+				end
+			end
+			if #pool == 0 then
+				entPool[def] = nil
+			end
+		end
+	end
+
+	local function destroyEntPool()
+		for _, pool in entPool do
+			for _, re in pool do
+				entrender.destroy(re)
+			end
+		end
+		table.clear(entPool)
+		table.clear(entPoolAt)
+	end
+
 	local function linkEnt(key: string, modelindex: number, origin: vector, angles: vector, frame: number, skinnum: number, time: number, colors: number?)
 		local def = getModelDef(modelindex)
 		if not def or def.kind == "none" then
@@ -743,11 +813,20 @@ return function()
 		liveKeys[key] = true
 		local re = renderEnts[key]
 		if re and renderDefs[key] ~= def then
-			entrender.destroy(re)
+			retireEnt(key, time)
 			re = nil
 		end
 		if not re then
-			re = entrender.create(def, entFolder)
+			local pool = entPool[def]
+			local n = if pool then #pool else 0
+			if pool and n > 0 then
+				re = pool[n]
+				pool[n] = nil
+				entPoolAt[re :: entrender.RenderEnt] = nil
+				setEntVisible(re :: entrender.RenderEnt, true)
+			else
+				re = entrender.create(def, entFolder)
+			end
 			if not re then
 				return
 			end
@@ -965,13 +1044,12 @@ return function()
 			end
 		end
 
-		for key, re in renderEnts do
+		for key in renderEnts do
 			if not liveKeys[key] then
-				entrender.destroy(re)
-				renderEnts[key] = nil
-				renderDefs[key] = nil
+				retireEnt(key, time)
 			end
 		end
+		sweepEntPool(time)
 		avatarLayer.hideExcept(seenAvatars)
 	end
 
@@ -1655,6 +1733,7 @@ return function()
 				renderEnts[key] = nil
 				renderDefs[key] = nil
 			end
+			destroyEntPool() -- pooled ents reference the old level's defs
 			for _, re in staticRes do
 				entrender.destroy(re)
 			end
