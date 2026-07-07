@@ -115,9 +115,8 @@ return function()
 
 	-- view blends (view.c): the offline-tested qwview pipeline
 	local blend = qwview.newBlendState()
-	local V_KICKTIME = 0.5 -- v_kicktime (V_CalcViewRoll ramp divisor)
-	local v_oldz = 0 -- V_CalcRefdef stair-step smoothing state
-	local bobState = viewlib.newBobState() -- V_CalcBob bobtime/held-bob state
+	-- V_CalcRefdef persistent state: V_CalcBob bobtime/held-bob + stair oldz
+	local qwRefdefState = viewlib.newQWRefdefState()
 	-- V_DriftPitch state (QW has no idealpitch wire — centers to 0)
 	local pitchDrift = viewlib.newPitchDrift()
 	local lastDriftPitch: number? = nil
@@ -1917,16 +1916,17 @@ return function()
 		end
 		local ownState = cl.frames[bit32.band(cl.parsecount, qwp.UPDATE_MASK)].playerstate[cl.playernum]
 		local trackPs = camTrackedState()
-		local eye, angles
+		local eye, angles, gunorg, gunangles
 		local gunVisible = false
 		local gunFrame = ownState.weaponframe
-		local bob = 0 -- forward gun offset uses this; 0 outside the alive branch
 		if cl.intermission ~= 0 then
 			-- V_CalcIntermissionRefdef: fixed org/angles, no bob/height,
 			-- full idle sway (v_idlescale forced 1, shared V_AddIdle)
 			eye = cl.simorg
 			local ip, iy, ir = viewlib.addIdle(cl.time, 1)
 			angles = cl.simangles + vector.create(ip, iy, ir)
+			gunorg, gunangles = eye, vector.create(-angles.x, angles.y, 0)
+			qwRefdefState.oldz = cl.simorg.z
 		elseif trackPs then
 			-- Cam_Track chase lock: through the tracked player's eyes at
 			-- their predicted origin (stats already mirror the target)
@@ -1937,58 +1937,27 @@ return function()
 			-- = player->weaponframe
 			gunVisible = true
 			gunFrame = trackPs.weaponframe
+			gunorg, gunangles = eye, vector.create(-angles.x, angles.y, 0)
+			qwRefdefState.oldz = cl.simorg.z
 		else
-			-- V_CalcRefdef (QW view.c): ONE path for alive/dead/gib — C
-			-- computes bob/roll/kicks unconditionally; the flags only pick
-			-- the view height (gib +8 / dead -16 / alive +22), force the
-			-- 80-degree death roll, and hide the gun. PF_GIB outranks
-			-- PF_DEAD (the server sets both on a gibbed player).
+			-- V_CalcRefdef core (QW view.c): shared, C-truth-traced vs
+			-- tools/view_truth.c (test_view_truth) — bob, lean, kicks,
+			-- gib/dead heights, gun composition, punch order, stair glide
 			local gib = bit32.band(ownState.flags, qwp.PF_GIB) ~= 0
 			local dead = not gib
 				and (bit32.band(ownState.flags, qwp.PF_DEAD) ~= 0 or (cl.stats[qwp.STAT_HEALTH] or 100) <= 0)
-			-- V_CalcBob: spectators get zero bob (C returns 0 before the
-			-- bobtime accumulation); QW variant holds bob while airborne
-			bob = if cl.spectator then 0 else viewlib.calcBobQW(bobState, dt, ownState.onground ~= -1, cl.simvel)
-			local roll = viewlib.calcRoll(cl.simangles, cl.simvel)
-			-- V_CalcViewRoll damage kick: decays every refdef, dead included
-			local kroll, kpitch = 0, 0
-			if blend.dmgTime > 0 then
-				kroll = blend.dmgTime / V_KICKTIME * blend.dmgRoll
-				kpitch = blend.dmgTime / V_KICKTIME * blend.dmgPitch
-				blend.dmgTime -= dt
-			end
-			local height = if gib then 8 elseif dead then -16 else viewheight
-			-- 1/16 nudge on each axis: never sit exactly on a node line
-			eye = cl.simorg + vector.create(1 / 16, 1 / 16, height + bob + 1 / 16)
-			angles = vector.create(
-				cl.simangles.x + kpitch,
-				cl.simangles.y,
-				if dead or gib then 80 else cl.simangles.z + roll + kroll
-			)
-			gunVisible = not (dead or gib)
-		end
-		-- smooth out stair step ups (view.c V_CalcRefdef): oldz glides up
-		-- at 80 u/s and never lags more than 12 units below the real z
-		if cl.intermission == 0 and not trackPs and ownState.onground ~= -1 and cl.simorg.z - v_oldz > 0 then
-			v_oldz += dt * 80
-			if v_oldz > cl.simorg.z then
-				v_oldz = cl.simorg.z
-			end
-			if cl.simorg.z - v_oldz > 12 then
-				v_oldz = cl.simorg.z - 12
-			end
-			eye += vector.create(0, 0, v_oldz - cl.simorg.z)
-		else
-			v_oldz = cl.simorg.z
-		end
-
-		-- CalcGunAngle (view.c): runs BEFORE punchangle is added, and gun
-		-- roll stays 0 — the C gun never rolls with lean/kicks and never
-		-- pitches with punch (the lag terms are provably zero)
-		local gunangles = vector.create(-angles.x, angles.y, 0)
-		if cl.intermission == 0 and not trackPs then
-			-- r_refdef.viewangles[PITCH] += cl.punchangle (after the gun)
-			angles = vector.create(angles.x + cl.punchangle, angles.y, angles.z)
+			eye, angles, gunorg, gunangles, gunVisible = viewlib.calcRefdefQW(qwRefdefState, blend, {
+				dt = dt,
+				simorg = cl.simorg,
+				simvel = cl.simvel,
+				simangles = cl.simangles,
+				punchangle = cl.punchangle,
+				onground = ownState.onground ~= -1,
+				dead = dead,
+				gib = gib,
+				spectator = cl.spectator,
+				viewheight = viewheight,
+			})
 		end
 		local fwd, right, up = mathlib.angleVectors(angles)
 		-- RQDBG_QWSelfAvatar: pull the camera back into third person so the
@@ -2024,11 +1993,6 @@ return function()
 			local ge = gunEnt
 			if ge then
 				local def = getModelDef(gunModel) :: entrender.ModelDef
-				-- view.c: gun rides forward*bob*0.4 along RAW simangles
-				-- (C: AngleVectors(cl.simangles, ...) — not the kicked
-				-- refdef angles); eye z already carries +bob
-				local gfwd = mathlib.angleVectors(cl.simangles)
-				local gunorg = eye + gfwd * (bob * 0.4)
 				-- vrect: in C the gun hugs the 3D view bottom, which ends
 				-- ABOVE the sbar; rotate it up by the vrect center offset
 				-- so the HUD doesn't cover it (see qcoords.vrect)

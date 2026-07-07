@@ -12,6 +12,10 @@ kept honest: every item is either **verified**, **fixed**, **open**, or a
   over 300 scripted ticks vs `tools/move_truth.c`
 - QuakeC VM: executes the shipped `progs.dat` (CRC 5927), all 150 VM checks
 - Protocol 15 message layer: byte-exact reader/writer round-trips
+- QW view/refdef composition (`view.c`): 400 scripted frames vs the
+  verbatim C in `tools/view_truth.c` (bob, lean, kicks, punch order,
+  gib/dead heights, stair glide, spectator gate) — worst component
+  error 6.1e-5, mutation-tested
 - File formats: PAK/BSP29/WAD2/MDL/SPR/LMP parsed against real data
 
 ## Fixed during the audit
@@ -153,16 +157,13 @@ missing oscillation for two days) is the precedent; fixed 2026-07-07.
 11. **Cvar_Command is a fixed branch list** (NQ) — unlisted cvar names
     fall through to the server instead of get/set locally like C's
     registry walk. Console UX.
-12. **viewsize gun-z fudge absent** (NQ, view.c:944-951) — C raises the
-    gun +2 at viewsize 100 (the default); the port's gun rides 2 units
-    low at all times. Few-line fix.
-13. **Unknown user command: silent** (QW server, qwsv.luau:1504) — dprints
+12. **Unknown user command: silent** (QW server, qwsv.luau:1504) — dprints
     where C Con_Printf's "Bad user command" back to the client.
-14. **Console UX cluster** (NQ+QW): no pgup/pgdn scrollback, no
+13. **Console UX cluster** (NQ+QW): no pgup/pgdn scrollback, no
     horizontal scroll of long input lines, client-side `echo` skips the
     notify lines, unbound-key query prints `"x" = ""` vs C's
     `"x" is not bound`. (Tab completion EXISTS — console.luau:201.)
-15. **Cosmetic/minor cluster**: beam angles kept float vs C int-truncation
+14. **Cosmetic/minor cluster**: beam angles kept float vs C int-truncation
     (chunky LG rotation); conback slides instead of cropping; CHAN_AUTO
     never steals a channel when full (dense firefights stack/drop sounds
     differently); skingroup + sprite-group intervals untimed; sky drift

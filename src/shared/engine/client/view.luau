@@ -215,6 +215,22 @@ view.calcIntermissionRefdef = calcIntermissionRefdef
 
 -- V_CalcRefdef (plus V_CalcViewRoll folded in); V_RenderView's
 -- intermission dispatch included
+-- view.c: "fudge position around to keep amount of weapon visible roughly
+-- equal with different FOV" — identical table in WinQuake and QW
+local function gunZFudge(viewsize: number): number
+	if viewsize == 110 then
+		return 1
+	elseif viewsize == 100 then
+		return 2
+	elseif viewsize == 90 then
+		return 1
+	elseif viewsize == 80 then
+		return 0.5
+	end
+	return 0
+end
+view.gunZFudge = gunZFudge
+
 function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 	if (c.intermission or 0) ~= 0 then
 		return calcIntermissionRefdef(c)
@@ -253,7 +269,10 @@ function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 
 	-- gun position
 	local forward = mathlib.angleVectors(viewangles)
-	local gunorg = entOrigin + vector.create(0, 0, c.viewheight) + forward * (bob * 0.4) + vector.create(0, 0, bob)
+	local gunorg = entOrigin
+		+ vector.create(0, 0, c.viewheight)
+		+ forward * (bob * 0.4)
+		+ vector.create(0, 0, bob + gunZFudge((c :: any).viewsize or 100))
 	-- CalcGunAngle: gun yaws/pitches with the view
 	local gunangles = vector.create(-viewangles.x, viewangles.y, 0)
 
@@ -285,6 +304,95 @@ function view.calcRefdef(c: cllib.Client, frametime: number): Refdef
 		gunframe = c.stats[cllib.STAT_WEAPONFRAME],
 	}
 end
+
+-- V_CalcRefdef (QW view.c:869-967): the QW camera/gun composition as one
+-- offline-testable function, diffed per-frame against the verbatim C in
+-- tools/view_truth.c (fixture tests/fixtures/view_truth.txt). Excluded
+-- from this core (handled by the caller, matching V_RenderView's
+-- dispatch): pitch drift, intermission, and the chase-cam lock. dmg is
+-- the caller's damage-kick state (dmgTime decays here, like C's
+-- V_CalcViewRoll owning v_dmg_time).
+export type QWRefdefState = { bobState: BobState, oldz: number }
+export type QWDmgState = { dmgTime: number, dmgRoll: number, dmgPitch: number }
+export type QWRefdefIn = {
+	dt: number,
+	simorg: vector,
+	simvel: vector,
+	simangles: vector,
+	punchangle: number,
+	onground: boolean,
+	dead: boolean, -- PF_DEAD (or health <= 0)
+	gib: boolean, -- PF_GIB: outranks dead for the view height
+	spectator: boolean,
+	viewheight: number, -- 22 in C (STAT_VIEWHEIGHT superset allowed)
+	viewsize: number?, -- gun-z fudge input; default 100
+}
+
+local function newQWRefdefState(): QWRefdefState
+	return { bobState = newBobState(), oldz = 0 }
+end
+
+-- returns vieworg, viewangles (punch applied), gunorg, gunangles, gunVisible
+local function calcRefdefQW(
+	st: QWRefdefState,
+	dmg: QWDmgState,
+	inp: QWRefdefIn
+): (vector, vector, vector, vector, boolean)
+	-- V_CalcBob: spectators get zero bob (C returns before bobtime runs)
+	local bob = if inp.spectator then 0 else calcBobQW(st.bobState, inp.dt, inp.onground, inp.simvel)
+
+	-- vieworg = simorg + bob, then the 1/16 node-line nudge on each axis
+	local vieworg = inp.simorg + vector.create(1 / 16, 1 / 16, bob + 1 / 16)
+
+	-- V_CalcViewRoll: lean + damage kick (kick decays every refdef)
+	local roll = calcRoll(inp.simangles, inp.simvel)
+	local pitch = inp.simangles.x
+	local vroll = inp.simangles.z + roll
+	if dmg.dmgTime > 0 then
+		vroll += dmg.dmgTime / v_kicktime * dmg.dmgRoll
+		pitch += dmg.dmgTime / v_kicktime * dmg.dmgPitch
+		dmg.dmgTime -= inp.dt
+	end
+
+	-- view height by flags: PF_GIB outranks PF_DEAD
+	local height = if inp.gib then 8 elseif inp.dead then -16 else inp.viewheight
+	vieworg += vector.create(0, 0, height)
+	if inp.dead or inp.gib then
+		vroll = 80 -- dead view angle (assignment: overrides lean + kick)
+	end
+	local viewangles = vector.create(pitch, inp.simangles.y, vroll)
+
+	-- gun: CalcGunAngle runs BEFORE punchangle; lag terms provably zero,
+	-- roll stays 0; bob offset along RAW simangles (view.c:909)
+	local gunangles = vector.create(-pitch, inp.simangles.y, 0)
+	local gfwd = mathlib.angleVectors(inp.simangles)
+	local gunorg = inp.simorg
+		+ vector.create(0, 0, inp.viewheight)
+		+ gfwd * (bob * 0.4)
+		+ vector.create(0, 0, bob + gunZFudge(inp.viewsize or 100))
+
+	-- r_refdef.viewangles[PITCH] += cl.punchangle (after the gun)
+	viewangles = vector.create(viewangles.x + inp.punchangle, viewangles.y, viewangles.z)
+
+	-- smooth out stair step ups (applies to vieworg AND gun, view.c:964)
+	if inp.onground and inp.simorg.z - st.oldz > 0 then
+		st.oldz += inp.dt * 80
+		if st.oldz > inp.simorg.z then
+			st.oldz = inp.simorg.z
+		end
+		if inp.simorg.z - st.oldz > 12 then
+			st.oldz = inp.simorg.z - 12
+		end
+		vieworg += vector.create(0, 0, st.oldz - inp.simorg.z)
+		gunorg += vector.create(0, 0, st.oldz - inp.simorg.z)
+	else
+		st.oldz = inp.simorg.z
+	end
+
+	return vieworg, viewangles, gunorg, gunangles, not (inp.dead or inp.gib)
+end
+view.newQWRefdefState = newQWRefdefState
+view.calcRefdefQW = calcRefdefQW
 
 -- V_CalcPowerupCshift: quad > suit > invis > invuln priority chain
 function view.powerupShift(items: number): { number }?

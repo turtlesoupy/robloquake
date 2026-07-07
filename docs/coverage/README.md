@@ -134,6 +134,13 @@ rows.
   bob/kick/punch, 1/16 nudge, NQ pause gate, muzzleflash dlight key.
   Prediction/pmove/qcoords wiring verified clean. Record in
   [delta-triage-2026-07-07.md](delta-triage-2026-07-07.md) Phase 2.
+- Phase-3 temporal truth harness: QW camera core extracted to shared
+  view.calcRefdefQW and diffed per-frame against the verbatim C
+  (tools/view_truth.c → tests/fixtures/view_truth.txt → 
+  tests/test_view_truth.luau; 400 frames, worst error 6.1e-5,
+  mutation-tested). Viewsize gun-z fudge landed in both boots along the
+  way. This harness class catches every bug found this session
+  mechanically.
 
 ### 2026-07-06 (independent completeness audit: 31 rows added, zero state change)
 - A mechanical audit (every C function definition in WinQuake, QW/client,

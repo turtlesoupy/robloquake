@@ -71,8 +71,9 @@ t.check(approx(rd.viewangles.z, 0.3), "refdef roll: V_CalcRoll folded into viewa
 t.check(approx(rd.viewangles.x, 10) and approx(rd.viewangles.y, 90), "refdef pitch/yaw pass through")
 t.check(rd.gunangles == vector.create(-10, 90, 0), "CalcGunAngle: gun pitch = -view pitch, roll dropped")
 local fwd = mathlib.angleVectors(vector.create(10, 90, 0.3))
-local wantGun = vector.create(100, 200, 24) + vector.create(0, 0, 22) + fwd * (bob * 0.4) + vector.create(0, 0, bob)
-t.check(vector.magnitude(rd.gunorg - wantGun) < 1e-4, "gun origin: eye + forward*bob*.4 + z bob")
+-- +2: the viewsize-100 gun-z fudge (view.c:944-951, landed 2026-07-07)
+local wantGun = vector.create(100, 200, 24) + vector.create(0, 0, 22) + fwd * (bob * 0.4) + vector.create(0, 0, bob + 2)
+t.check(vector.magnitude(rd.gunorg - wantGun) < 1e-4, "gun origin: eye + forward*bob*.4 + z bob + viewsize fudge")
 t.eq(rd.gunmodel, 5, "gunmodel from STAT_WEAPON")
 t.eq(rd.gunframe, 2, "gunframe from STAT_WEAPONFRAME")
 

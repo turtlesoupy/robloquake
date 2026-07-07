@@ -130,3 +130,32 @@ Smells recorded, not fixed:
   mathlib.vectoangles + a dlight-add helper.
 - particlesim GRAVITY hardcoded 800; C reads live sv_gravity.
 - cl_forwardspeed declared in both view.luau and input.luau.
+
+## Phase 3 — temporal truth harness (same day)
+
+tools/view_truth.c: the VERBATIM QW view.c composition functions
+(V_CalcRoll, V_CalcBob with its statics, CalcGunAngle with the real
+lag code, V_CalcViewRoll, the V_CalcRefdef body, DropPunchAngle) run
+over a 400-frame scripted tape — forward run-up, strafe lean, airborne
+bob-hold, damage kick + punchangle, stair climb, dead, gib, spectator
+flight. Fixture: tests/fixtures/view_truth.txt. Consumer:
+tests/test_view_truth.luau replays the identical tape through the port
+and diffs all 12 refdef components per frame (tolerance 5e-3; measured
+worst 6.1e-5) plus gun visibility, with course guards against a
+degenerate tape (pmove_truth.c pattern).
+
+To make the port side testable, the QW camera core moved OUT of
+qwclient.luau into shared view.calcRefdefQW (qwclient keeps only the
+V_RenderView-shaped dispatch: intermission/chase branches). This also
+retired the qwclient inline copies of the stair glide and damage kick
+(the Phase-2 duplication smell), and landed the viewsize gun-z fudge
+(view.gunZFudge, +2 at the default 100 — was FIDELITY Open #12) in both
+boots (NQ wired to sizeup/sizedown/viewsize).
+
+Harness validity: mutation-tested. Re-introducing the punch-in-gun bug
+fails 12 components; re-dropping the bob sine term fails 745. Excluded
+from the core, covered elsewhere: pitch drift (own test_view battery),
+V_AddIdle (inert at idlescale 0), intermission/chase (caller branches
+in C too). NQ's calcRefdef still has only the hand-computed test_view
+truths — an nq view_truth variant (WinQuake view.c: 1/32 nudge, vector
+punchangle, idealpitch drift) is the natural next extension.

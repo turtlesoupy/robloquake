@@ -909,7 +909,8 @@ execCommand = function(line: string)
 		local v = tonumber(args)
 		if v then
 			currentViewsize = math.clamp(v, 30, 120)
-			hudlib.setViewsize(hud, currentViewsize)
+			hudlib.setViewsize(hud, currentViewsize);
+			(c :: any).viewsize = currentViewsize -- calcRefdef gun-z fudge
 			applyFov()
 		end
 		return
@@ -934,7 +935,8 @@ execCommand = function(line: string)
 	elseif cmd == "sizeup" or cmd == "sizedown" then
 		-- SCR_SizeUp_f / SCR_SizeDown_f: viewsize +/- 10
 		currentViewsize = math.clamp(currentViewsize + (if cmd == "sizeup" then 10 else -10), 30, 120)
-		hudlib.setViewsize(hud, currentViewsize)
+		hudlib.setViewsize(hud, currentViewsize);
+		(c :: any).viewsize = currentViewsize -- calcRefdef gun-z fudge
 		applyFov()
 		return
 	elseif cmd == "v_cshift" then
