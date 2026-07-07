@@ -51,6 +51,13 @@ To set a place's attributes, stamp a preset instead of hand-typing them:
 
     lune run tools/mode stamp qw-dm  # prints a command-bar snippet
 
+A preset only boots if the place's `QuakeAssets` folder actually holds the
+game folders it reads (`game` + optional `gamedir`; the switch output lists
+them). A mismatch — e.g. a dev preset wanting `id1` in a place stripped to
+`lq1` — is a boot error naming both sides. To import exactly the folders a
+preset needs, use `lune run tools/mode assets <preset>`
+(docs/PUBLISHING.md walks through it).
+
 Paste the snippet into the Studio command bar and save the place. The
 snippet writes every KEY (absent keys cleared), so the place state equals
 the preset exactly. A place missing `fraglimit`/`timelimit` silently boots

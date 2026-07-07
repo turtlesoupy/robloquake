@@ -108,7 +108,7 @@ against the real server in one process.
 ```
 default.project.json     Rojo map for the code (daily sync)
 assets.project.json      Rojo map for all asset bundles (occasional sync)
-assets-lq1.project.json  Rojo map for lq1 only (publish import; see docs/PUBLISHING.md)
+assets-current.project.json  generated per-mode asset map (`lune run tools/mode assets <preset>`; gitignored)
 src/shared/engine/       The engine (platform-independent Luau)
   common/                buffers, math, tokenizer, net messages, cvars
   bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders

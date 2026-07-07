@@ -60,7 +60,20 @@ local gameDir = assets:GetAttribute("game")
 if typeof(gameDir) ~= "string" then
 	gameDir = "id1"
 end
-local gameFolder = assets:WaitForChild(gameDir)
+-- fail loudly on a mode/content mismatch (e.g. a dev preset wanting id1
+-- in a place stripped to lq1 for publishing) instead of yielding forever
+local gameFolder = assets:FindFirstChild(gameDir)
+if not gameFolder then
+	local have = {}
+	for _, child in assets:GetChildren() do
+		table.insert(have, child.Name)
+	end
+	error(
+		`[robloquake] active mode wants game={gameDir} but QuakeAssets only holds`
+			.. ` [{table.concat(have, ", ")}] — align the mode with the place's content:`
+			.. ` lune run tools/mode (see docs/PUBLISHING.md)`
+	)
+end
 
 local startAttr = assets:GetAttribute("startmap")
 local START_MAP = if typeof(startAttr) == "string" then startAttr else "start"

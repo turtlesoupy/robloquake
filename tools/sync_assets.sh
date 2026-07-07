@@ -21,14 +21,14 @@ rojo build assets.project.json -o build/QuakeAssets.rbxl
 
 cat <<EOF
 
-Built build/QuakeAssets.rbxl. To import into Studio:
-  1. Open build/QuakeAssets.rbxl in Studio.
-  2. Copy the ServerStorage.QuakeAssets folder.
-  3. In your game place: delete ServerStorage.QuakeAssets, paste the new one.
-  4. Re-stamp the mode attributes (they live in the place, not in rojo):
-       lune run tools/mode stamp <preset>
-     and paste the printed snippet into the Studio command bar. Never
-     hand-type attribute sets — a missing fraglimit/timelimit silently
-     boots a no-limit server.
-  5. Save the place.
+Built assets/$GAME chunks (and build/QuakeAssets.rbxl for manual import).
+
+Preferred import path — serve exactly the folders the target mode needs:
+  1. lune run tools/mode assets <preset>     # writes assets-current.project.json
+  2. pkill -f "rojo serve"; rojo serve assets-current.project.json
+  3. Studio Rojo plugin: Connect -> accept patch -> Disconnect
+  4. Restore the code serve: pkill -f "rojo serve"; rojo serve
+For publishing (strip + preset alignment + attribute stamp) follow
+docs/PUBLISHING.md end to end. Never hand-type attribute sets — a missing
+fraglimit/timelimit silently boots a no-limit server.
 EOF
