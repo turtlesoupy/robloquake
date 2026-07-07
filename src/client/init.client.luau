@@ -1658,6 +1658,9 @@ local directorHandle = require(script.directorui).attach({
 -- changes push a snapshot; loads + applies saved prefs at boot; twin of
 -- the qwclient block. REMOVAL: see prefstore.luau — pass the raw
 -- settings/setWeaponSkin tables straight to the menus again. =====
+-- quake shirt/pants rows: the local mirror the AVATAR page reads; sets
+-- ride the forwarded `color` host command
+local myTopColor, myBottomColor = 0, 0
 local prefsHandle = require(script.prefs).attach({
 	net = net,
 	-- SETTINGS page rows (menu.c M_Options): look/run live in input,
@@ -1674,6 +1677,13 @@ local prefsHandle = require(script.prefs).attach({
 		end,
 		setVolume = function(v: number)
 			soundlib.setMasterVolume(snd, v)
+		end,
+		getColors = function(): (number, number)
+			return myTopColor, myBottomColor
+		end,
+		setColors = function(top: number, bottom: number)
+			myTopColor, myBottomColor = top, bottom
+			execLine(`color {top} {bottom}`)
 		end,
 	},
 	setWeaponSkin = function(mdlName: string, spec: string?)
@@ -1718,6 +1728,11 @@ local pauseHandle = require(script.pausemenu).attach({
 	callvote = directorHandle.cv,
 	-- SETTINGS page (menu.c M_Options): setters persist via the prefs bridge
 	settings = prefsHandle.settings,
+	-- AVATAR page: quake shirt/pants tint, persisted like any setting
+	avatarColors = {
+		get = prefsHandle.settings.getColors,
+		set = prefsHandle.settings.setColors,
+	},
 })
 -- ===== end pause menu =====
 
@@ -1779,6 +1794,9 @@ require(script.controls).attach({
 		return true
 	end,
 	font = hud.font,
+	isIntermission = function()
+		return c.intermission ~= 0
+	end,
 })
 -- ===== end touch + gamepad controls =====
 

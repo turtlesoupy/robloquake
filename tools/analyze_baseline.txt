@@ -1,5 +1,5 @@
 src/client/console.luau(268,11): TypeError: Expected this to be 'string', but got 'string?'
-src/client/directorui.luau(156,9): LocalUnused: Variable 'myVote' is never used; prefix with '_' to silence
+src/client/directorui.luau(155,9): LocalUnused: Variable 'myVote' is never used; prefix with '_' to silence
 src/client/hud.luau(1407,8): LocalShadow: Variable 'font' shadows previous declaration at line 1351
 src/client/hud.luau(261,2): TypeError: Cannot add property 'sbarStrip' to table 'Hud'
 src/client/hud.luau(312,2): TypeError: Cannot add property 'ibarRow' to table 'Hud'
@@ -22,7 +22,7 @@ src/client/init.client.luau(388,28): TypeError: Expected this to be 'ModelDef', 
 src/client/init.client.luau(547,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
 src/client/init.client.luau(861,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
 src/client/menu.luau(530,15): TypeError: Cannot cast 'nil' into 'TextLabel' because the types are unrelated
-src/client/prefs.luau(138,21): TypeError: Expected this to be 'string', but got 'string?'
+src/client/prefs.luau(155,21): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(1010,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'
 src/client/qwclient.luau(1018,15): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
 src/client/qwclient.luau(1019,19): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
@@ -33,7 +33,7 @@ src/client/qwclient.luau(108,32): TypeError: Expected type table, got 'nil' inst
 src/client/qwclient.luau(108,5): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(1119,11): LocalShadow: Variable 'key' shadows previous declaration at line 1051
 src/client/qwclient.luau(1394,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
-src/client/qwclient.luau(1464,27): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(1475,27): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(18,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
 src/client/qwclient.luau(486,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
 src/client/qwclient.luau(489,28): TypeError: Expected this to be 'ModelDef', but got 'nil'

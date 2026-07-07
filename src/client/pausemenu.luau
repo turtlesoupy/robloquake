@@ -44,6 +44,7 @@ local wadlib = require(engine.gfx.wad)
 local mdllib = require(engine.models.mdl)
 
 local textures = require(script.Parent.render.textures)
+local avatarrender = require(script.Parent.render.avatarrender)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local skinforge = require(script.Parent.render.skinforge)
@@ -120,6 +121,10 @@ export type Opts = {
 	-- SETTINGS page hooks: the menu.c M_Options rows that function on this
 	-- platform (see buildSettings); the page shows a stub when nil
 	settings: Settings?,
+	-- AVATAR page hooks: quake shirt/pants palette rows (0..13), wired to
+	-- the boot's `color` command so the tint replicates to everyone; the
+	-- page shows a stub when nil
+	avatarColors: { get: () -> (number, number), set: (top: number, bottom: number) -> () }?,
 }
 
 -- mid-game callvote bridge (structurally directorui.Handle.cv): live match
@@ -873,6 +878,17 @@ function pausemenu.attach(opts: Opts): Handle
 		friendsFetching = true
 		task.spawn(function()
 			local list: { FriendInfo } = {}
+			-- GetFriendsAsync's IsOnline died in 2024 (always false); overlay
+			-- GetFriendsOnline, which is privacy-filtered — friends hiding
+			-- their status simply read as offline
+			local onlineSet: { [number]: boolean } = {}
+			pcall(function()
+				for _, f in (Players.LocalPlayer :: any):GetFriendsOnline(200) :: { any } do
+					if f.IsOnline ~= false then
+						onlineSet[f.VisitorId] = true
+					end
+				end
+			end)
 			local ok, err = pcall(function()
 				local pages = Players:GetFriendsAsync(Players.LocalPlayer.UserId)
 				while true do
@@ -882,7 +898,7 @@ function pausemenu.attach(opts: Opts): Handle
 						table.insert(list, {
 							id = item.Id :: number,
 							name = (name:upper():gsub("[^\32-\126]", "?")),
-							online = item.IsOnline == true,
+							online = onlineSet[item.Id :: number] == true,
 						})
 					end
 					if pages.IsFinished then
@@ -1030,8 +1046,9 @@ function pausemenu.attach(opts: Opts): Handle
 			text(hp, pad + 2, sy, line, ss)
 			sy += lineH
 		end
+		-- the stats/profile card opens the AVATAR tint subscreen
 		clickable(content, hero.x, BOX_Y + hero.y, hero.w, hero.h, hp, function()
-			state, skinPage = "skins", 0
+			state = "avatar"
 			showPage()
 		end)
 
@@ -1783,6 +1800,124 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 	end
 
+	-- ---- AVATAR page: quake-style shirt/pants tint -----------------------
+	-- Steppers drive the boot's `color` command (userinfo -> the server
+	-- broadcasts it back), so scoreboard colors and every client's rig
+	-- tint move together. The preview reuses the avatarrender pipeline: a
+	-- hidden template ent is created ONCE in workspace (create ScaleTo's a
+	-- parked humanoid rig — only safe there, see avatarrender), tinted with
+	-- the same palette-row math avatarlayer uses, and cloned inert into the
+	-- page's ViewportFrame on every rebuild.
+	local QUAKE_COLOR_NAMES = {
+		"WHITE", "BROWN", "LAVENDER", "KHAKI", "RED", "OLIVE", "ORANGE",
+		"PEACH", "PURPLE", "MAGENTA", "TAN", "GREEN", "YELLOW", "BLUE",
+	}
+	local function quakeRowColor(row: number): Color3 -- palette row 0..13
+		local base = row * 16
+		local idx = base + (if base < 128 then 11 else 4)
+		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
+	end
+	local avatarPreviewEnt: avatarrender.AvatarEnt? = nil
+	local function ensureAvatarPreview(): Model?
+		if not avatarPreviewEnt then
+			local holder = Instance.new("Folder")
+			holder.Name = "QuakeMenuAvatarPreview"
+			holder.Parent = workspace
+			avatarPreviewEnt = avatarrender.create(Players.LocalPlayer.UserId, holder)
+		end
+		local ae = avatarPreviewEnt
+		return if ae and not ae.loading then ae.model else nil
+	end
+	local function buildAvatar()
+		local ac = opts.avatarColors
+		local cells = layout2()
+		local left, right = cells[1], cells[2]
+		local lp = cellPanel(left)
+		if not ac then
+			text(lp, 0, math.floor(left.h / 2) - 8, "UNAVAILABLE", style.body, RARITY_GREY, left.w, 0.5)
+			return
+		end
+		local top, bottom = ac.get()
+
+		local model = ensureAvatarPreview()
+		local ae = avatarPreviewEnt
+		if model and ae then
+			-- byte 0 = untinted in the live pipeline (avatarlayer passes
+			-- nil,nil); mirror that so the preview matches what others see
+			if top == 0 and bottom == 0 then
+				avatarrender.setTeamColors(ae, nil, nil)
+			else
+				avatarrender.setTeamColors(ae, quakeRowColor(top), quakeRowColor(bottom))
+			end
+			local vp = Instance.new("ViewportFrame")
+			vp.BackgroundTransparency = 1
+			vp.Ambient = Color3.new(1, 1, 1)
+			vp.LightColor = Color3.new(0, 0, 0)
+			vp.Position = UDim2.fromOffset(10, 10)
+			vp.Size = UDim2.fromOffset(left.w - 20, left.h - 20)
+			vp.ZIndex = 3
+			vp.Parent = lp
+			local wm = Instance.new("WorldModel")
+			wm.Parent = vp
+			local clone = model:Clone()
+			clone:PivotTo(CFrame.new(0, 0, 0))
+			clone.Parent = wm
+			local cf, size = clone:GetBoundingBox()
+			local cam = Instance.new("Camera")
+			cam.FieldOfView = 30
+			local dist = math.max(size.Y, size.X, 1) * 2.1
+			cam.CFrame = CFrame.lookAt(cf.Position + cf.LookVector * dist, cf.Position)
+			cam.Parent = vp
+			vp.CurrentCamera = cam
+		else
+			-- rig still replicating/loading: rebuild once it lands
+			text(lp, 0, math.floor(left.h / 2) - 8, "LOADING...", style.body, RARITY_GREY, left.w, 0.5)
+			task.spawn(function()
+				local waiting = avatarPreviewEnt
+				while waiting and waiting.loading do
+					task.wait(0.25)
+				end
+				if state == "avatar" and gui.Enabled then
+					task.defer(showPage)
+				end
+			end)
+		end
+
+		-- right column: SHIRT / PANTS stepper panels, stacked (mock layout)
+		local rTop: Rect = { x = right.x, y = right.y, w = right.w, h = (right.h - GAP) // 2 }
+		local rBot: Rect = { x = right.x, y = right.y + rTop.h + GAP, w = right.w, h = right.h - rTop.h - GAP }
+		local function tintPanel(cell: Rect, title: string, value: number, apply: (n: number) -> ())
+			local p = cellPanel(cell)
+			text(p, 0, 20, title, style.head, nil, cell.w, 0.5)
+			local bs = 8 * style.body
+			local ty = math.floor((cell.h - bs) / 2) + 10
+			local name = QUAKE_COLOR_NAMES[value + 1] or tostring(value)
+			local arrowLX = 32
+			local arrowRX = cell.w - 32 - bs
+			local arrowL = text(p, arrowLX, ty, "<", style.body)
+			text(p, arrowLX + bs, ty, name, style.body, quakeRowColor(value), arrowRX - arrowLX - bs, 0.5)
+			local arrowR = text(p, arrowRX, ty, ">", style.body)
+			local function hot(lx: number, visual: GuiObject, fn: () -> ())
+				clickable(content, cell.x + lx, BOX_Y + cell.y + ty - 12, bs + 24, bs + 24, visual, function()
+					fn()
+					showPage()
+				end)
+			end
+			hot(arrowLX - 12, arrowL, function()
+				apply((value + 13) % 14)
+			end)
+			hot(arrowRX - 12, arrowR, function()
+				apply((value + 1) % 14)
+			end)
+		end
+		tintPanel(rTop, "SHIRT COLOR", top, function(n: number)
+			ac.set(n, bottom)
+		end)
+		tintPanel(rBot, "PANTS COLOR", bottom, function(n: number)
+			ac.set(top, n)
+		end)
+	end
+
 	local PAGES: { [string]: { title: string, build: () -> () } } = {
 		main = { title = "FRAG", build = buildMain },
 		settings = { title = "SETTINGS", build = buildSettings },
@@ -1792,6 +1927,7 @@ function pausemenu.attach(opts: Opts): Handle
 		skins = { title = "SKINS", build = buildSkins },
 		friends = { title = "FRIENDS", build = buildFriends },
 		rankings = { title = "RANKINGS", build = buildRankings },
+		avatar = { title = "AVATAR", build = buildAvatar },
 	}
 
 	-- the bottom action: leave (main, and callvote — the MAP plaque's page
@@ -1905,10 +2041,20 @@ function pausemenu.attach(opts: Opts): Handle
 		if opts.isTyping() or UserInputService:GetFocusedTextBox() then
 			return
 		end
+		-- E and M are page hotkeys, not plain toggles: from the other page
+		-- they SWITCH (E -> main, M -> call-a-vote); only from their own
+		-- page do they close the menu
 		if input.KeyCode == Enum.KeyCode.E then
-			setOpen(not open)
+			if not open then
+				setOpen(true)
+			elseif state == "main" then
+				setOpen(false)
+			else
+				state = "main"
+				showPage()
+			end
 		elseif input.KeyCode == Enum.KeyCode.M and opts.callvote then
-			if open then
+			if open and state == "callvote" then
 				setOpen(false)
 			else
 				openCallVote()

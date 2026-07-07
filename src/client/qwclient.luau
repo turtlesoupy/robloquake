@@ -1440,8 +1440,12 @@ return function()
 	-- ===== end match director UI =====
 
 	-- ===== prefs bridge (PRODUCT layer) — twin of the NQ block; persisted
-	-- settings + weapon skin picks; see src/server/prefstore.luau for the
-	-- REMOVAL note =====
+	-- settings + weapon skin picks + avatar tint; see src/server/prefstore.luau
+	-- for the REMOVAL note =====
+	-- quake shirt/pants rows: the local mirror the AVATAR page reads; sets
+	-- ride the `color` command via execStuffLine (the forward ref — the
+	-- real execCommand is declared later in this boot)
+	local myTopColor, myBottomColor = 0, 0
 	local prefsHandle = require(script.Parent.prefs).attach({
 		net = net,
 		-- SETTINGS page rows (menu.c M_Options): look/run live in input,
@@ -1458,6 +1462,13 @@ return function()
 			end,
 			setVolume = function(v: number)
 				soundlib.setMasterVolume(sndsys, v)
+			end,
+			getColors = function(): (number, number)
+				return myTopColor, myBottomColor
+			end,
+			setColors = function(top: number, bottom: number)
+				myTopColor, myBottomColor = top, bottom
+				execStuffLine(`color {top} {bottom}`)
 			end,
 		},
 		setWeaponSkin = function(mdlName: string, spec: string?)
@@ -1502,6 +1513,11 @@ return function()
 		callvote = directorHandle.cv,
 		-- SETTINGS page (menu.c M_Options): setters persist via the prefs bridge
 		settings = prefsHandle.settings,
+		-- AVATAR page: quake shirt/pants tint, persisted like any setting
+		avatarColors = {
+			get = prefsHandle.settings.getColors,
+			set = prefsHandle.settings.setColors,
+		},
 	})
 	-- ===== end pause menu =====
 
@@ -1845,6 +1861,9 @@ return function()
 			return true
 		end,
 		font = hud.font,
+		isIntermission = function()
+			return cl.intermission ~= 0
+		end,
 	})
 	-- ===== end touch + gamepad controls =====
 

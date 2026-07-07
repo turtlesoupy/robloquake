@@ -19,6 +19,9 @@ export type Settings = {
 	setAlwaysRun: (on: boolean) -> (),
 	getVolume: () -> number,
 	setVolume: (v: number) -> (),
+	-- quake shirt/pants palette rows (0..13) — the AVATAR page tint
+	getColors: () -> (number, number),
+	setColors: (top: number, bottom: number) -> (),
 }
 
 export type Opts = {
@@ -38,12 +41,15 @@ function prefs.attach(opts: Opts)
 
 	local function snapshot()
 		local s = opts.settings
+		local top, bottom = s.getColors()
 		return {
 			settings = {
 				sensitivity = s.getSensitivity(),
 				invertMouse = s.getInvertMouse(),
 				alwaysRun = s.getAlwaysRun(),
 				volume = s.getVolume(),
+				topcolor = top,
+				bottomcolor = bottom,
 			},
 			skins = skins,
 		}
@@ -93,6 +99,12 @@ function prefs.attach(opts: Opts)
 					if type(s.volume) == "number" then
 						raw.setVolume(math.clamp(s.volume, 0, 1))
 					end
+					if type(s.topcolor) == "number" and type(s.bottomcolor) == "number" then
+						raw.setColors(
+							math.clamp(math.floor(s.topcolor), 0, 13),
+							math.clamp(math.floor(s.bottomcolor), 0, 13)
+						)
+					end
 				end
 				local sk = (saved :: any).skins
 				if type(sk) == "table" then
@@ -128,6 +140,11 @@ function prefs.attach(opts: Opts)
 		getVolume = raw.getVolume,
 		setVolume = function(v: number)
 			raw.setVolume(v)
+			schedulePush()
+		end,
+		getColors = raw.getColors,
+		setColors = function(top: number, bottom: number)
+			raw.setColors(top, bottom)
 			schedulePush()
 		end,
 	}

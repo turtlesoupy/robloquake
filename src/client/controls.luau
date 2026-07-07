@@ -34,6 +34,8 @@ export type Deps = {
 	-- the LibreQuake conchars font (shared with hud/menu) for button
 	-- labels; nil falls back to a stock TextLabel
 	font: confontlib.Font?,
+	-- score screen is up: any screen tap presses fire to advance it
+	isIntermission: (() -> boolean)?,
 }
 
 -- tuning defaults
@@ -311,12 +313,12 @@ function controls.attach(deps: Deps)
 	-- above FIRE. Weapon switching is the tap-on-the-HUD-icon path, so
 	-- there's no on-screen switch button. Offsets are from the bottom
 	-- edge, so the whole cluster tracks the HUD regardless of screen size.
-	makeButton("Jump", "JUMP", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -280), function()
+	local jumpBtn = makeButton("Jump", "JUMP", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -280), function()
 		deps.exec("+jump")
 	end, function()
 		deps.exec("-jump")
 	end)
-	makeButton("Fire", "FIRE", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -116), function()
+	local fireBtn = makeButton("Fire", "FIRE", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -116), function()
 		deps.exec("+attack")
 	end, function()
 		deps.exec("-attack")
@@ -351,6 +353,7 @@ function controls.attach(deps: Deps)
 	local stickTouch: InputObject? = nil
 	local stickCenter = Vector2.zero
 	local lookTouches: { [InputObject]: boolean } = {}
+	local intermissionTouches: { [InputObject]: boolean } = {}
 
 	local function setStickOffset(offset: Vector2)
 		if offset.Magnitude > STICK_RADIUS then
@@ -377,6 +380,13 @@ function controls.attach(deps: Deps)
 	-- camera look.
 	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
 		if io.UserInputType ~= Enum.UserInputType.Touch or processed or not gui.Enabled then
+			return
+		end
+		-- score screen: any tap presses fire to advance the intermission,
+		-- same as the desktop attack bind (released in InputEnded below)
+		if deps.isIntermission and deps.isIntermission() and not deps.isUiOpen() then
+			intermissionTouches[io] = true
+			deps.exec("+attack")
 			return
 		end
 		local pos = Vector2.new(io.Position.X, io.Position.Y)
@@ -413,8 +423,37 @@ function controls.attach(deps: Deps)
 			releaseStick()
 		else
 			lookTouches[io] = nil
+			if intermissionTouches[io] then
+				intermissionTouches[io] = nil
+				deps.exec("-attack")
+			end
 		end
 	end)
+
+	-- responsive layout: fixed 140px buttons are enormous on small phones.
+	-- Scale with viewport height and sit flush against the screen edges,
+	-- clear of the 96px HUD strip; the stick's rest pose mirrors FIRE.
+	local function layoutTouch()
+		local vs = gui.AbsoluteSize
+		if vs.X <= 0 or vs.Y <= 0 then
+			return
+		end
+		local btn = math.clamp(math.floor(vs.Y * 0.26), 64, 140)
+		local margin = 8
+		local bottom = 96 + 10 -- HUD strip + a thumb gap
+		fireBtn.Size = UDim2.fromOffset(btn, btn)
+		jumpBtn.Size = UDim2.fromOffset(btn, btn)
+		fireBtn.Position = UDim2.new(1, -margin, 1, -bottom)
+		jumpBtn.Position = UDim2.new(1, -margin, 1, -(bottom + btn + 10))
+		local stickSize = math.clamp(math.floor(vs.Y * 0.3), 80, 150)
+		stickBase.Size = UDim2.fromOffset(stickSize, stickSize)
+		stickRest = UDim2.new(0, margin + stickSize // 2, 1, -(bottom + btn // 2))
+		if stickTouch == nil then
+			stickBase.Position = stickRest
+		end
+	end
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTouch)
+	layoutTouch()
 
 	----------------------------------------------------------------
 	-- device detection: the touch UI shows on touch-first devices and
