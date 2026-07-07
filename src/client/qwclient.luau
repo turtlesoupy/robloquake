@@ -2049,7 +2049,9 @@ return function()
 			end
 		end
 		for _, packet in inbound do
-			local ok, err = pcall(qwcl.processPacket, cl, packet)
+			-- the return-type cast restores pcall's (ok, err) pair: the callee
+			-- returns no values, so the typed pcall would only return `ok`
+			local ok, err = pcall(qwcl.processPacket :: (any, buffer) -> string?, cl, packet)
 			if not ok then
 				-- Host_EndGame: a parse error leaves half-applied frame
 				-- state (netchan already advanced) — fail loudly and

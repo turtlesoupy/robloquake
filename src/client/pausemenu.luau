@@ -536,21 +536,23 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 		weaponTried = true
 		weaponBuilding = true
+		-- every path returns nil so the typed pcall yields the (ok, err) pair
 		local ok, err = pcall(function()
 			local buf = vfslib.loadFile(fs, "progs/v_rock2.mdl", true)
 			if not buf then
-				return
+				return nil
 			end
 			local am = mdllib.load("progs/v_rock2.mdl", buf)
 			local def = { kind = "alias", alias = am, flags = am.flags }
 			entrender.prepareImages(def :: any, pal)
 			local re = entrender.create(def :: any, weaponHolder)
 			if not re or not re.part then
-				return
+				return nil
 			end
 			entrender.setLight(re, 300) -- bright bake; ViewportFrame is Ambient-only
 			weaponDef = def
 			weaponTemplate = re.part
+			return nil
 		end)
 		weaponBuilding = false
 		if not ok then
@@ -1029,8 +1031,11 @@ function pausemenu.attach(opts: Opts): Handle
 		-- (nil = authentic); the picture updates when APPLY rebuilds this page
 		local equipped = if opts.getWeaponSkin then opts.getWeaponSkin("progs/v_rock2.mdl") else nil
 		local legendary = shopPicks(utcDay())[3]
-		-- one action per block: `go` switches to that page
-		local defs = {
+		-- one action per block: `go` switches to that page; a cell shows either
+		-- a baked icon or a weapon render (skin=true keeps MY SKINS rendering
+		-- the authentic gun when nothing is equipped)
+		type HubCell = { label: string, go: string, icon: string?, weapon: string?, skin: boolean? }
+		local defs: { HubCell } = {
 			{ label = "SHOP", weapon = legendary.spec, go = "shop" }, -- cells[2]
 			{ label = "MY SKINS", weapon = equipped, skin = true, go = "skins" }, -- cells[3]
 			{ label = "GAMEMODES", icon = "gamemodes", go = "gamemodes" }, -- cells[4]

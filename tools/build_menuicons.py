@@ -162,7 +162,8 @@ def main():
     ]
     for name, b64 in entries:
         lines.append(f'\t\t["{name}"] = "{b64}",')
-    lines.append("\t},")
+    # indexer cast so strict-mode consumers can iterate data generically
+    lines.append("\t} :: { [string]: string },")
     lines.append("}")
     out_path = os.path.abspath(args.out)
     with open(out_path, "w") as f:

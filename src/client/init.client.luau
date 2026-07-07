@@ -257,7 +257,7 @@ local gunModelIndex = 0
 -- for weapons without a menu selection. nil/empty spec restores the
 -- authentic skin. Twin of the qwclient.luau block.
 local forgedSkins: { [string]: EditableImage } = {}
-local weaponSkins: { [string]: string } = {} -- viewmodel name -> recipe spec
+local weaponSkins: { [string]: string? } = {} -- viewmodel name -> recipe spec (nil clears)
 local gunSkinApplied: string? = nil
 local GUN_SKIN_STALE = "\0stale" -- never equals a real cache key
 local function applyGunSkin(re: entrender.RenderEnt, def: entrender.ModelDef, modelindex: number)
@@ -1284,7 +1284,9 @@ demoFrame = function()
 		buffer.copy(block, 0, db, demoPos, msglen)
 		demoPos += msglen
 		input.setAngles(vector.create(ax, ay, 0))
-		local ok, err = pcall(cllib.parseServerMessage, c, block)
+		-- the return-type cast restores pcall's (ok, err) pair: the callee
+		-- returns no values, so the typed pcall would only return `ok`
+		local ok, err = pcall(cllib.parseServerMessage :: (cllib.Client, buffer) -> string?, c, block)
 		cllib.takeReliable(c) -- drop signon replies; the demo has the answers
 		if not ok then
 			warn("[demo] parse error: " .. tostring(err))
@@ -1491,14 +1493,11 @@ local function updateBeams()
 						pool = {}
 						beamPool[b.modelName] = pool
 					end
-					local re = pool[n]
+					local re = pool[n] or entrender.create(def, entFolder)
 					if not re then
-						re = entrender.create(def, entFolder)
-						if not re then
-							break
-						end
-						pool[n] = re
+						break
 					end
+					pool[n] = re
 					setEntVisible(re, true)
 					entrender.updateAlias(re, def, org, vector.create(pitch, yaw, math.random(0, 359)), 0, 0, 0, c.time)
 					entrender.setLight(re, 255)
@@ -2090,7 +2089,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 				table.insert(demoRecording :: { string }, buffer.tostring(hdr))
 				table.insert(demoRecording :: { string }, buffer.tostring(data))
 			end
-			local ok, err = pcall(cllib.parseServerMessage, c, data)
+			-- return-type cast: see the demo-playback pcall for why
+			local ok, err = pcall(cllib.parseServerMessage :: (cllib.Client, buffer) -> string?, c, data)
 			if not ok then
 				warn("[cl] parse error: " .. tostring(err))
 			end
@@ -2263,7 +2263,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	-- update dynamic entities
 	for num = 1, c.num_entities - 1 do
 		local e = c.entities[num]
-		local re = renderEnts[num]
+		local re: entrender.RenderEnt? = renderEnts[num]
 
 		local shouldDraw = e ~= nil and e.visible and e.modelindex ~= 0 and (num ~= c.viewentity or chase_active)
 
