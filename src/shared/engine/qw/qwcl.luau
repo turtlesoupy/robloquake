@@ -1404,7 +1404,9 @@ local function buildPhysents(cl: any, includePlayers: boolean): { pmovelib.PhysE
 			continue
 		end
 		local m = cl.models[es.modelindex] -- wire indices are 1-based like C's cl.model_precache
-		if m and m.kind == "brush" then
+		-- only models with a real player clip hull are solid; item boxes
+		-- (b_*.bsp) have no clipnodes and prediction must pass through them
+		if m and m.kind == "brush" and m.brush.hulls[2].firstclipnode ~= 0 then
 			table.insert(physents, { model = m.brush, origin = es.origin })
 		end
 	end
