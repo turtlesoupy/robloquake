@@ -1129,8 +1129,22 @@ return function()
 
 	----------------------------------------------------------------------
 	-- connect + main loop
-	qwcl.connect(cl, function(packet: buffer)
-		reliable:FireServer(packet)
+	-- The per-frame movement stream rides the UnreliableRemoteEvent so
+	-- real-network loss/batching can't head-of-line stall it (netchan
+	-- sequencing absorbs drops and reorders, as over UDP). Packets
+	-- carrying netchan-reliable content must never be lost — the
+	-- handshake is a content-driven lockstep with no retry clock — so
+	-- they ALSO ride the reliable remote; whichever copy arrives second
+	-- is discarded as a stale sequence. Payloads over ~900 bytes are
+	-- silently dropped by unreliable remotes, hence reliable-only.
+	qwcl.connect(cl, function(packet: buffer, hasReliable: boolean?)
+		local fits = buffer.len(packet) <= 850
+		if fits then
+			unreliable:FireServer(packet)
+		end
+		if hasReliable or not fits then
+			reliable:FireServer(packet)
+		end
 	end)
 	print("[robloquake] qw client connecting...")
 
@@ -1853,7 +1867,13 @@ return function()
 		-- server does a full pmove + entity encode per packet, so a
 		-- 150fps client would otherwise double the per-client server
 		-- cost (and its own packet volume) for no gameplay benefit.
-		if msec >= 13 and cl.state ~= "connected" and not demoBlocks then
+		-- C's CL_SendCmd runs in every state past ca_disconnected —
+		-- including the handshake, where this steady packet stream is
+		-- the heartbeat that drives netchan retransmit convergence (the
+		-- content exchange is a lockstep with no retry clock; over the
+		-- unreliable remote a dropped keepalive would otherwise stall
+		-- it). The server reads and ignores pre-spawn moves, as in C.
+		if msec >= 13 and cl.state ~= "disconnected" and not demoBlocks then
 			accum -= msec / 1000
 			-- Cam_Track/Cam_FinishMove ride the outgoing cmd; while locked
 			-- the chase takes over the controls (moves zeroed like C)

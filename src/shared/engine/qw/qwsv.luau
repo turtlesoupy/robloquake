@@ -69,7 +69,7 @@ export type Client = {
 	userid: number,
 	sendinfo: boolean, -- at end of frame, send info to all (new connect)
 	send_message: boolean, -- reply owed: one datagram per received packet
-	send: ((packet: buffer) -> ())?, -- transport hook (remote/loopback)
+	send: ((packet: buffer, hasReliable: boolean?) -> ())?, -- transport hook (remote/loopback)
 	address: string?, -- PF_infokey("ip"): transport identity (UserId)
 }
 
@@ -586,7 +586,7 @@ end
 -- SV_DirectConnect equivalent for the wire path: allocates the slot
 -- and spawn parms only — ClientConnect/PutClientInServer run exactly
 -- once, at cmd begin (SV_Begin_f), never during the handshake
-function qwsv.wireConnect(svr: any, slot: number, userinfo: { [string]: string }?, send: (packet: buffer) -> ()): Client
+function qwsv.wireConnect(svr: any, slot: number, userinfo: { [string]: string }?, send: (packet: buffer, hasReliable: boolean?) -> ()): Client
 	local client: Client = qwsv.allocClient(svr, slot, userinfo)
 	client.send = send
 	return client
@@ -1588,12 +1588,23 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 	local netDrop = math.max(chan.drop_count, 0)
 	local moveIssued = false
 
+	-- make sure the reply sequence number matches the incoming sequence
+	-- number (sv_user.c): dropped client packets would otherwise skew
+	-- the two sequence spaces apart for the rest of the session — the
+	-- client's frames ring keys prediction and delta compression off
+	-- reply seq == cmd seq
+	local sendMessage = true
+	if chan.incoming_sequence >= chan.outgoing_sequence then
+		chan.outgoing_sequence = chan.incoming_sequence
+	else
+		sendMessage = false -- don't reply, sequences have slipped
+	end
+
 	-- mark time so clients will know how much to predict other players
 	client.localtime = svr.time
 	client.last_message = svr.realtime or 0 -- netchan.last_received
 	client.delta_sequence = -1 -- no delta unless requested
-	client.send_message = true -- one reply per received packet (lockstep
-	-- keeps both sequence counters aligned; prediction depends on it)
+	client.send_message = sendMessage -- one reply per received packet
 
 	while true do
 		if r.badread then
@@ -1788,10 +1799,10 @@ function qwsv.sendClientDatagram(svr: any, client: Client)
 		msg.clear(out)
 	end
 
-	local packet = qwnetchan.transmit(client.netchan, out)
+	local packet, hasReliable = qwnetchan.transmit(client.netchan, out)
 	local send = client.send
 	if send then
-		send(packet)
+		send(packet, hasReliable)
 	end
 end
 
@@ -1857,10 +1868,25 @@ function qwsv.replyToClient(svr: any, client: Client)
 	if client.spawned then
 		qwsv.sendClientDatagram(svr, client)
 	else
-		-- handshake replies (or an empty keepalive to stay 1:1)
-		local packet = qwnetchan.transmit(client.netchan, nil)
+		-- handshake replies (or an empty keepalive to stay 1:1). While a
+		-- reliable message is in flight with no resend evidence yet, a
+		-- pure keepalive would carry nothing — but its higher sequence,
+		-- riding the unreliable remote, can outrun the reliable-only
+		-- (>~900 byte) signon packet across the two channels and get it
+		-- stale-discarded on arrival; under the steady pre-spawn cmd
+		-- stream that race can starve the handshake. Withhold the reply
+		-- — the client's own cmd stream keeps acks flowing both ways.
+		local chan = client.netchan
+		if chan.reliable_length > 0 then
+			local resend = chan.incoming_acknowledged > chan.last_reliable_sequence
+				and chan.incoming_reliable_acknowledged ~= chan.reliable_sequence
+			if not resend then
+				return
+			end
+		end
+		local packet, hasReliable = qwnetchan.transmit(client.netchan, nil)
 		if send then
-			send(packet)
+			send(packet, hasReliable)
 		end
 	end
 end

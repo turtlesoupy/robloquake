@@ -183,6 +183,12 @@ do
 	queue = {}
 	sc.spawned = false
 	qwsv.newF(svr, sc)
+	-- a live client is never silent: its next packet's reliable-ack bit
+	-- is what lets the server clear the delivered handshake reliable and
+	-- copy the fresh serverdata out of netchan.message (this harness
+	-- sends no moves, so ack explicitly)
+	qwcl.sendStringCmd(cl, "pings")
+	qwcl.flush(cl)
 	sc.send_message = true
 	qwsv.replyToClient(svr, sc)
 	while #queue > 0 do

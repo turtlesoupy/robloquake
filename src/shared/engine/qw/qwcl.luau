@@ -153,7 +153,7 @@ function qwcl.new(fsys: vfslib.Vfs): any
 	cl.stufftext = "" -- accumulated; executed by the console layer
 	cl.disconnected_reason = nil
 
-	cl.send = nil :: ((packet: buffer) -> ())?
+	cl.send = nil :: ((packet: buffer, hasReliable: boolean?) -> ())?
 	cl.dprint = function(_s: string) end
 	return cl
 end
@@ -456,14 +456,14 @@ end
 
 function qwcl.flush(cl: any)
 	if cl.netchan.message.cursize > 0 then
-		local packet = qwnetchan.transmit(cl.netchan, nil)
+		local packet, hasReliable = qwnetchan.transmit(cl.netchan, nil)
 		if cl.send then
-			cl.send(packet)
+			cl.send(packet, hasReliable)
 		end
 	end
 end
 
-function qwcl.connect(cl: any, send: (packet: buffer) -> ())
+function qwcl.connect(cl: any, send: (packet: buffer, hasReliable: boolean?) -> ())
 	cl.send = send
 	cl.state = "connected"
 	sendStringCmd(cl, "new")
@@ -1398,9 +1398,9 @@ function qwcl.sendCmd(cl: any, cmd: qwents.UserCmdWire)
 		frame.delta_sequence = -1
 	end
 
-	local packet = qwnetchan.transmit(chan, buf)
+	local packet, hasReliable = qwnetchan.transmit(chan, buf)
 	if cl.send then
-		cl.send(packet)
+		cl.send(packet, hasReliable)
 	end
 end
 

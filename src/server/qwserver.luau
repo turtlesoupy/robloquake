@@ -1,9 +1,11 @@
 --!strict
 -- QuakeWorld server boot: selected when QuakeAssets has attribute
--- engine="qw". Runs qwsv over the reliable RemoteEvent (netchan-lite
--- carries its reliable stream in-band; a single ordered channel keeps
--- the stale-packet guard race-free — splitting datagrams onto the
--- unreliable remote needs real reliable-retransmit netchan first).
+-- engine="qw". Runs qwsv over both remotes: per-frame datagrams ride
+-- the UnreliableRemoteEvent (netchan sequencing absorbs drops and
+-- reorders, as over UDP), while packets carrying netchan-reliable
+-- content — and anything over the ~900-byte unreliable payload cap —
+-- ride the reliable RemoteEvent so the content-driven handshake
+-- lockstep can never lose a packet.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -249,6 +251,11 @@ return function(ctx: Ctx)
 	})
 	-- ===== end host greeting =====
 
+	-- per-client cmd arrival diagnostics: upstream burstiness is where
+	-- remote-player render artifacts originate — one line per client
+	-- every 30s in the server log (owner-visible via F9 → Server)
+	local arrival: { [number]: { n: number, last: number, maxGap: number, t0: number } } = {}
+
 	local function connectPlayer(player: Player): number?
 		local slot: number? = nil
 		for i = 1, svr.maxclients do
@@ -262,8 +269,21 @@ return function(ctx: Ctx)
 			return nil
 		end
 		slotByPlayer[player] = slot
-		local client = qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer)
-			ctx.reliable:FireClient(player, packet)
+		arrival[slot] = nil -- fresh diagnostics window for a reused slot
+		local client = qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer, hasReliable: boolean?)
+			-- per-frame datagrams go unreliable so loss/batching on real
+			-- networks can't head-of-line stall the movement stream;
+			-- netchan-reliable content also rides the reliable remote as
+			-- the delivery guarantee (the second copy to arrive is
+			-- discarded as a stale sequence). Payloads over ~900 bytes
+			-- are silently dropped by unreliable remotes: reliable-only.
+			local fits = buffer.len(packet) <= 850
+			if fits then
+				ctx.unreliable:FireClient(player, packet)
+			end
+			if hasReliable or not fits then
+				ctx.reliable:FireClient(player, packet)
+			end
 		end)
 		-- PF_infokey("ip"): stable transport identity in place of a
 		-- remote address (mods use it for ban/identity logic)
@@ -297,6 +317,25 @@ return function(ctx: Ctx)
 		local slot = slotByPlayer[player] or connectPlayer(player)
 		if not slot then
 			return
+		end
+		local now = os.clock()
+		local a = arrival[slot]
+		if not a then
+			a = { n = 0, last = now, maxGap = 0, t0 = now }
+			arrival[slot] = a
+		end
+		if a.n > 0 then
+			a.maxGap = math.max(a.maxGap, now - a.last)
+		end
+		a.n += 1
+		a.last = now
+		if now - a.t0 >= 30 then
+			local rate = a.n / (now - a.t0)
+			print(
+				`[qwsv net] c{slot} {player.Name}: {math.floor(rate + 0.5)} pkts/s`
+					.. ` maxgap={math.floor(a.maxGap * 1000 + 0.5)}ms PL={svr.clients[slot].lossage}%`
+			)
+			a.n, a.maxGap, a.t0 = 0, 0, now
 		end
 		local client = svr.clients[slot]
 		if client.active then
