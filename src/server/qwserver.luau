@@ -15,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
 local cvarlib = require(engine.common.cvar)
+local netsplit = require(Shared.netsplit)
 local qwsv = require(engine.qw.qwsv)
 local vfs = require(engine.common.vfs)
 local vmlib = require(engine.progs.vm)
@@ -304,18 +305,21 @@ return function(ctx: Ctx)
 		end
 		slotByPlayer[player] = slot
 		arrival[slot] = nil -- fresh diagnostics window for a reused slot
+		local unrelSeq = 0
 		local client = qwsv.wireConnect(svr, slot, { name = player.Name }, function(packet: buffer, hasReliable: boolean?)
 			-- per-frame datagrams go unreliable so loss/batching on real
-			-- networks can't head-of-line stall the movement stream;
-			-- netchan-reliable content also rides the reliable remote as
+			-- networks can't head-of-line stall the movement stream —
+			-- fragmented under the ~900-byte unreliable payload ceiling
+			-- (netsplit.luau; the old oversized->reliable fallback
+			-- head-of-line-blocked busy frames on lossy links).
+			-- Netchan-reliable content also rides the reliable remote as
 			-- the delivery guarantee (the second copy to arrive is
-			-- discarded as a stale sequence). Payloads over ~900 bytes
-			-- are silently dropped by unreliable remotes: reliable-only.
-			local fits = buffer.len(packet) <= 850
-			if fits then
-				ctx.unreliable:FireClient(player, packet)
+			-- discarded as a stale sequence).
+			unrelSeq += 1
+			for _, frag in netsplit.wrap(unrelSeq, packet) do
+				ctx.unreliable:FireClient(player, frag)
 			end
-			if hasReliable or not fits then
+			if hasReliable then
 				ctx.reliable:FireClient(player, packet)
 			end
 		end)

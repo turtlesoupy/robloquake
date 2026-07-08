@@ -21,6 +21,7 @@ local pak = require(engine.common.pak)
 local vfs = require(engine.common.vfs)
 local host = require(engine.server.host)
 local svlib = require(engine.server.sv)
+local netsplit = require(Shared.netsplit)
 
 -- start map: attribute override, else per-game default
 
@@ -263,14 +264,15 @@ local function connectPlayer(player: Player)
 	end
 	slotByPlayer[player] = slot
 	local client = svr.clients[slot]
+	-- datagrams ALWAYS ride the unreliable channel, fragmented under the
+	-- ~900-byte payload ceiling (netsplit.luau). The old oversized->reliable
+	-- fallback head-of-line-blocked busy frames on lossy links — see
+	-- netsplit's header comment.
+	local unrelSeq = 0
 	client.sendUnreliable = function(data: buffer)
-		-- UnreliableRemoteEvents silently drop payloads over ~900 bytes;
-		-- busy scenes exceed that, so oversized datagrams ride the
-		-- reliable channel instead (packet loss isn't a thing here anyway)
-		if buffer.len(data) > 850 then
-			reliable:FireClient(player, data)
-		else
-			unreliable:FireClient(player, data)
+		unrelSeq += 1
+		for _, frag in netsplit.wrap(unrelSeq, data) do
+			unreliable:FireClient(player, frag)
 		end
 		return true
 	end

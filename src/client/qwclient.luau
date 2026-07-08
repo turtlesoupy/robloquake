@@ -16,6 +16,7 @@ local engine = Shared.engine
 
 local mathlib = require(engine.common.mathlib)
 local msg = require(engine.common.msg)
+local netsplit = require(Shared.netsplit)
 local vfslib = require(engine.common.vfs)
 local qcoords = require(engine.client.qcoords)
 local qwcl = require(engine.qw.qwcl)
@@ -165,7 +166,18 @@ return function()
 		end
 	end
 	reliable.OnClientEvent:Connect(onPacket)
-	unreliable.OnClientEvent:Connect(onPacket)
+	-- unreliable packets arrive as netsplit fragments (see netsplit.luau);
+	-- reassembled frames join the same queue. A transport-dropped stale
+	-- frame just reads as packet loss to netchan, which is built for it.
+	local unwrapDatagram = netsplit.receiver()
+	local function queueInbound(data: buffer)
+		table.insert(inbound, data)
+	end
+	unreliable.OnClientEvent:Connect(function(data: unknown)
+		if typeof(data) == "buffer" then
+			unwrapDatagram(data :: buffer, queueInbound)
+		end
+	end)
 
 	----------------------------------------------------------------------
 	-- rendering state

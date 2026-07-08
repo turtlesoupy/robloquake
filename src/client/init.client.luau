@@ -21,6 +21,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local engine = Shared.engine
 
 local mathlib = require(engine.common.mathlib)
+local netsplit = require(Shared.netsplit)
 local vfslib = require(engine.common.vfs)
 local bsplib = require(engine.bsp.bsp)
 local mdllib = require(engine.models.mdl)
@@ -96,9 +97,16 @@ reliable.OnClientEvent:Connect(function(data: unknown)
 		table.insert(inbound, data :: buffer)
 	end
 end)
+-- unreliable datagrams arrive as netsplit fragments (see netsplit.luau);
+-- reassembled whole frames land in the same inbound queue, stale frames
+-- are discarded at the transport (original NQ NET-layer semantics)
+local unwrapDatagram = netsplit.receiver()
+local function queueInbound(data: buffer)
+	table.insert(inbound, data)
+end
 unreliable.OnClientEvent:Connect(function(data: unknown)
 	if typeof(data) == "buffer" then
-		table.insert(inbound, data :: buffer)
+		unwrapDatagram(data :: buffer, queueInbound)
 	end
 end)
 
