@@ -1066,13 +1066,14 @@ function pausemenu.attach(opts: Opts): Handle
 
 		-- avatar: right side, below the name line — the tinted rig preview,
 		-- so the quake shirt/pants pick shows here too. Falls back to the
-		-- flat headshot (which can't tint) while the rig replicates.
+		-- flat full-body thumbnail (which can't tint, but matches the rig's
+		-- framing) while the rig replicates.
 		local bodyTop = 16 + 8 * ns + 12
 		local avSide = math.min(hero.h - bodyTop - 16, math.floor(hero.w * 0.3))
 		if not avatarViewport(hp, hero.w - avSide - 16, bodyTop, avSide, avSide) then
 			local av = Instance.new("ImageLabel")
 			av.BackgroundTransparency = 1
-			av.Image = `rbxthumb://type=AvatarHeadShot&id={me.UserId}&w=150&h=150`
+			av.Image = `rbxthumb://type=Avatar&id={me.UserId}&w=180&h=180`
 			av.Size = UDim2.fromOffset(avSide, avSide)
 			av.Position = UDim2.fromOffset(hero.w - avSide - 16, bodyTop)
 			av.ZIndex = 3
