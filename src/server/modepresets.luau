@@ -38,7 +38,8 @@ modepresets.KEYS = {
 local DM_RULES = {
 	deathmatch = 1,
 	fraglimit = 15,
-	timelimit = 20,
+	-- classic Quake DM server convention (id's stock configs ran 10)
+	timelimit = 10,
 	-- everything the synced pak1 ships (dm1..dm6)
 	maplist = "dm1 dm2 dm3 dm4 dm5 dm6",
 	votetime = 30,

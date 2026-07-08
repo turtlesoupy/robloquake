@@ -25,7 +25,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `modekey` | string | both | no (boot) | stats/leaderboard scope label (`dm`, `ctf`, …); absent = derived from the other attributes (`statscore.deriveModeKey`) |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |
 
-Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=20,
+Example places: FFA = `{deathmatch=1, fraglimit=15, timelimit=10,
 maplist="dm1 dm2 dm3 dm4 dm5 dm6"}` · Threewave CTF = `{gamedir="threewave",
 teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 `deathmatch`, no `maplist` — nothing below activates.
