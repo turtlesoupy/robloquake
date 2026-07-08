@@ -136,6 +136,8 @@ export type Shop = {
 	getCoins: () -> number,
 	isOwned: (kind: string) -> boolean,
 	buy: (kind: string, pay: "coins" | "robux") -> (boolean, string?),
+	-- live managed-pricing PriceInRobux (catalog constant until fetched)
+	getRobuxPrice: (rarityName: string) -> number,
 	onChanged: (cb: () -> ()) -> (),
 }
 
@@ -1512,7 +1514,12 @@ function pausemenu.attach(opts: Opts): Handle
 				}
 				else {
 					{ label = `{commas(rarity.coins)} FRAGCOINS`, onClick = buyCoins },
-					{ robux = rarity.robux, onClick = buyRobux },
+					-- live price when the shop is wired (managed pricing);
+					-- rarity.robux only on shop-less dev boots
+					{
+						robux = if shop then shop.getRobuxPrice(pick.rarity) else rarity.robux,
+						onClick = buyRobux,
+					},
 				}
 			-- weapon render fills the middle, above the price/equip strip
 			weaponView(p, 12, 64, cell.w - 24, cell.h - 64 - (#rows * CARD_BTN_H + 22), pick.spec)

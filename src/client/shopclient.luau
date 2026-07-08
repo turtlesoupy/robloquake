@@ -11,7 +11,11 @@
 -- SHOP/MY SKINS purchase wiring in pausemenu.luau (opts.shop).
 
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local shopcatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("shopcatalog"))
 
 local shopclient = {}
 
@@ -21,6 +25,9 @@ export type Handle = {
 	-- yields; returns ok plus a server error code (LOADING | POOR | ERROR |
 	-- NOPRODUCT | SLOW | BAD | OFFLINE)
 	buy: (kind: string, pay: "coins" | "robux") -> (boolean, string?),
+	-- live PriceInRobux for a rarity's product (managed pricing varies it by
+	-- region); the catalog constant until the GetProductInfo fetch lands
+	getRobuxPrice: (rarityName: string) -> number,
 	onChanged: (cb: () -> ()) -> (), -- wallet/ownership attribute changed
 }
 
@@ -61,12 +68,40 @@ function shopclient.attach(opts: { net: Instance }): Handle
 		end
 	end)
 
+	-- managed pricing: the dashboard varies PriceInRobux by region, so the
+	-- catalog constants are only a placeholder until these fetches land.
+	-- One fetch per rarity; a landed price re-renders any open shop page
+	-- through the same onChanged path as wallet updates.
+	local livePrices: { [string]: number } = {}
+	for name, rarity in shopcatalog.RARITIES do
+		if rarity.productId ~= 0 then
+			task.spawn(function()
+				local ok, info = pcall(function()
+					return MarketplaceService:GetProductInfo(rarity.productId, Enum.InfoType.Product)
+				end)
+				local price = ok and tonumber((info :: any).PriceInRobux) or nil
+				if price then
+					livePrices[name] = price
+					fire()
+				end
+			end)
+		end
+	end
+
 	return {
 		getCoins = function(): number
 			return tonumber(player:GetAttribute("RQCoins")) or 0
 		end,
 		isOwned = function(kind: string): boolean
 			return owned[kind] == true
+		end,
+		getRobuxPrice = function(rarityName: string): number
+			local live = livePrices[rarityName]
+			if live then
+				return live
+			end
+			local rarity = shopcatalog.RARITIES[rarityName]
+			return if rarity then rarity.robux else 0
 		end,
 		buy = function(kind: string, pay: "coins" | "robux"): (boolean, string?)
 			local remote = rf

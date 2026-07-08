@@ -19,7 +19,12 @@ shopcatalog.COINS_PER_KILL = 1
 export type Rarity = {
 	name: string,
 	coins: number, -- Frag Coin price
-	robux: number, -- display price of the developer product (dashboard owns truth)
+	-- FALLBACK display price only: the products use managed pricing, so the
+	-- real price varies by region/time. shopclient fetches the live price via
+	-- GetProductInfo; this constant shows until that fetch lands (and in lune
+	-- tests, which have no MarketplaceService). The charge itself always
+	-- comes from the platform prompt, never from here.
+	robux: number,
 	productId: number, -- MarketplaceService developer product; 0 = not set up yet
 }
 
@@ -30,9 +35,9 @@ export type Rarity = {
 -- prices are 1:1 across the two payment paths (a skin's Fragcoin price
 -- equals its Robux price)
 shopcatalog.RARITIES = {
-	COMMON = { name = "COMMON", coins = 99, robux = 99, productId = 3608674696 },
-	RARE = { name = "RARE", coins = 199, robux = 199, productId = 3608674772 },
-	LEGENDARY = { name = "LEGENDARY", coins = 399, robux = 399, productId = 3608674814 },
+	COMMON = { name = "COMMON", coins = 99, robux = 99, productId = 3608770508 },
+	RARE = { name = "RARE", coins = 199, robux = 199, productId = 3608770558 },
+	LEGENDARY = { name = "LEGENDARY", coins = 399, robux = 399, productId = 3608770587 },
 } :: { [string]: Rarity }
 
 -- daily shop card order, cheapest first (matches the 3-up page)
