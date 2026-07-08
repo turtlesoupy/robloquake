@@ -18,7 +18,6 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local input = require(script.Parent.input)
-local confontlib = require(script.Parent.render.confont)
 
 local controls = {}
 
@@ -31,9 +30,6 @@ export type Deps = {
 	-- feed a synthesized key to the boot's menu (gamepad navigation);
 	-- returns true when the menu was open and consumed it
 	menuKey: (key: Enum.KeyCode) -> boolean,
-	-- the LibreQuake conchars font (shared with hud/menu) for button
-	-- labels; nil falls back to a stock TextLabel
-	font: confontlib.Font?,
 	-- score screen is up or the player is dead: any screen tap presses
 	-- fire (advance the intermission / respawn)
 	tapFires: (() -> boolean)?,
@@ -48,15 +44,15 @@ local STICK_RADIUS = 55 -- px of knob travel on the touch stick
 local STICK_DEADZONE = 0.12
 local PRESS_DRAG_CANCEL = 24 -- px of travel that turns a button press into a drag
 
--- palette shared with directorui (the modern product-UI look)
-local TEXT = Color3.fromRGB(235, 235, 235)
-
 -- hand-drawn button/joystick art (source PNGs: art/buttons/; re-upload
 -- via Studio MCP upload_image and paste the new ids here if these ever
--- 404 — they must be image assets owned by the publishing account)
-local BUTTON_UP = "rbxassetid://81640355917028"
-local BUTTON_PRESSED = "rbxassetid://75651322002225"
-local JOYSTICK_IMG = "rbxassetid://134091978658781"
+-- 404 — they must be image assets owned by the publishing account).
+-- Icons are baked into the art (chevron = jump, crosshair = fire), so
+-- buttons carry no text label; pressed feedback is an ImageColor3 tint.
+local BTN_JUMP = "rbxassetid://128706151168029"
+local BTN_FIRE = "rbxassetid://120257988469430"
+local JOYSTICK_IMG = "rbxassetid://116090970539726"
+local PRESSED_TINT = Color3.fromRGB(140, 140, 140)
 
 -- gamepad layout (standard console-FPS): R2 fire, A/L2 jump, R1/Y next
 -- weapon, L1/DPad-down previous, Select hold = scores, Start = menu.
@@ -200,8 +196,7 @@ function controls.attach(deps: Deps)
 
 	local function makeButton(
 		name: string,
-		label: string,
-		textSize: number,
+		image: string,
 		size: Vector2,
 		anchor: Vector2,
 		pos: UDim2,
@@ -221,42 +216,17 @@ function controls.attach(deps: Deps)
 		art.Name = "Art"
 		art.BackgroundTransparency = 1
 		art.Size = UDim2.fromScale(1, 1)
-		art.Image = BUTTON_UP
+		art.Image = image
 		art.ScaleType = Enum.ScaleType.Fit
 		art.Parent = b
 
-		-- plain uppercase/space labels (FIRE, JUMP, SCORES) render in the
-		-- LibreQuake conchars font, matching the menu/hud; anything else
-		-- (the "»" weapon-cycle glyph isn't in that charset) falls back
-		if deps.font and label:match("^[%u ]+$") then
-			local scale = textSize / 8
-			local holder = Instance.new("Frame")
-			holder.BackgroundTransparency = 1
-			holder.AnchorPoint = Vector2.new(0.5, 0.5)
-			holder.Position = UDim2.fromScale(0.5, 0.5)
-			holder.Size = UDim2.fromOffset(#label * 8 * scale, 8 * scale)
-			holder.Parent = b
-			local row = confontlib.newRow(holder, #label, scale)
-			confontlib.setRow(deps.font, row, label)
-		else
-			local l = Instance.new("TextLabel")
-			l.BackgroundTransparency = 1
-			l.Size = UDim2.fromScale(1, 1)
-			l.Font = Enum.Font.GothamBold
-			l.TextSize = textSize
-			l.TextColor3 = TEXT
-			l.TextTransparency = 0.1
-			l.Text = label
-			l.Parent = b
-		end
-
 		local hooks: ButtonHooks = {
 			down = function()
-				art.Image = BUTTON_PRESSED
+				art.ImageColor3 = PRESSED_TINT
 				onDown()
 			end,
 			up = function()
-				art.Image = BUTTON_UP
+				art.ImageColor3 = Color3.new(1, 1, 1)
 				if onUp then
 					onUp()
 				end
@@ -314,12 +284,12 @@ function controls.attach(deps: Deps)
 	-- above FIRE. Weapon switching is the tap-on-the-HUD-icon path, so
 	-- there's no on-screen switch button. Offsets are from the bottom
 	-- edge, so the whole cluster tracks the HUD regardless of screen size.
-	local jumpBtn = makeButton("Jump", "JUMP", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -280), function()
+	local jumpBtn = makeButton("Jump", BTN_JUMP, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -280), function()
 		deps.exec("+jump")
 	end, function()
 		deps.exec("-jump")
 	end)
-	local fireBtn = makeButton("Fire", "FIRE", 24, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -116), function()
+	local fireBtn = makeButton("Fire", BTN_FIRE, Vector2.new(140, 140), Vector2.new(1, 1), UDim2.new(1, -40, 1, -116), function()
 		deps.exec("+attack")
 	end, function()
 		deps.exec("-attack")
