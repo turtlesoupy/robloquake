@@ -290,11 +290,11 @@ function controls.attach(deps: Deps)
 		deps.exec("-attack")
 	end)
 
-	-- dynamic thumbstick: rests at the same height as the FIRE button on
-	-- the left edge (its center matches FIRE's center, 186px above the
-	-- bottom), re-centers to wherever the thumb lands in the left half of
-	-- the screen (see the InputBegan handler below), and hides while a
-	-- movement touch is active
+	-- thumbstick: sits at the same height as the FIRE button on the left
+	-- edge (its center matches FIRE's center, 186px above the bottom). The
+	-- art NEVER moves (playtest: jumping to the touch point read as a
+	-- glitch); any touch landing in the left half of the screen drives
+	-- movement relative to where it landed (see InputBegan below)
 	local stickRest = UDim2.new(0, 115, 1, -186)
 	local stickBase = Instance.new("ImageLabel")
 	stickBase.Name = "Stick"
@@ -333,16 +333,15 @@ function controls.attach(deps: Deps)
 
 	local function releaseStick()
 		stickTouch = nil
-		stickBase.Position = stickRest
 		knob.Position = UDim2.fromScale(0.5, 0.5)
 		input.setAnalogMove(0, 0)
 	end
 
 	-- any touch starting in the left half of the screen drives movement,
-	-- exactly like the resting stick would; the visual stays put under
-	-- the thumb (re-centered to the touch point) so the stick doesn't
-	-- vanish mid-drag. Any other touch not consumed by a button (see
-	-- `processed` above) is camera look.
+	-- exactly like the resting stick would, with the touch point as its
+	-- neutral center; the stick art stays put at its rest pose. Any other
+	-- touch not consumed by a button (see `processed` above) is camera
+	-- look.
 	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
 		if io.UserInputType ~= Enum.UserInputType.Touch or processed or not gui.Enabled then
 			return
@@ -360,7 +359,6 @@ function controls.attach(deps: Deps)
 		if stickTouch == nil and pos.X < vp.X * 0.5 then
 			stickTouch = io
 			stickCenter = pos
-			stickBase.Position = UDim2.fromOffset(pos.X, pos.Y)
 			setStickOffset(Vector2.zero)
 		else
 			lookTouches[io] = true
@@ -418,9 +416,7 @@ function controls.attach(deps: Deps)
 		local stickSize = math.clamp(math.floor(vs.Y * 0.24), 64, 120)
 		stickBase.Size = UDim2.fromOffset(stickSize, stickSize)
 		stickRest = UDim2.new(0, stickSize // 2, 1, -(bottom + btn // 2))
-		if stickTouch == nil then
-			stickBase.Position = stickRest
-		end
+		stickBase.Position = stickRest
 	end
 	do
 		-- both boots create the HUD before attaching controls

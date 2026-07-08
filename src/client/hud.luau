@@ -63,6 +63,8 @@ type Pic = { img: EditableImage?, content: Content?, off: Vector2, w: number, h:
 export type Hud = {
 	gui: ScreenGui,
 	canvas: Frame,
+	sbarStrip: Frame,
+	ibarRow: Frame,
 	pics: { [string]: Pic },
 	lastPic: { [ImageLabel]: string }, -- setPic dirty-check (Sbar_Changed spirit)
 	lastDigit: { [ImageLabel]: string }, -- small ammo-count digit dirty-check
@@ -801,6 +803,17 @@ local function interFill(h: Hud, x: number, y: number, w: number, hh: number, pa
 	f.Parent = h.interFrame
 end
 
+-- Team-color fill entries for a shirt/pants translation row. Platform
+-- delta from Sbar_ColorForMap's row+8: rows >= 128 ramp bright->dark
+-- (the CL_NewTranslation reversal), where +8 lands on a muddy entry that
+-- matches neither the menu swatches nor the avatar rig tints. Use the
+-- same representative avatarlayer.rowColor / pausemenu.quakeRowColor
+-- pick (+11 forward, +4 reversed) so HUD bars agree with the tints.
+local function colorForMap(colors: number, pants: boolean): number
+	local row = if pants then bit32.lshift(bit32.band(colors, 15), 4) else bit32.band(colors, 0xf0)
+	return row + (if row < 128 then 11 else 4)
+end
+
 -- Sbar_DeathmatchOverlay
 local function buildRankings(h: Hud, c: cllib.Client)
 	interLmp(h, "gfx/ranking.lmp", 0, 8, true)
@@ -817,9 +830,8 @@ local function buildRankings(h: Hud, c: cllib.Client)
 	local x, y = 80, 40
 	for _, k in order do
 		local sc = c.scores[k]
-		-- Sbar_ColorForMap: palette row base + 8
-		interFill(h, x, y, 40, 4, bit32.band(sc.colors, 0xf0) + 8)
-		interFill(h, x, y + 4, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+		interFill(h, x, y, 40, 4, colorForMap(sc.colors, false))
+		interFill(h, x, y + 4, 40, 4, colorForMap(sc.colors, true))
 		interText(h, x + 8, y, ("%3i"):format(sc.frags))
 		-- own slot: scores is 1-based, entity n = slot n-1 = scores[n]
 		if k == c.viewentity then
@@ -951,8 +963,8 @@ local function buildQWRankings(h: Hud, c: any, start: number)
 		else
 			local total = (if c.intermission ~= 0 then c.completed_time else c.time) - (sc.entertime or 0)
 			interText(h, x + 64, y, ("%4i"):format(math.max(total // 60, 0)))
-			interFill(h, x + 104, y + 1, 40, 4, bit32.band(sc.colors, 0xf0) + 8)
-			interFill(h, x + 104, y + 5, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+			interFill(h, x + 104, y + 1, 40, 4, colorForMap(sc.colors, false))
+			interFill(h, x + 104, y + 5, 40, 4, colorForMap(sc.colors, true))
 			interText(h, x + 112, y, ("%3i"):format(sc.frags))
 			if k == c.playerslot then
 				interText(h, x + 104, y, string.char(16))
@@ -1060,8 +1072,8 @@ local function updateFragCells(h: Hud, scores: { any }, playerslot: number, gen:
 		local k = order[i]
 		local sc = scores[k]
 		if sc.name ~= "" then
-			frameFill(h, frame, x * 8 + 10 - 184, 1, 28, 4, bit32.band(sc.colors, 0xf0) + 8)
-			frameFill(h, frame, x * 8 + 10 - 184, 5, 28, 3, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+			frameFill(h, frame, x * 8 + 10 - 184, 1, 28, 4, colorForMap(sc.colors, false))
+			frameFill(h, frame, x * 8 + 10 - 184, 5, 28, 3, colorForMap(sc.colors, true))
 			local num = ("%3i"):format(sc.frags)
 			-- chars carry Sbar_DrawCharacter's built-in +4; fills don't
 			for j = 1, 3 do
@@ -1157,8 +1169,8 @@ local function updateMiniOverlay(h: Hud, scores: { any }, playerslot: number, te
 		if sc.name == "" then
 			continue
 		end
-		miniFill(h, 0, y + 1, 40, 3, bit32.band(sc.colors, 0xf0) + 8)
-		miniFill(h, 0, y + 4, 40, 4, bit32.lshift(bit32.band(sc.colors, 15), 4) + 8)
+		miniFill(h, 0, y + 1, 40, 3, colorForMap(sc.colors, false))
+		miniFill(h, 0, y + 4, 40, 4, colorForMap(sc.colors, true))
 		miniText(h, 8, y, ("%3i"):format(sc.frags))
 		if k == playerslot then
 			miniText(h, 0, y, string.char(16))

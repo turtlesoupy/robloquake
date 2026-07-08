@@ -1,11 +1,5 @@
 src/client/console.luau(268,11): TypeError: Expected this to be 'string', but got 'string?'
-src/client/hud.luau(1472,8): LocalShadow: Variable 'font' shadows previous declaration at line 1416
-src/client/hud.luau(278,2): TypeError: Cannot add property 'sbarStrip' to table 'Hud'
-src/client/hud.luau(330,2): TypeError: Cannot add property 'ibarRow' to table 'Hud'
-src/client/hud.luau(858,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
-src/client/hud.luau(859,2): TypeError: Key 'sbarStrip' not found in table 'Hud'
-src/client/hud.luau(860,2): TypeError: Key 'ibarRow' not found in table 'Hud'
-src/client/hud.luau(861,17): TypeError: Key 'ibarRow' not found in table 'Hud'
+src/client/hud.luau(1484,8): LocalShadow: Variable 'font' shadows previous declaration at line 1428
 src/client/init.client.luau(1042,25): TypeError: Expected this to be 'string', but got 'string?'
 src/client/init.client.luau(1045,16): TypeError: Value of type 'string?' could be nil
 src/client/init.client.luau(1093,18): TypeError: Expected this to be 'string', but got 'string?'
@@ -32,7 +26,7 @@ src/client/qwclient.luau(108,32): TypeError: Expected type table, got 'nil' inst
 src/client/qwclient.luau(108,5): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(1137,11): LocalShadow: Variable 'key' shadows previous declaration at line 1069
 src/client/qwclient.luau(1412,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
-src/client/qwclient.luau(1496,27): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(1501,27): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(18,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
 src/client/qwclient.luau(486,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
 src/client/qwclient.luau(489,28): TypeError: Expected this to be 'ModelDef', but got 'nil'

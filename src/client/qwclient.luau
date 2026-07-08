@@ -1419,6 +1419,11 @@ return function()
 	end
 	applyFov()
 	camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyFov)
+	-- sbarLinesPx scales with hud.luau's mobile factor, which only settles
+	-- once the HUD gui measures its real size (after boot on phones) —
+	-- refit the vrect + viewmodel frame whenever the drawn strip changes
+	-- height, or the gun floats clipped above the HUD
+	hud.sbarStrip:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyFov)
 	input.init(0)
 	input.lockMouse()
 	input.setEnabled(true)

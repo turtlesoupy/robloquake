@@ -84,6 +84,14 @@ local PRINT_SWAPS: { { pat: string, rep: string } } = {
 	-- "X sucked on Y's muffler" -> "X sniffed Y's rocket fumes"
 	{ pat = " sucked on ", rep = " sniffed " },
 	{ pat = "'s muffler", rep = "'s rocket fumes" },
+	-- gib-death obituaries (client.qc: rocket kills at health < -40, plus
+	-- the quad-rocket variants) -> cartoonish knockouts
+	{ pat = " was gibbed by ", rep = " was bounced by " },
+	{ pat = " was smeared by ", rep = " was splashed by " },
+	{ pat = " was brutalized by ", rep = " was outgunned by " },
+	-- "X rips Y a new one" -> "X gives Y a wild ride"
+	{ pat = " rips ", rep = " gives " },
+	{ pat = " a new one\n", rep = " a wild ride\n" },
 }
 
 function mildmode.softPrint(text: string): string
