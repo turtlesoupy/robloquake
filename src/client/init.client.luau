@@ -81,7 +81,10 @@ local pal = textures.parsePalette(palbuf)
 -- client state
 
 local player = Players.LocalPlayer
-local c = cllib.new(player.Name, 0x04)
+-- cl_color starts 0 (white/white, matching the menus); default.cfg's
+-- `color` line and the prefs restore update it through the dispatcher's
+-- color handler before/after connect
+local c = cllib.new(player.Name, 0)
 
 local net = ReplicatedStorage:WaitForChild("QuakeNet")
 local reliable = net:WaitForChild("Reliable") :: RemoteEvent
@@ -927,6 +930,13 @@ end
 -- Cbuf_Execute with wait support: wait defers the rest to the next frame
 local cbufDeferred: { string } = {}
 local cbufWait = false
+-- cl_color mirror (quake shirt/pants rows 0..13): the `color` handler
+-- below keeps c.color (what CL_SignonReply resends on every level
+-- change) and the pause menu's AVATAR page in sync with every source of
+-- a color command — default.cfg, the prefs restore, both menus, console.
+-- Declared HERE, above the dispatcher that captures it (a later local
+-- would leave the dispatcher writing a nil global).
+local myTopColor, myBottomColor = 0, 0
 local execCommand -- forward decl
 local function execLine(text: string)
 	-- Cbuf_Execute: break on ; and newlines, but quotes protect semicolons
@@ -1234,6 +1244,18 @@ execCommand = function(line: string)
 			con.developer = v
 		end
 		consolelib.print(con, `"developer" is "{con.developer}"`)
+	elseif cmd == "color" then
+		-- CL_Color_f: mirror into cl_color BEFORE forwarding — the signon
+		-- sequence resends `color` from c.color on every map change, so an
+		-- unmirrored pick (or default.cfg's color line) would be silently
+		-- reverted at the next level. Single-arg form sets both.
+		local a = args or ""
+		local t, b = a:match("(%S+)%s+(%S+)")
+		local top = math.clamp(math.floor(tonumber(t) or tonumber(a) or 0), 0, 13)
+		local bottom = math.clamp(math.floor(tonumber(b) or top), 0, 13)
+		myTopColor, myBottomColor = top, bottom
+		c.color = top * 16 + bottom
+		sendStringCmd(`color {top} {bottom}`)
 	else
 		sendStringCmd(line)
 	end
@@ -1679,9 +1701,9 @@ local directorHandle = require(script.directorui).attach({
 -- changes push a snapshot; loads + applies saved prefs at boot; twin of
 -- the qwclient block. REMOVAL: see prefstore.luau — pass the raw
 -- settings/setWeaponSkin tables straight to the menus again. =====
--- quake shirt/pants rows: the local mirror the AVATAR page reads; sets
--- ride the forwarded `color` host command
-local myTopColor, myBottomColor = 0, 0
+-- (myTopColor/myBottomColor — the mirror the AVATAR page reads — are
+-- declared above the command dispatcher; the `color` handler keeps them
+-- and c.color in sync with every source)
 local prefsHandle = require(script.prefs).attach({
 	net = net,
 	-- SETTINGS page rows (menu.c M_Options): look/run live in input,
@@ -1703,7 +1725,7 @@ local prefsHandle = require(script.prefs).attach({
 			return myTopColor, myBottomColor
 		end,
 		setColors = function(top: number, bottom: number)
-			myTopColor, myBottomColor = top, bottom
+			-- the `color` handler mirrors into myTop/myBottom + c.color
 			execLine(`color {top} {bottom}`)
 		end,
 	},

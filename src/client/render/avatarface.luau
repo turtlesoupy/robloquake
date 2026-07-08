@@ -1,25 +1,32 @@
 --!strict
 --!optimize 2
 -- Avatar HUD face (product layer, NOT engine): the sbar face slot shows
--- the LOCAL player's avatar head in a ViewportFrame instead of the
--- gfx.wad face bitmaps, restyled toward the originals — warm dim
--- lighting, a banded health tint that reddens/darkens as health drops
--- (Sbar_DrawFace's 5 bands), a red pain flash + camera-roll jolt while
--- cl.faceanimtime is in the future, and a tip-over roll on death.
--- Powerup faces (quad/pent/ring) keep their bitmaps — hud.luau only
--- routes the health-band branch here. The rig source is the same
--- server-published QuakeAvatars template avatarrender clones; when it
--- is missing the widget never reports ready and the bitmaps remain.
+-- the LOCAL player's avatar headshot instead of the gfx.wad face
+-- bitmaps, restyled toward the originals — a banded health tint that
+-- reddens/darkens as health drops (Sbar_DrawFace's 5 bands), a red pain
+-- flash + roll jolt while cl.faceanimtime is in the future, and a
+-- tip-over roll on death. Powerup faces (quad/pent/ring) keep their
+-- bitmaps — hud.luau only routes the health-band branch here.
+--
+-- The head is the official GetUserThumbnailAsync headshot, NOT a
+-- ViewportFrame render of the QuakeAvatars rig: viewports run neither
+-- the layered-clothing deformer nor SurfaceAppearance, so modern
+-- avatars (layered hair, dynamic heads) rendered as a pale head with
+-- the hair mesh floating beside it (playtest screenshot). The thumbnail
+-- is Roblox's own render and gets every avatar right; if the fetch
+-- never lands the widget never reports ready and the bitmaps remain.
 
 local AssetService = game:GetService("AssetService")
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local avatarface = {}
 
 local PAIN_FLASH_TIME = 0.2 -- cl.faceanimtime window (cl.luau sets +0.2)
-local DEATH_ROLL_TIME = 0.5 -- camera tip-over on death
-local CAMERA_FOV = 40
+local DEATH_ROLL_TIME = 0.5 -- tip-over on death
+-- headshot thumbnails frame the head with generous margin; the gfx.wad
+-- faces fill their 24px slot brow-to-chin, so the image zooms in a bit
+-- (centered; the frame clips the spill)
+local HEAD_ZOOM = 1.45
 
 -- Sbar_DrawFace's banded look, as viewport tints: band 4 (80+) down to
 -- band 0 (<20) progressively redder and darker, plus a dead color. The
@@ -120,11 +127,9 @@ end
 
 export type Face = {
 	frame: Frame,
-	viewport: ViewportFrame,
+	image: ImageLabel,
 	flash: Frame,
-	camera: Camera,
-	baseCF: CFrame?, -- head-framing camera CFrame; nil until the rig loads
-	model: Model?,
+	loaded: boolean, -- headshot fetch landed; false = hud keeps bitmaps
 	dead: boolean,
 	deathT0: number,
 	painSign: number, -- jolt side, flipped per pain window
@@ -147,20 +152,13 @@ function avatarface.create(parent: Instance, x: number, y: number, size: number)
 	frame.Visible = false
 	frame.Parent = parent
 
-	local viewport = Instance.new("ViewportFrame")
-	viewport.BackgroundTransparency = 1
-	viewport.Size = UDim2.fromScale(1, 1)
-	-- warm, dim, front-lit: the closest viewport lighting gets to the
-	-- brown-lit gfx.wad faces
-	viewport.Ambient = Color3.fromRGB(126, 108, 92)
-	viewport.LightColor = Color3.fromRGB(255, 228, 192)
-	viewport.LightDirection = Vector3.new(0.3, -0.6, 1)
-	viewport.Parent = frame
-
-	local camera = Instance.new("Camera")
-	camera.FieldOfView = CAMERA_FOV
-	camera.Parent = viewport
-	viewport.CurrentCamera = camera
+	local image = Instance.new("ImageLabel")
+	image.Name = "headshot"
+	image.BackgroundTransparency = 1
+	image.AnchorPoint = Vector2.new(0.5, 0.5)
+	image.Position = UDim2.fromScale(0.5, 0.5)
+	image.Size = UDim2.fromScale(HEAD_ZOOM, HEAD_ZOOM)
+	image.Parent = frame
 
 	-- expression sprite between the head and the pain flash
 	local overlay = Instance.new("ImageLabel")
@@ -168,7 +166,7 @@ function avatarface.create(parent: Instance, x: number, y: number, size: number)
 	overlay.BackgroundTransparency = 1
 	overlay.ResampleMode = Enum.ResamplerMode.Pixelated
 	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.ZIndex = viewport.ZIndex + 1
+	overlay.ZIndex = image.ZIndex + 1
 	overlay.Visible = false
 	overlay.Parent = frame
 
@@ -183,11 +181,9 @@ function avatarface.create(parent: Instance, x: number, y: number, size: number)
 
 	local af: Face = {
 		frame = frame,
-		viewport = viewport,
+		image = image,
 		flash = flash,
-		camera = camera,
-		baseCF = nil,
-		model = nil,
+		loaded = false,
 		dead = false,
 		deathT0 = 0,
 		painSign = 1,
@@ -213,54 +209,41 @@ function avatarface.create(parent: Instance, x: number, y: number, size: number)
 	end
 
 	task.spawn(function()
-		local folder = ReplicatedStorage:WaitForChild("QuakeAvatars", 15)
-		local player = Players.LocalPlayer
-		local template = if folder and player then folder:WaitForChild(tostring(player.UserId), 20) else nil
-		if not template or not template:IsA("Model") then
-			return -- no rig: never ready, hud keeps the bitmap faces
+		-- Studio multi-client test players are guests with NEGATIVE
+		-- UserIds; thumbnails reject those — borrow the place creator's
+		-- avatar, matching the avatarrigs guest substitution
+		local uid = Players.LocalPlayer.UserId
+		if uid <= 0 then
+			uid = if game.CreatorType == Enum.CreatorType.User then game.CreatorId else 0
 		end
-		local model = template:Clone()
-		model.Name = "hudface"
-		-- static portrait: no animation, no state machine, and NO ScaleTo
-		-- (the published template is native-scale; camera distance frames
-		-- it, so the parked-rig scaling hazard never comes up)
-		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.EvaluateStateMachine = false
-			humanoid.AutomaticScalingEnabled = false
-			humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		if uid <= 0 then
+			return -- no fetchable avatar: hud keeps the bitmap faces
 		end
-		model:PivotTo(CFrame.identity)
-		local head = model:FindFirstChild("Head")
-		if not head or not head:IsA("BasePart") then
-			model:Destroy()
-			return
+		-- the thumbnail render can lag the join; poll until it's ready
+		-- (isReady false still returns a placeholder url — don't show it)
+		for _ = 1, 15 do
+			local ok, content, isReady = pcall(function()
+				return Players:GetUserThumbnailAsync(uid, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+			end)
+			if ok and isReady then
+				image.Image = content
+				af.loaded = true
+				return
+			end
+			task.wait(1)
 		end
-		model.Parent = af.viewport
-		-- frame the head: rigs face -Z, so the camera sits in front on -Z
-		-- looking back. Tight portrait like the gfx.wad faces (they fill
-		-- the 24px slot brow-to-chin): ~1.25 head-heights of vertical
-		-- field, aimed a touch low so hats crop at the top edge the way
-		-- the bitmaps crop hair
-		local target = head.Position - Vector3.new(0, head.Size.Y * 0.05, 0)
-		local extent = math.max(head.Size.Y, head.Size.X)
-		local dist = (extent * 1.25) / (2 * math.tan(math.rad(CAMERA_FOV / 2)))
-		af.baseCF = CFrame.lookAt(target - Vector3.new(0, 0, dist), target)
-		af.camera.CFrame = af.baseCF :: CFrame
-		af.model = model
 	end)
 	return af
 end
 
 function avatarface.ready(af: Face): boolean
-	return af.baseCF ~= nil
+	return af.loaded
 end
 
 -- drive from Sbar_DrawFace inputs: health (band + death), faceanimtime
 -- vs time (pain window). Idempotent per frame; cheap when nothing moves.
 function avatarface.update(af: Face, health: number, faceanimtime: number, time: number)
-	local baseCF = af.baseCF
-	if not baseCF then
+	if not af.loaded then
 		return
 	end
 
@@ -326,16 +309,15 @@ function avatarface.update(af: Face, health: number, faceanimtime: number, time:
 
 	if af.lastTint ~= tint then
 		af.lastTint = tint
-		af.viewport.ImageColor3 = tint
+		af.image.ImageColor3 = tint
 	end
 	af.flash.BackgroundTransparency = flashT
-	af.camera.CFrame = if roll ~= 0 then baseCF * CFrame.Angles(0, 0, roll) else baseCF
-	-- the sprite tracks the head through the camera roll (X-eyes must
-	-- stay on the eyes through the death tip-over): rolling the camera
-	-- +r about its look axis reads as the scene rotating +r clockwise
-	-- on screen, matching GuiObject.Rotation's clockwise degrees
-	-- (verified in-game: the negated form counter-rotated the X-eyes)
-	af.overlay.Rotation = math.deg(roll)
+	-- the head and the expression sprite roll together as one GuiObject
+	-- rotation (the old camera roll about the look axis read identically;
+	-- X-eyes must stay on the eyes through the death tip-over)
+	local deg = math.deg(roll)
+	af.image.Rotation = deg
+	af.overlay.Rotation = deg
 end
 
 function avatarface.setVisible(af: Face, on: boolean)

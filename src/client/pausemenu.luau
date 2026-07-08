@@ -46,6 +46,7 @@ local mdllib = require(engine.models.mdl)
 
 local textures = require(script.Parent.render.textures)
 local avatarrender = require(script.Parent.render.avatarrender)
+local teamcolors = require(script.Parent.render.teamcolors)
 local confontlib = require(script.Parent.render.confont)
 local entrender = require(script.Parent.render.entrender)
 local skinforge = require(script.Parent.render.skinforge)
@@ -972,20 +973,16 @@ function pausemenu.attach(opts: Opts): Handle
 	end
 
 	-- ---- avatar tint preview machinery (AVATAR page + main-page hero) ----
-	-- Quake shirt/pants palette rows plus the avatarrender template rig the
+	-- Quake shirt/pants rows plus the avatarrender template rig the
 	-- previews clone. The template is created ONCE into workspace (create
 	-- ScaleTo's a parked humanoid rig — only safe there, see avatarrender),
-	-- re-tinted with the same palette-row math avatarlayer uses, and cloned
+	-- re-tinted with the same teamcolors table avatarlayer uses, and cloned
 	-- inert into a page's ViewportFrame.
-	local QUAKE_COLOR_NAMES = {
-		"WHITE", "BROWN", "LAVENDER", "KHAKI", "RED", "OLIVE", "ORANGE",
-		"PEACH", "PURPLE", "MAGENTA", "TAN", "GREEN", "YELLOW", "BLUE",
-	}
-	local function quakeRowColor(row: number): Color3 -- palette row 0..13
-		local base = row * 16
-		local idx = base + (if base < 128 then 11 else 4)
-		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
-	end
+	local QUAKE_COLOR_NAMES = teamcolors.NAMES
+	-- shared vivid display color (teamcolors) — the same table the rig
+	-- tints and HUD shirt/pants bars use, so the picker previews exactly
+	-- what everyone else sees
+	local quakeRowColor = teamcolors.forRow
 	local avatarPreviewEnt: avatarrender.AvatarEnt? = nil
 	local function ensureAvatarPreview(): Model?
 		if not avatarPreviewEnt then

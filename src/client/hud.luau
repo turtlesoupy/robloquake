@@ -14,6 +14,7 @@ local qwview = require(engine.qw.qwview)
 local textures = require(script.Parent.render.textures)
 local confontlib = require(script.Parent.render.confont)
 local avatarfacelib = require(script.Parent.render.avatarface)
+local teamcolorslib = require(script.Parent.render.teamcolors)
 
 local hud = {}
 
@@ -792,26 +793,21 @@ local function interText(h: Hud, x: number, y: number, text: string)
 	confontlib.setRow(font, row, text)
 end
 
-local function interFill(h: Hud, x: number, y: number, w: number, hh: number, palIndex: number)
+local function interFill(h: Hud, x: number, y: number, w: number, hh: number, color: Color3)
 	local f = Instance.new("Frame")
 	f.BorderSizePixel = 0
-	-- Palette is {r,g,b} arrays, not Color3s (was pal[i].R — always nil,
-	-- so scoreboard color fills silently rendered black)
-	f.BackgroundColor3 = Color3.fromRGB(h.pal.r[palIndex + 1] or 0, h.pal.g[palIndex + 1] or 0, h.pal.b[palIndex + 1] or 0)
+	f.BackgroundColor3 = color
 	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
 	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
 	f.Parent = h.interFrame
 end
 
--- Team-color fill entries for a shirt/pants translation row. Platform
--- delta from Sbar_ColorForMap's row+8: rows >= 128 ramp bright->dark
--- (the CL_NewTranslation reversal), where +8 lands on a muddy entry that
--- matches neither the menu swatches nor the avatar rig tints. Use the
--- same representative avatarlayer.rowColor / pausemenu.quakeRowColor
--- pick (+11 forward, +4 reversed) so HUD bars agree with the tints.
-local function colorForMap(colors: number, pants: boolean): number
-	local row = if pants then bit32.lshift(bit32.band(colors, 15), 4) else bit32.band(colors, 0xf0)
-	return row + (if row < 128 then 11 else 4)
+-- Team-color fills. Platform delta from Sbar_ColorForMap's palette
+-- row+8: the shipped palette rows are too muddy to signal identity, so
+-- fills use the shared vivid display colors (teamcolors — the same table
+-- the menu picker and avatar rig tints draw from).
+local function colorForMap(colors: number, pants: boolean): Color3
+	return if pants then teamcolorslib.pants(colors) else teamcolorslib.shirt(colors)
 end
 
 -- Sbar_DeathmatchOverlay
@@ -1039,10 +1035,10 @@ local function frameText(h: Hud, parent: Frame, x: number, y: number, text: stri
 	confontlib.setRow(font, row, text)
 end
 
-local function frameFill(h: Hud, parent: Frame, x: number, y: number, w: number, hh: number, palIndex: number)
+local function frameFill(h: Hud, parent: Frame, x: number, y: number, w: number, hh: number, color: Color3)
 	local f = Instance.new("Frame")
 	f.BorderSizePixel = 0
-	f.BackgroundColor3 = Color3.fromRGB(h.pal.r[palIndex + 1] or 0, h.pal.g[palIndex + 1] or 0, h.pal.b[palIndex + 1] or 0)
+	f.BackgroundColor3 = color
 	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
 	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
 	f.Parent = parent
@@ -1103,10 +1099,10 @@ local function miniText(h: Hud, x: number, y: number, text: string)
 	confontlib.setRow(font, row, text)
 end
 
-local function miniFill(h: Hud, x: number, y: number, w: number, hh: number, palIndex: number)
+local function miniFill(h: Hud, x: number, y: number, w: number, hh: number, color: Color3)
 	local f = Instance.new("Frame")
 	f.BorderSizePixel = 0
-	f.BackgroundColor3 = Color3.fromRGB(h.pal.r[palIndex + 1] or 0, h.pal.g[palIndex + 1] or 0, h.pal.b[palIndex + 1] or 0)
+	f.BackgroundColor3 = color
 	f.Position = UDim2.fromOffset(x * SCALE, y * SCALE)
 	f.Size = UDim2.fromOffset(w * SCALE, hh * SCALE)
 	f.Parent = h.miniFrame

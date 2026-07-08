@@ -19,6 +19,7 @@ local qcoords = require(engine.client.qcoords)
 
 local avatarrender = require(script.Parent.avatarrender)
 local entrender = require(script.Parent.entrender)
+local teamcolors = require(script.Parent.teamcolors)
 local textures = require(script.Parent.textures)
 
 local avatarlayer = {}
@@ -231,20 +232,15 @@ function avatarlayer.new(deps: Deps): Layer
 		end
 	end
 
-	-- representative palette color for a translation row start
-	-- (CL_NewTranslation ranges: forward rows ascend, rows >= 128 reversed)
-	local function rowColor(row: number): Color3
-		local pal = deps.palette
-		local idx = row + (if row < 128 then 11 else 4)
-		return Color3.fromRGB(pal.r[idx + 1], pal.g[idx + 1], pal.b[idx + 1])
-	end
-
+	-- display colors for the packed colors byte: the shared vivid table
+	-- (teamcolors) rather than a palette-row sample, so the painted rig
+	-- matches the menu picker and the HUD shirt/pants bars exactly
 	function layer.pantsColor(colors: number): Color3
 		local cached = pantsCache[colors]
 		if cached then
 			return cached
 		end
-		local c3 = rowColor(bit32.lshift(bit32.band(colors, 15), 4))
+		local c3 = teamcolors.pants(colors)
 		pantsCache[colors] = c3
 		return c3
 	end
@@ -254,7 +250,7 @@ function avatarlayer.new(deps: Deps): Layer
 		if cached then
 			return cached
 		end
-		local c3 = rowColor(bit32.band(colors, 0xf0))
+		local c3 = teamcolors.shirt(colors)
 		shirtCache[colors] = c3
 		return c3
 	end
