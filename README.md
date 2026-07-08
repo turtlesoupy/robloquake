@@ -4,6 +4,8 @@ A port of the original 1996 Quake engine to Luau on Roblox.
 
 https://github.com/user-attachments/assets/2ba6229f-9826-49f8-8965-2ca19b3d7fd4
 
+[Live game with librequake assets](https://www.roblox.com/games/103880394742871/Frag-Party)
+
 ## What works
 
 - **Both original engines.** **NetQuake** (campaign/coop) and
