@@ -314,12 +314,18 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 
 	type FaceData = { pos: { Vector3 }, uv: { Vector2 } }
-	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh cap
+	local MAX_BATCH_VERTS = 50000 -- stay under the 60k EditableMesh vertex cap
+	-- triangles have their OWN, lower cap (~20k: AddTriangle throws
+	-- "Triangle count above limit"); fan triangulation of quad-heavy
+	-- geometry yields ~1 tri per 2 unshared verts, so the vertex bound
+	-- alone can admit ~25k tris (lqdm6 hit this)
+	local MAX_BATCH_TRIS = 17000
 
 	-- generic chunked mesh builder: positions+uvs -> MeshParts in container
 	local function buildChunks(faces: { FaceData }, partName: string, img: EditableImage?, fallbackColor: Color3?, translucentMap: boolean, partsOut: { MeshPart }?)
 		local chunk: { FaceData } = {}
 		local chunkVerts = 0
+		local chunkTris = 0
 
 		local function flushChunk()
 			if #chunk == 0 then
@@ -328,6 +334,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			local batch = chunk
 			chunk = {}
 			chunkVerts = 0
+			chunkTris = 0
 
 			local em = AssetService:CreateEditableMesh()
 			local backoff = 0.25
@@ -453,11 +460,13 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 		end
 
 		for _, fd in faces do
-			if chunkVerts + #fd.pos > MAX_BATCH_VERTS then
+			local tris = math.max(#fd.pos - 2, 0)
+			if chunkVerts + #fd.pos > MAX_BATCH_VERTS or chunkTris + tris > MAX_BATCH_TRIS then
 				flushChunk()
 			end
 			table.insert(chunk, fd)
 			chunkVerts += #fd.pos
+			chunkTris += tris
 		end
 		flushChunk()
 	end
