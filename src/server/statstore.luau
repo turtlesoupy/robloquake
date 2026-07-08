@@ -13,6 +13,7 @@
 -- period passes because the period key is part of the store name.
 
 local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -65,6 +66,18 @@ function statstore.new(opts: Options)
 		end
 	end
 
+	-- Frag Coins wallet + owned skins (shop economy; prices/rates live in
+	-- src/shared/shopcatalog.luau). coins/owned mirror the DataStore profile
+	-- (profile-level `coins`/`owned`/`receipts` keys, NOT bucketed); pending
+	-- is coins earned since the last flush. Balance shown to the player is
+	-- coins + pending.
+	type Wallet = {
+		coins: number,
+		owned: { [string]: boolean },
+		pending: number,
+		loaded: boolean, -- initial profile read finished (spends wait on it)
+	}
+
 	-- per-player live state
 	type Entry = {
 		session: statscore.Session,
@@ -72,6 +85,7 @@ function statstore.new(opts: Options)
 		lastFlush: number,
 		lastBoardValue: { [string]: number }, -- boardName -> last written
 		leaderstats: Folder?,
+		wallet: Wallet,
 	}
 	local entries: { [Player]: Entry } = {}
 	local nameCache: { [number]: string } = {}
@@ -85,6 +99,40 @@ function statstore.new(opts: Options)
 	local MAX_FRIEND_READS = 100
 	local friendsCache: { [number]: { at: number, ids: { number } } } = {}
 	local friendProfileCache: { [number]: { at: number, profile: statscore.Counters? } } = {}
+
+	-- wallet boot read; assigned below readFriendProfile (which it needs) and
+	-- hoisted here so st.session can reference it (same locals-before-
+	-- declaration hazard as the friends caches above)
+	local walletLoad: (Player, Wallet) -> ()
+
+	-- the client shop UI reads the wallet off player attributes: RQCoins (a
+	-- number, includes unflushed pending) and RQOwnedSkins (JSON array of
+	-- owned skinforge kinds)
+	local function publishWallet(player: Player?, w: Wallet)
+		if not player or not player.Parent then
+			return
+		end
+		player:SetAttribute("RQCoins", math.max(0, w.coins + w.pending))
+		local kinds = {}
+		for kind in w.owned do
+			table.insert(kinds, kind)
+		end
+		table.sort(kinds)
+		player:SetAttribute("RQOwnedSkins", HttpService:JSONEncode(kinds))
+	end
+
+	-- adopt the profile's persisted wallet fields into the live mirror
+	local function walletFromProfile(w: Wallet, profile: statscore.Counters)
+		w.coins = math.floor(tonumber(profile.coins) or 0)
+		table.clear(w.owned)
+		if type(profile.owned) == "table" then
+			for kind, v in profile.owned :: { [string]: any } do
+				if type(kind) == "string" and v == true then
+					w.owned[kind] = true
+				end
+			end
+		end
+	end
 
 	local function boardStore(name: string): OrderedDataStore?
 		if st.disabled then
@@ -102,15 +150,22 @@ function statstore.new(opts: Options)
 	function st.session(player: Player): statscore.Session
 		local e = entries[player]
 		if not e then
-			e = {
+			-- concrete-typed local (not the `e` rebind): the old solver drops
+			-- ?-refinements, so `e.wallet` below would read off Entry?
+			local fresh: Entry = {
 				session = statscore.newSession(),
 				pending = nil,
 				lastFlush = os.clock() + math.random() * FLUSH_INTERVAL, -- stagger
 				lastBoardValue = {},
 				leaderstats = nil,
+				wallet = { coins = 0, owned = {}, pending = 0, loaded = false },
 			}
-			entries[player] = e
+			e = fresh
+			entries[player] = fresh
 			nameCache[player.UserId] = player.Name
+			task.spawn(function()
+				walletLoad(player, fresh.wallet)
+			end)
 			-- native playerlist integration
 			local ls = Instance.new("Folder")
 			ls.Name = "leaderstats"
@@ -145,7 +200,7 @@ function statstore.new(opts: Options)
 	--------------------------------------------------------------------
 	-- persistence
 
-	local function writeProfile(userId: number, name: string, delta: statscore.Counters): statscore.Counters?
+	local function writeProfile(userId: number, name: string, delta: statscore.Counters, coinsAdd: number?): statscore.Counters?
 		if not profiles or st.disabled then
 			return nil
 		end
@@ -159,6 +214,12 @@ function statstore.new(opts: Options)
 				statscore.touchActivity(p, now) -- daysActive / day-streak
 				statscore.mergeIntoProfile(p, delta, now, st.modekey)
 				statscore.pruneProfile(p, now)
+				-- Frag Coins earned since the last flush: additive like the
+				-- counter deltas, so a retried write can't double-credit more
+				-- than the one contested batch
+				if coinsAdd and coinsAdd > 0 then
+					p.coins = math.floor((tonumber(p.coins) or 0) + coinsAdd)
+				end
 				result = p
 				return p
 			end)
@@ -222,12 +283,18 @@ function statstore.new(opts: Options)
 				e.pending = d
 			end
 		end
-		if not e.pending then
+		-- earned coins ride the same write; only banked once the wallet's
+		-- boot read is done, so a slow load can't be overwritten by it
+		local coinsTake = if e.wallet.loaded then e.wallet.pending else 0
+		if not e.pending and coinsTake <= 0 then
 			return
 		end
-		local profile = writeProfile(player.UserId, player.Name, e.pending)
+		local profile = writeProfile(player.UserId, player.Name, e.pending or {}, coinsTake)
 		if profile then
 			e.pending = nil
+			e.wallet.pending -= coinsTake
+			walletFromProfile(e.wallet, profile)
+			publishWallet(player, e.wallet)
 			writeBoards(e, player.UserId, profile)
 			-- keep the friends-scope view of ourselves current
 			friendProfileCache[player.UserId] = { at = os.clock(), profile = profile }
@@ -359,6 +426,196 @@ function statstore.new(opts: Options)
 		local p = if type(profile) == "table" then profile :: statscore.Counters else nil
 		friendProfileCache[userId] = { at = os.clock(), profile = p }
 		return p
+	end
+
+	--------------------------------------------------------------------
+	-- Frag Coins wallet (shop economy; see src/shared/shopcatalog.luau).
+	-- Earning is add-only and rides the delta flush; spending and Robux
+	-- grants are their own guarded UpdateAsync transforms — a spend checks
+	-- the balance and CANCELS the write when short, so concurrent servers
+	-- can never double-spend. With DataStores unavailable (Studio) the
+	-- wallet runs in-memory so the whole shop flow stays testable.
+
+	walletLoad = function(player: Player, w: Wallet)
+		local profile = readFriendProfile(player.UserId)
+		if profile then
+			walletFromProfile(w, profile)
+		end
+		w.loaded = true
+		publishWallet(player, w)
+	end
+
+	-- kill/win earnings from the stats capture adapter (stats.luau)
+	function st.awardCoins(player: Player, n: number)
+		local e = entries[player]
+		if not e or n <= 0 then
+			return
+		end
+		e.wallet.pending += n
+		publishWallet(player, e.wallet)
+	end
+
+	-- prefstore's equip gate. Grace-allows while the wallet is still
+	-- loading: dropping a legit skin beats briefly trusting the client on
+	-- a cosmetic.
+	function st.isOwned(player: Player, kind: string): boolean
+		local e = entries[player]
+		if not e or not e.wallet.loaded then
+			return true
+		end
+		return e.wallet.owned[kind] == true
+	end
+
+	-- buy `kind` for `price` coins; returns ok plus an error code the shop
+	-- UI maps to a message ("LOADING" | "POOR" | "ERROR")
+	function st.trySpend(player: Player, price: number, kind: string): (boolean, string?)
+		local e = entries[player]
+		if not e or not e.wallet.loaded then
+			return false, "LOADING"
+		end
+		local w = e.wallet
+		if w.owned[kind] then
+			return true, nil -- already owned: idempotent success
+		end
+		if w.coins + w.pending < price then
+			return false, "POOR"
+		end
+		-- in-memory mode: coins may go negative here while pending covers
+		-- the rest; the published balance is the sum, which stays right
+		local function spendInMemory(): (boolean, string?)
+			w.coins -= price
+			w.owned[kind] = true
+			publishWallet(player, w)
+			return true, nil
+		end
+		if not profiles or st.disabled then
+			return spendInMemory()
+		end
+		st.flush(player) -- bank pending earnings so they count toward the price
+		if st.disabled then
+			-- that flush just discovered writes are forbidden (fresh Studio
+			-- server): fall back in-memory instead of failing the first buy
+			return spendInMemory()
+		end
+		local granted = false
+		local ok, merged = pcall(function()
+			local result: statscore.Counters?
+			profiles:UpdateAsync("u" .. player.UserId, function(old: any)
+				local p: statscore.Counters = if type(old) == "table"
+					then old
+					else { v = PROFILE_VERSION, firstSeen = os.time() }
+				local owned = p.owned
+				if type(owned) ~= "table" then
+					owned = {}
+					p.owned = owned
+				end
+				if owned[kind] == true then
+					granted = true
+					result = p
+					return p
+				end
+				local coins = math.floor(tonumber(p.coins) or 0)
+				if coins < price then
+					return nil -- cancel: not enough banked coins
+				end
+				p.coins = coins - price
+				owned[kind] = true
+				granted = true
+				result = p
+				return p
+			end)
+			return result
+		end)
+		if not ok then
+			noteWriteError(merged)
+			return false, "ERROR"
+		end
+		if not granted then
+			return false, "POOR"
+		end
+		local profile = merged :: statscore.Counters?
+		if profile then
+			walletFromProfile(w, profile)
+			friendProfileCache[player.UserId] = { at = os.clock(), profile = profile }
+		end
+		publishWallet(player, w)
+		return true, nil
+	end
+
+	-- Robux receipt fulfilment (shop.luau's ProcessReceipt): grant a skin
+	-- kind, or coins on the no-intent fallback. Idempotent — the purchase
+	-- id is recorded in the profile, so Roblox redelivering the receipt
+	-- after a crash can't double-grant. Returns "granted" | "retry".
+	function st.grantProduct(userId: number, grant: { kind: string?, coins: number?, purchaseId: string }): string
+		local player = Players:GetPlayerByUserId(userId)
+		local e = if player then entries[player] else nil
+		if not profiles or st.disabled then
+			-- Studio test purchases: in-memory grant, needs the player here
+			if not (player and e) then
+				return "retry"
+			end
+			if grant.kind then
+				e.wallet.owned[grant.kind] = true
+			end
+			e.wallet.coins += grant.coins or 0
+			publishWallet(player, e.wallet)
+			return "granted"
+		end
+		local ok, merged = pcall(function()
+			local result: statscore.Counters?
+			profiles:UpdateAsync("u" .. userId, function(old: any)
+				local p: statscore.Counters = if type(old) == "table"
+					then old
+					else { v = PROFILE_VERSION, firstSeen = os.time() }
+				local receipts = p.receipts
+				if type(receipts) ~= "table" then
+					receipts = {}
+					p.receipts = receipts
+				end
+				if receipts[grant.purchaseId] then
+					result = p -- redelivery of an already-granted purchase
+					return p
+				end
+				-- receipts only matter within Roblox's redelivery window;
+				-- cap the set so profiles don't grow forever
+				local n = 0
+				for _ in receipts do
+					n += 1
+				end
+				if n >= 128 then
+					receipts = {}
+					p.receipts = receipts
+				end
+				receipts[grant.purchaseId] = true
+				if grant.kind then
+					local owned = p.owned
+					if type(owned) ~= "table" then
+						owned = {}
+						p.owned = owned
+					end
+					owned[grant.kind] = true
+				end
+				if grant.coins then
+					p.coins = math.floor((tonumber(p.coins) or 0) + grant.coins)
+				end
+				result = p
+				return p
+			end)
+			return result
+		end)
+		if not ok then
+			noteWriteError(merged)
+			return "retry"
+		end
+		local profile = merged :: statscore.Counters?
+		if profile then
+			friendProfileCache[userId] = { at = os.clock(), profile = profile }
+			if player and e then
+				walletFromProfile(e.wallet, profile)
+				publishWallet(player, e.wallet)
+			end
+		end
+		return "granted"
 	end
 
 	-- ranked friends (self included) by the period's GLOBAL bucket

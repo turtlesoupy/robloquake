@@ -12,8 +12,10 @@
 -- dormant on its own (opts.leaderboards is nil, so it shows "unavailable").
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local statscore = require(script.Parent.statscore)
+local shopcatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("shopcatalog"))
 
 local stats = {}
 
@@ -113,6 +115,11 @@ function stats.attach(a: Adapter)
 			local last = lastFrags[player]
 			if last ~= nil and read.frags ~= last then
 				statscore.applyFragDelta(sess, read.frags - last, read.weapon)
+				-- Frag Coins per kill (shop economy): positive deltas only,
+				-- so suicides/penalties never mint or burn currency
+				if read.frags > last then
+					store.awardCoins(player, (read.frags - last) * shopcatalog.COINS_PER_KILL)
+				end
 			end
 			lastFrags[player] = read.frags
 

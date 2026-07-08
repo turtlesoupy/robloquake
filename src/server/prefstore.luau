@@ -84,7 +84,10 @@ local function sanitizeSkins(raw: any): { [string]: string }
 	return out
 end
 
-return function(net: Instance)
+-- isKindOwned: the shop economy's equip gate (statstore.isOwned) — a pushed
+-- skin whose kind the player doesn't own is dropped instead of persisted or
+-- replicated. nil (unwired boot) keeps the old trust-the-shape behavior.
+return function(net: Instance, isKindOwned: ((player: Player, kind: string) -> boolean)?)
 	local disabled = false -- flips on when DataStores are unreachable (Studio)
 
 	local function noteWriteError(err: any)
@@ -228,8 +231,23 @@ return function(net: Instance)
 		if not e or type(raw) ~= "table" then
 			return
 		end
+		local skins = sanitizeSkins((raw :: any).skins)
+		-- ownership gate: only owned kinds may be equipped (saved skins were
+		-- gated when pushed, so the load path stays trust-the-document)
+		if isKindOwned then
+			local dropped: { string } = {}
+			for mdl, spec in skins do
+				local kind = spec:match("^(%a+)")
+				if kind and not isKindOwned(player, kind) then
+					table.insert(dropped, mdl)
+				end
+			end
+			for _, mdl in dropped do
+				skins[mdl] = nil
+			end
+		end
 		e.prefs.settings = sanitizeSettings((raw :: any).settings)
-		e.prefs.skins = sanitizeSkins((raw :: any).skins)
+		e.prefs.skins = skins
 		e.dirty = true
 		publishSkins(player, e.prefs.skins)
 	end)

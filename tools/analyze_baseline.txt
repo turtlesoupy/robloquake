@@ -77,11 +77,11 @@ src/client/sound.luau(295,5): TypeError: Value of type 'Sound?' could be nil
 src/client/sound.luau(296,5): TypeError: Value of type 'Sound?' could be nil
 src/client/sound.luau(298,4): TypeError: Expected type table, got 'nil' instead
 src/client/sound.luau(302,14): TypeError: Value of type '{{ sound: Sound?, vol: number }}?' could be nil
-src/server/qwserver.luau(423,22): TypeError: Expected this to be 'string', but got 'string?'
-src/server/qwserver.luau(443,28): TypeError: Value of type 'string?' could be nil
-src/server/qwserver.luau(452,33): TypeError: Expected this to be 'string', but got 'string?'
-src/server/qwserver.luau(483,10): LocalShadow: Variable 'ServerStorage' shadows previous declaration at line 415
-src/server/statstore.luau(124,4): TypeError: Expected type table, got 'nil' instead
+src/server/qwserver.luau(432,22): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(452,28): TypeError: Value of type 'string?' could be nil
+src/server/qwserver.luau(461,33): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(492,10): LocalShadow: Variable 'ServerStorage' shadows previous declaration at line 424
+src/server/statstore.luau(179,4): TypeError: Expected type table, got 'nil' instead
 src/shared/engine/client/cl.luau(177,2): TypeError: Expected this to be exactly 'Client', but got '{| cdtrack: number, centerPrint: <T...>(T...) -> (), color: number, completed_time: number, cshift_bonus_percent: number, cshift_damage_color: vector, cshift_damage_percent: number, dmg_pitch: number, dmg_roll: number, dmg_time: number, entities: {ClEntity}, faceanimtime: number, gametype: number, idealpitch: number, intermission: number, inwater: boolean, item_gettime: {number}, items: number, levelname: string, lightstyles: {string}, maxclients: number, message: SizeBuf, model_precache: {string... *TRUNCATED*'
 src/shared/engine/common/cvar.luau(54,2): TypeError: Expected this to be exactly 'Cvars', but got '{| print: <T...>(T...) -> (), vars: { [string]: { string: string, value: number } } |}'
 src/shared/engine/progs/prdebug.luau(43,2): TypeError: Expected this to be 'Def', but got 'nil'

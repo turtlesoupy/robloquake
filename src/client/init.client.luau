@@ -1702,6 +1702,12 @@ local prefsHandle = require(script.prefs).attach({
 local lbHandle = require(script.leaderboardui).attach({ net = net })
 -- ===== end leaderboard data source =====
 
+-- ===== shop bridge (PRODUCT layer): Frag Coin wallet + owned skins for
+-- the pause menu's SHOP/MY SKINS pages; twin of the qwclient block.
+-- REMOVAL: see src/server/shop.luau. =====
+local shopHandle = require(script.shopclient).attach({ net = net })
+-- ===== end shop bridge =====
+
 -- ===== pause menu (PRODUCT layer) — FRAG/SHOP overlay on E or the
 -- top-right MENU plaque, darkens the world 80% without pausing it;
 -- twin of the qwclient block =====
@@ -1733,6 +1739,8 @@ local pauseHandle = require(script.pausemenu).attach({
 		get = prefsHandle.settings.getColors,
 		set = prefsHandle.settings.setColors,
 	},
+	-- SHOP/MY SKINS pages: Frag Coin wallet, ownership, purchases
+	shop = shopHandle,
 })
 -- ===== end pause menu =====
 
@@ -1793,7 +1801,6 @@ require(script.controls).attach({
 		refreshInputMode()
 		return true
 	end,
-	font = hud.font,
 	tapFires = function()
 		-- score screen or dead: a tap advances / respawns
 		return c.intermission ~= 0 or (c.stats[cllib.STAT_HEALTH] or 100) <= 0

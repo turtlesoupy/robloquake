@@ -212,18 +212,21 @@ return function(ctx: Ctx)
 	local statstorelib = require(script.Parent.statstore)
 	local statslib = require(script.Parent.stats)
 	local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
-	local statsApi = statslib.attach({
-		store = statstorelib.new({
-			modekey = statscorelib.deriveModeKey({
-				modekey = ctx.assets:GetAttribute("modekey") :: any,
-				engine = ctx.assets:GetAttribute("engine") :: any,
-				gamedir = ctx.assets:GetAttribute("gamedir") :: any,
-				deathmatch = ctx.assets:GetAttribute("deathmatch") :: any,
-				coop = ctx.assets:GetAttribute("coop") :: any,
-				teamplay = ctx.assets:GetAttribute("teamplay") :: any,
-			}),
-			net = ctx.reliable.Parent :: Instance,
+	-- hoisted out of the attach call: the shop + prefstore blocks below need
+	-- the store (Frag Coins wallet + owned skins live on it)
+	local statsStore = statstorelib.new({
+		modekey = statscorelib.deriveModeKey({
+			modekey = ctx.assets:GetAttribute("modekey") :: any,
+			engine = ctx.assets:GetAttribute("engine") :: any,
+			gamedir = ctx.assets:GetAttribute("gamedir") :: any,
+			deathmatch = ctx.assets:GetAttribute("deathmatch") :: any,
+			coop = ctx.assets:GetAttribute("coop") :: any,
+			teamplay = ctx.assets:GetAttribute("teamplay") :: any,
 		}),
+		net = ctx.reliable.Parent :: Instance,
+	})
+	local statsApi = statslib.attach({
+		store = statsStore,
 		maxclients = svr.maxclients,
 		playerBySlot = function(slot: number): Player?
 			for p, s in slotByPlayer do
@@ -258,8 +261,14 @@ return function(ctx: Ctx)
 
 	-- ===== prefs persistence (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/prefstore.luau for the REMOVAL note =====
-	require(script.Parent.prefstore)(ctx.reliable.Parent :: Instance)
+	require(script.Parent.prefstore)(ctx.reliable.Parent :: Instance, statsStore.isOwned)
 	-- ===== end prefs persistence =====
+
+	-- ===== shop (PRODUCT layer) — twin of the NQ block; Frag Coin + Robux
+	-- skin purchases against the statstore wallet; see src/server/shop.luau
+	-- for the REMOVAL note =====
+	require(script.Parent.shop)({ net = ctx.reliable.Parent :: Instance, store = statsStore })
+	-- ===== end shop =====
 
 	-- ===== host greeting (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/hostgreeting.luau for the REMOVAL note =====

@@ -395,18 +395,21 @@ local statscorelib = require(script.statscore)
 local statstorelib = require(script.statstore)
 local statslib = require(script.stats)
 local statsRead: statslib.SlotRead = { frags = 0, health = 0, deadflag = 0, weapon = 0 }
-local statsApi = statslib.attach({
-	store = statstorelib.new({
-		modekey = statscorelib.deriveModeKey({
-			modekey = assets:GetAttribute("modekey") :: any,
-			engine = assets:GetAttribute("engine") :: any,
-			gamedir = assets:GetAttribute("gamedir") :: any,
-			deathmatch = assets:GetAttribute("deathmatch") :: any,
-			coop = assets:GetAttribute("coop") :: any,
-			teamplay = assets:GetAttribute("teamplay") :: any,
-		}),
-		net = net,
+-- hoisted out of the attach call: the shop + prefstore blocks below need the
+-- store (Frag Coins wallet + owned skins live on it)
+local statsStore = statstorelib.new({
+	modekey = statscorelib.deriveModeKey({
+		modekey = assets:GetAttribute("modekey") :: any,
+		engine = assets:GetAttribute("engine") :: any,
+		gamedir = assets:GetAttribute("gamedir") :: any,
+		deathmatch = assets:GetAttribute("deathmatch") :: any,
+		coop = assets:GetAttribute("coop") :: any,
+		teamplay = assets:GetAttribute("teamplay") :: any,
 	}),
+	net = net,
+})
+local statsApi = statslib.attach({
+	store = statsStore,
 	maxclients = svr.maxclients,
 	playerBySlot = function(slot: number): Player?
 		for p, s in slotByPlayer do
@@ -441,8 +444,14 @@ local statsApi = statslib.attach({
 -- ===== prefs persistence (PRODUCT layer): saved client settings +
 -- weapon skin picks. REMOVAL: delete this block, its twin in
 -- qwserver.luau, src/server/prefstore.luau and src/client/prefs.luau. =====
-require(script.prefstore)(net)
+require(script.prefstore)(net, statsStore.isOwned)
 -- ===== end prefs persistence =====
+
+-- ===== shop (PRODUCT layer): Frag Coin + Robux skin purchases against
+-- the statstore wallet. REMOVAL: delete this block, its qwserver twin,
+-- and see src/server/shop.luau. =====
+require(script.shop)({ net = net, store = statsStore })
+-- ===== end shop =====
 
 -- M_ScanSaves' data: publish {name, comment} for every save so the
 -- client Load/Save menus can list them (comment = savegame line 2)

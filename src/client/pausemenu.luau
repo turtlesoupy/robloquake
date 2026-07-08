@@ -39,6 +39,7 @@ local SocialService = game:GetService("SocialService")
 local UserInputService = game:GetService("UserInputService")
 
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
+local shopcatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("shopcatalog"))
 local vfslib = require(engine.common.vfs)
 local wadlib = require(engine.gfx.wad)
 local mdllib = require(engine.models.mdl)
@@ -79,12 +80,10 @@ local COOL = Color3.fromRGB(210, 222, 235)
 local BIG_FONT: FontStyle = { color = ORANGE, title = 4, head = 2, body = 2 }
 local CLASSIC_FONT: FontStyle = { color = COOL, title = 3, head = 2, body = 2 }
 
--- shop rarity tiers (prices per tier; picks rotate daily)
-local RARITIES = {
-	{ name = "COMMON", frags = 50, robux = 49 },
-	{ name = "RARE", frags = 150, robux = 99 },
-	{ name = "LEGENDARY", frags = 1000, robux = 199 },
-}
+-- Frag Coin accents (hero-card balance line + shop balance, designer mock)
+local COIN_COLOR = Color3.fromRGB(255, 70, 40)
+-- rarity tiers/prices and the daily rotation live in the shared catalog
+-- (src/shared/shopcatalog.luau) so the server validates what we render
 
 export type Handle = {
 	toggle: () -> (),
@@ -125,6 +124,19 @@ export type Opts = {
 	-- the boot's `color` command so the tint replicates to everyone; the
 	-- page shows a stub when nil
 	avatarColors: { get: () -> (number, number), set: (top: number, bottom: number) -> () }?,
+	-- skin economy bridge (shopclient.luau): Frag Coin balance, owned
+	-- kinds, and the two purchase paths. nil = everything free (dev boots
+	-- without the shop wired) — SHOP/MY SKINS fall back to plain APPLY.
+	shop: Shop?,
+}
+
+-- structurally shopclient.Handle (kept local so this module doesn't
+-- require the bridge that feeds it, same as Settings/Leaderboards)
+export type Shop = {
+	getCoins: () -> number,
+	isOwned: (kind: string) -> boolean,
+	buy: (kind: string, pay: "coins" | "robux") -> (boolean, string?),
+	onChanged: (cb: () -> ()) -> (),
 }
 
 -- mid-game callvote bridge (structurally directorui.Handle.cv): live match
@@ -791,44 +803,8 @@ function pausemenu.attach(opts: Opts): Handle
 	end
 
 	-- ---- daily shop rotation --------------------------------------------
-	-- fixed rarity split over the sorted kinds (deterministic shuffle so
-	-- every client agrees); TODO: hand-curate the groups later
-	local rarityGroups: { { string } }? = nil
-	local function getRarityGroups(): { { string } }
-		if rarityGroups then
-			return rarityGroups :: { { string } }
-		end
-		local kinds = skinforge.kinds()
-		local rng = Random.new(1337)
-		for i = #kinds, 2, -1 do
-			local j = rng:NextInteger(1, i)
-			kinds[i], kinds[j] = kinds[j], kinds[i]
-		end
-		local split = { {}, {}, {} } -- common | rare | legendary
-		for i, k in kinds do
-			if i <= math.ceil(#kinds * 0.5) then
-				table.insert(split[1], k)
-			elseif i <= math.ceil(#kinds * 0.8) then
-				table.insert(split[2], k)
-			else
-				table.insert(split[3], k)
-			end
-		end
-		rarityGroups = split
-		return split
-	end
-	-- the three skins on sale for a given UTC day (one per rarity)
-	local function shopPicks(day: number): { { kind: string, spec: string } }
-		local groups = getRarityGroups()
-		local rng = Random.new(day)
-		local picks = {}
-		for i = 1, 3 do
-			local list = groups[i]
-			local kind = list[rng:NextInteger(1, #list)]
-			picks[i] = { kind = kind, spec = `{kind}:{rng:NextInteger(0, 999999)}` }
-		end
-		return picks
-	end
+	-- picks/rarities/prices come from the shared catalog so the server
+	-- validates purchases against exactly what these cards show
 	local function utcDay(): number
 		return os.time() // 86400
 	end
@@ -837,6 +813,9 @@ function pausemenu.attach(opts: Opts): Handle
 	local state = "main"
 	local skinPage = 0
 	local friendsPage = 0
+	-- SHOP page: transient purchase-result line ("NOT ENOUGH FRAGCOINS");
+	-- consumed by the next buildShop so it shows exactly once
+	local shopNotice: string? = nil
 	-- RANKINGS page: selected tabs + last fetch. Like cvPending/friendsCache,
 	-- this lives outside the build so the async fetch survives page rebuilds
 	-- and re-renders when it lands. rkFetchedKey names the "period|scope" the
@@ -1101,7 +1080,9 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 
 		-- stat lines, left column (kept clear of the avatar). A touch smaller
-		-- than body so "RANK #NN ALL TIME" fits beside the headshot.
+		-- than body so "RANK #NN ALL TIME" fits beside the headshot. The Frag
+		-- Coin balance leads in red (designer mock) — live off the RQCoins
+		-- attribute, so no fetch needed.
 		local ms = msData
 		local function rankLine(r: number?, period: string): string
 			if not ms or ms.disabled then
@@ -1112,17 +1093,19 @@ function pausemenu.attach(opts: Opts): Handle
 		local function numLine(n: number?, label: string): string
 			return if ms and not ms.disabled then `{commas(n or 0)} {label}` else `-- {label}`
 		end
-		local rows = {
-			rankLine(ms and ms.rankDay, "TODAY"),
-			rankLine(ms and ms.rankAll, "ALL TIME"),
-			numLine(ms and ms.frags, "FRAGS"),
-			numLine(ms and ms.wins, "WINS"),
-		}
+		local rows: { { s: string, c: Color3? } } = {}
+		if opts.shop then
+			table.insert(rows, { s = `{commas(opts.shop.getCoins())} FRAGCOINS`, c = COIN_COLOR })
+		end
+		table.insert(rows, { s = rankLine(ms and ms.rankDay, "TODAY") })
+		table.insert(rows, { s = rankLine(ms and ms.rankAll, "ALL TIME") })
+		table.insert(rows, { s = numLine(ms and ms.frags, "FRAGS") })
+		table.insert(rows, { s = numLine(ms and ms.wins, "WINS") })
 		local ss = 1.5
 		local lineH = 8 * ss + 8
 		local sy = bodyTop + math.max(0, (avSide - #rows * lineH) // 2)
 		for _, line in rows do
-			text(hp, pad + 2, sy, line, ss)
+			text(hp, pad + 2, sy, line.s, ss, line.c)
 			sy += lineH
 		end
 		-- the stats/profile card opens the AVATAR tint subscreen
@@ -1134,7 +1117,7 @@ function pausemenu.attach(opts: Opts): Handle
 		-- the rocket launcher render on MY SKINS follows the equipped pick
 		-- (nil = authentic); the picture updates when APPLY rebuilds this page
 		local equipped = if opts.getWeaponSkin then opts.getWeaponSkin("progs/v_rock2.mdl") else nil
-		local legendary = shopPicks(utcDay())[3]
+		local legendary = shopcatalog.picks(utcDay())[3]
 		-- one action per block: `go` switches to that page; a cell shows either
 		-- a baked icon or a weapon render (skin=true keeps MY SKINS rendering
 		-- the authentic gun when nothing is equipped)
@@ -1436,17 +1419,34 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 	end
 
+	-- purchase-failure codes (shop.luau / shopclient.luau) -> card footer text
+	local NOTICES: { [string]: string } = {
+		POOR = "NOT ENOUGH FRAGCOINS",
+		LOADING = "WALLET STILL LOADING - TRY AGAIN",
+		NOPRODUCT = "ROBUX PURCHASES COMING SOON",
+		SLOW = "EASY THERE - TRY AGAIN",
+		OFFLINE = "SHOP OFFLINE - TRY AGAIN",
+	}
+	local function noticeFor(err: string?): string
+		return NOTICES[err or ""] or "PURCHASE FAILED - TRY AGAIN"
+	end
+
 	local function buildShop()
 		local day = utcDay()
-		local picks = shopPicks(day)
+		local picks = shopcatalog.picks(day)
+		local shop = opts.shop
+		local notice = shopNotice
+		shopNotice = nil -- show once; the next rebuild clears it
 		for i, cell in layout3() do
-			local r = RARITIES[i]
 			local pick = picks[i]
+			local rarity = shopcatalog.RARITIES[pick.rarity]
 			local p = cellPanel(cell)
 			text(p, 0, 14, pick.kind:upper(), style.head, nil, cell.w, 0.5)
-			text(p, 0, 14 + 8 * style.head + 6, r.name, style.body, RARITY_GREY, cell.w, 0.5)
-			-- clicking anywhere on the card applies this weapon skin (same as
-			-- the skins-tab APPLY); the buy button below shares the action
+			text(p, 0, 14 + 8 * style.head + 6, pick.rarity, style.body, RARITY_GREY, cell.w, 0.5)
+			local owned = if shop then shop.isOwned(pick.kind) else true
+			local equipped = (if opts.getWeaponSkin then opts.getWeaponSkin("progs/v_rock2.mdl") else nil)
+				== pick.spec
+			-- equip this card's featured spec on every viewmodel
 			local function apply()
 				if opts.setWeaponSkin then
 					for _, mdl in VIEWMODELS do
@@ -1454,14 +1454,74 @@ function pausemenu.attach(opts: Opts): Handle
 					end
 				end
 			end
-			-- weapon render fills the middle, above the single cost row
-			weaponView(p, 12, 64, cell.w - 24, cell.h - 64 - (CARD_BTN_H + 22), pick.spec)
-			-- shared-divider button strip: a single "BUY [robux] price" row
-			cardButtons(p, cell.w, cell.h, {
-				{ label = "BUY", robux = r.robux, onClick = apply },
-			})
-			-- whole-card click target (behind the render/button strip)
-			clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, apply)
+			local function applyAndRefresh()
+				apply()
+				showPage() -- EQUIP flips to EQUIPPED
+			end
+			-- purchases resolve async; success re-renders via the wallet
+			-- attribute change (opts.shop.onChanged), failures via shopNotice
+			local function buyCoins()
+				task.spawn(function()
+					local ok, err = (shop :: Shop).buy(pick.kind, "coins")
+					if ok then
+						apply() -- wear it right away
+					else
+						shopNotice = noticeFor(err)
+					end
+					if state == "shop" and gui.Enabled then
+						task.defer(showPage)
+					end
+				end)
+			end
+			local function buyRobux()
+				task.spawn(function()
+					local ok, err = (shop :: Shop).buy(pick.kind, "robux")
+					-- on ok the platform prompt is up; the receipt lands as
+					-- an attribute change and onChanged rebuilds this page
+					if not ok then
+						shopNotice = noticeFor(err)
+						if state == "shop" and gui.Enabled then
+							task.defer(showPage)
+						end
+					end
+				end)
+			end
+			-- owned: one EQUIP/EQUIPPED row. Unowned: the two payment rows
+			-- from the mock — FRAGCOIN price over the [robux glyph] price.
+			local rows: { StripRow } = if owned
+				then {
+					{
+						label = if equipped then "EQUIPPED" else "EQUIP",
+						onClick = if equipped then nil else applyAndRefresh,
+					},
+				}
+				else {
+					{ label = `FRAGCOIN {commas(rarity.coins)}`, onClick = buyCoins },
+					{ robux = rarity.robux, onClick = buyRobux },
+				}
+			-- weapon render fills the middle, above the price/equip strip
+			weaponView(p, 12, 64, cell.w - 24, cell.h - 64 - (#rows * CARD_BTN_H + 22), pick.spec)
+			cardButtons(p, cell.w, cell.h, rows)
+			-- whole-card click target (behind the render/button strip): equips
+			-- when owned; buying stays on the explicit price buttons so a
+			-- stray card tap can't spend currency
+			if owned then
+				clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, applyAndRefresh)
+			end
+		end
+		-- Frag Coin balance, right-aligned beside the countdown line (mock red)
+		if shop then
+			text(content, 0, TITLE_H - 8, `{commas(shop.getCoins())} FRAGCOINS`, 1.5, COIN_COLOR, CANVAS_W - GRID_X, 1)
+		end
+		if notice then
+			-- a purchase notice borrows the countdown slot for one rebuild
+			text(content, 0, TITLE_H - 8, notice, style.body, ORANGE, CANVAS_W, 0.5)
+			task.delay(4, function()
+				if state == "shop" and gui.Enabled then
+					task.defer(showPage) -- restore the countdown
+				end
+			end)
+			return
 		end
 		-- countdown under the title; rebuilds the page when the day rolls
 		-- over (swapping in the next three picks)
@@ -1527,32 +1587,54 @@ function pausemenu.attach(opts: Opts): Handle
 
 	local function buildSkins()
 		local cells = layout8()
-		local kinds = skinforge.kinds() -- sorted, stable order
-		local n = #kinds
+		local shop = opts.shop
+		-- the locker: the free AUTHENTIC default first, then every OWNED kind
+		-- with its rarity status. Without the shop bridge (dev boots) every
+		-- kind shows, preserving the old free-apply behavior.
+		type SkinEntry = { kind: string?, name: string, rarity: string }
+		local list: { SkinEntry } = { { kind = nil, name = "AUTHENTIC", rarity = "DEFAULT" } }
+		for _, kind in skinforge.kinds() do -- sorted, stable order
+			if not shop or shop.isOwned(kind) then
+				local r = shopcatalog.rarityOf(kind)
+				table.insert(list, { kind = kind, name = kind:upper(), rarity = if r then r.name else "SPECIAL" })
+			end
+		end
+		local n = #list
 		local starts, counts = pagerSplit(n, #cells)
 		skinPage = math.clamp(skinPage, 0, #starts - 1)
 		local first = starts[skinPage + 1]
 		local count = counts[skinPage + 1]
 
-		local function skinCell(cell: Rect, kind: string)
+		-- the equipped pick (kind granularity: any seed of a kind counts)
+		local current = if opts.getWeaponSkin then opts.getWeaponSkin("progs/v_rock2.mdl") else nil
+		local eqKind = if current then current:match("^(%a+)") else nil
+
+		local function skinCell(cell: Rect, entry: SkinEntry)
 			local p = cellPanel(cell)
-			local name = kind:upper()
-			local sc = if #name * 8 * style.head <= cell.w - 12 then style.head else 1
-			text(p, 0, 16, name, sc, nil, cell.w, 0.5)
-			weaponView(p, 8, 34, cell.w - 16, cell.h - 34 - (CARD_BTN_H + 14), `{kind}:7`)
+			local sc = if #entry.name * 8 * style.head <= cell.w - 12 then style.head else 1
+			text(p, 0, 14, entry.name, sc, nil, cell.w, 0.5)
+			-- rarity status line (mock): grey, under the name
+			text(p, 0, 14 + 8 * sc + 4, entry.rarity, 1, RARITY_GREY, cell.w, 0.5)
+			local spec = if entry.kind then `{entry.kind}:7` else nil
+			local viewTop = 14 + 8 * sc + 16
+			weaponView(p, 8, viewTop, cell.w - 16, cell.h - viewTop - (CARD_BTN_H + 14), spec)
+			local equipped = if entry.kind then entry.kind == eqKind else current == nil
 			local function apply()
 				if opts.setWeaponSkin then
 					for _, mdl in VIEWMODELS do
-						opts.setWeaponSkin(mdl, `{kind}:7`)
+						opts.setWeaponSkin(mdl, spec)
 					end
 				end
+				showPage() -- APPLY flips to EQUIPPED
 			end
 			cardButtons(p, cell.w, cell.h, {
-				{ label = "APPLY", onClick = apply },
+				{ label = if equipped then "EQUIPPED" else "APPLY", onClick = if equipped then nil else apply },
 			})
 			-- whole-card click target (behind the render/button strip), same
 			-- pattern as buildShop's card-wide apply
-			clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, apply)
+			if not equipped then
+				clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, apply)
+			end
 		end
 		local ci = 1
 		if skinPage > 0 then
@@ -1563,7 +1645,7 @@ function pausemenu.attach(opts: Opts): Handle
 			ci += 1
 		end
 		for k = 0, count - 1 do
-			skinCell(cells[ci], kinds[first + k])
+			skinCell(cells[ci], list[first + k])
 			ci += 1
 		end
 		if first + count - 1 < n then
@@ -1576,6 +1658,10 @@ function pausemenu.attach(opts: Opts): Handle
 		while ci <= #cells do
 			emptyCell(cells[ci])
 			ci += 1
+		end
+		-- nudge fresh players toward the shop while the locker is empty
+		if shop and n == 1 then
+			text(content, 0, TITLE_H - 8, "BUY SKINS IN THE SHOP WITH FRAGCOINS", style.body, RARITY_GREY, CANVAS_W, 0.5)
 		end
 	end
 
@@ -2037,6 +2123,17 @@ function pausemenu.attach(opts: Opts): Handle
 		else
 			setOpen(true, "rankings")
 		end
+	end
+
+	-- wallet/ownership changes (kills earning coins, a Robux receipt landing)
+	-- re-render any page that shows them, so the coin counter ticks live and
+	-- a finished purchase flips its card to EQUIP without reopening the menu
+	if opts.shop then
+		opts.shop.onChanged(function()
+			if gui.Enabled and (state == "main" or state == "shop" or state == "skins") then
+				task.defer(showPage)
+			end
+		end)
 	end
 
 	-- server verdicts on proposals (fired by directorui): a deny reason
