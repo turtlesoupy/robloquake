@@ -1,10 +1,6 @@
 # RobloQuake
 
-Quake, running inside Roblox. Not a remake — the actual engine: original
-data formats, the QuakeC virtual machine, and WinQuake's exact collision
-and physics, ported to Luau on Roblox's client/server model. Levels are
-real `.bsp` files, game logic is the real `progs.dat`, and multiplayer
-rides Quake's own svc/clc protocol over RemoteEvents.
+A port of the original 1996 Quake engine to Roblox.
 
 <!-- HERO VIDEO: drop the mp4 URL on its own line here (GitHub renders it
      as an embedded player). Should show something cool — e.g. a CTF match
