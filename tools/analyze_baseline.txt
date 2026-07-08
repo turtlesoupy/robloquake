@@ -1,37 +1,37 @@
 src/client/console.luau(268,11): TypeError: Expected this to be 'string', but got 'string?'
 src/client/hud.luau(1484,8): LocalShadow: Variable 'font' shadows previous declaration at line 1428
-src/client/init.client.luau(1042,25): TypeError: Expected this to be 'string', but got 'string?'
-src/client/init.client.luau(1045,16): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1093,18): TypeError: Expected this to be 'string', but got 'string?'
-src/client/init.client.luau(1119,14): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1147,12): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1158,24): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1169,29): TypeError: Expected this to be 'number | string', but got 'string?'
-src/client/init.client.luau(1207,14): TypeError: Value of type 'string?' could be nil
-src/client/init.client.luau(1271,9): TypeError: Expected this to be 'buffer', but got 'buffer?'
+src/client/init.client.luau(1036,25): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1039,16): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1087,18): TypeError: Expected this to be 'string', but got 'string?'
+src/client/init.client.luau(1113,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1141,12): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1152,24): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1163,29): TypeError: Expected this to be 'number | string', but got 'string?'
+src/client/init.client.luau(1201,14): TypeError: Value of type 'string?' could be nil
+src/client/init.client.luau(1265,9): TypeError: Expected this to be 'buffer', but got 'buffer?'
 src/client/init.client.luau(303,45): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
 src/client/init.client.luau(379,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
 src/client/init.client.luau(388,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
-src/client/init.client.luau(565,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
-src/client/init.client.luau(880,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
+src/client/init.client.luau(559,56): TypeError: Cannot cast 'nil' into 'vector' because the types are unrelated
+src/client/init.client.luau(874,7): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
 src/client/menu.luau(530,15): TypeError: Cannot cast 'nil' into 'TextLabel' because the types are unrelated
 src/client/prefs.luau(155,21): TypeError: Expected this to be 'string', but got 'string?'
-src/client/qwclient.luau(1028,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'
-src/client/qwclient.luau(1036,15): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
-src/client/qwclient.luau(1037,19): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
-src/client/qwclient.luau(1039,10): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/qwclient.luau(1022,9): TypeError: Expected this to be 'RenderEnt', but got 'nil'
+src/client/qwclient.luau(1030,15): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
+src/client/qwclient.luau(1031,19): TypeError: Cannot cast 'nil' into 'RenderEnt' because the types are unrelated
+src/client/qwclient.luau(1033,10): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
 src/client/qwclient.luau(108,15): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(108,23): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(108,32): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(108,5): TypeError: Expected type table, got 'nil' instead
-src/client/qwclient.luau(1137,11): LocalShadow: Variable 'key' shadows previous declaration at line 1069
-src/client/qwclient.luau(1412,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
-src/client/qwclient.luau(1501,27): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(1131,11): LocalShadow: Variable 'key' shadows previous declaration at line 1063
+src/client/qwclient.luau(1406,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
+src/client/qwclient.luau(1495,27): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(18,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
 src/client/qwclient.luau(486,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
 src/client/qwclient.luau(489,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
-src/client/qwclient.luau(611,46): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
-src/client/qwclient.luau(824,13): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
+src/client/qwclient.luau(605,46): TypeError: Types EditableImage and nil cannot be compared with ~= because they do not have the same metatable
+src/client/qwclient.luau(818,13): TypeError: Expected this to be 'RenderEnt', but got 'RenderEnt?'
 src/client/render/avatarlayer.luau(165,19): TypeError: Expected this to be 'string', but got 'string?'
 src/client/render/avatarlayer.luau(205,18): TypeError: Cannot call a value of type {RBXScriptConnection} in union:
 src/client/render/avatarlayer.luau(349,17): TypeError: Expected this to be 'AvatarEnt', but got 'AvatarEnt?'
