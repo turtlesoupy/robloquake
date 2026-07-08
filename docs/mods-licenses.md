@@ -49,6 +49,54 @@ it may be.
   cover the third-party map art in the client paks, re-verify (b) before
   shipping the ctf2m* series.
 
+## Team Fortress 2.8/2.9 (QWTF) (`external_assets/fortress/`)
+
+- **Authors:** TeamFortress Software — Robin Walker, John Cook, Ian
+  Caughley, 1996–1998. TF Software was acquired by Valve in 1998; the
+  Team Fortress IP (including this QuakeC mod) is Valve's today.
+- **Source URLs (downloaded 2026-07-08, archive.org item
+  `quaketf-archive` "Quake Team Fortress Archive"; sha1s match the item's
+  own metadata, sha256 in staged `SOURCES-sha256.txt`):**
+  - `https://archive.org/download/quaketf-archive/2-8/tf28.zip` — TF 2.8
+    full zip: `FORTRESS/` gamedir with `PAK0.PAK` (models, sounds, skins,
+    gfx, introseq map), compiled `progs.dat` (NetQuake) + `qwprogs.dat`
+    (QuakeWorld), server configs, map-cycle configs, docs. sha1
+    `06fead6261a38cdbec4ef16d509b3e05e8bfdd69`.
+  - `https://archive.org/download/quaketf-archive/2-9/tf29qw.zip` — TF 2.9
+    QW server upgrade (the final official release): `qwprogs.dat`
+    (+ `ALTPROGS/qwprogs.dat` LAN variant, not staged), updated docs
+    (`tfentref.txt`, `qwserver.txt`). sha1
+    `28c46bf2010c8aec8197ee04ee05ee22b96ee08b`.
+  - `https://archive.org/download/quaketf-archive/Maps/2fort5.zip` —
+    2fort5.bsp by John 'Jojie' Cook & Devin 'Network' Jenson (Nov 1997),
+    the canonical TF map ("designed specifically for the TeamFortress
+    quakec patch"; readme has no added restrictions). sha1
+    `7de30057e0c93c1443558fc9a00260b5265587ab`.
+  - QC source for impulse/ABI reference only (never compiled or staged):
+    `https://archive.org/download/tf_29src/tf_29src.zip`.
+- **License (verbatim, `README.TXT` §"Copyright and Distribution", same
+  text in 2.8 and 2.9):**
+  > Authors may use this code for the basis of other freeware quakec
+  > code, but not for any for-profit code, such as modification of this
+  > patch for the purpose of running it on a commercial Quake Server,
+  > without an agreement of some kind with TeamFortress Software.
+  >
+  > You may distribute this patch in any electronic format as long as this
+  > textfile remains unmodified and all of the files in the archive are
+  > present, and as long as no charge is made for it.
+  > You may _not_ include this patch on any Quake compilation CD.
+  >
+  > Non-Commercial Quake Servers are free to run this patch.
+- **Reading:** non-commercial servers are expressly free to run the
+  unmodified patch; any commercial context needs an agreement with
+  TeamFortress Software — i.e. with Valve now, which realistically means
+  never. A Robux-monetized place is a commercial context.
+- **Ship gate: LOCAL/DEV ONLY — permanent.** This staging exists for a
+  demo video/tweet and mod-pipeline validation
+  (tests/test_scenario_tf.luau), never for a published place. Valve owns
+  the IP and actively uses the Team Fortress name; do not ship, do not
+  upload the sounds, do not include in any assets bundle that leaves dev.
+
 ## Rocket Arena "Final Arena" 1.20 (`external_assets/rocketarena/`)
 
 - **Author:** David "crt" Wright (wrightd@stanford.edu — address long dead;

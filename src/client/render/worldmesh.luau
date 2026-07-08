@@ -327,6 +327,15 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 				end
 			end
 
+			-- a batch of exclusively degenerate faces (<3 verts) adds zero
+			-- triangles: CreateMeshPartAsync errors on faceless meshes (and
+			-- the Studio debugger breaks on it even inside pcall) — skip
+			if #em:GetFaces() == 0 then
+				em:Destroy()
+				warn(`[fragparty] skipping empty mesh batch for {partName}`)
+				return
+			end
+
 			-- fixed-size copy releases the 60k-vertex reservation; if the
 			-- budget can't fit the copy, keep rendering from the dynamic
 			-- mesh rather than dropping the batch (a hole in the world)
@@ -340,6 +349,15 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 			else
 				warn(`[fragparty] fixed mesh copy failed for {partName} (rendering dynamic): {fixedOrErr}`)
 				fixed = em
+			end
+
+			-- the copy CULLS degenerate (zero-area) triangles: a batch of
+			-- exclusively collinear faces passes the em guard above yet
+			-- copies to an empty mesh, which CreateMeshPartAsync rejects
+			if #fixed:GetFaces() == 0 then
+				fixed:Destroy()
+				warn(`[fragparty] skipping degenerate mesh batch for {partName}`)
+				return
 			end
 
 			local ok2, partOrErr = pcall(function()

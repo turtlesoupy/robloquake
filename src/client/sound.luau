@@ -20,6 +20,8 @@ local SoundService = game:GetService("SoundService")
 local engine = ReplicatedStorage:WaitForChild("Shared").engine
 local qcoords = require(engine.client.qcoords)
 
+local mildmode = require(script.Parent.render.mildmode)
+
 local sound = {}
 
 type Region = { s: number, l: number, ls: number? }
@@ -158,6 +160,9 @@ function sound.start(sys: System, entnum: number, channel: number, sample: strin
 	if not sys.enabled then
 		return
 	end
+	-- mild mode swaps gib squelches for a comedic pop (one choke point
+	-- here covers both boots and every wire/progs play path)
+	sample = mildmode.softSound(sample)
 	local r = regionFor(sys, sample)
 	if not r then
 		return

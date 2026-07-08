@@ -161,6 +161,9 @@ function qwsv.newGame(fsys: vfslib.Vfs, qwprogsBuf: buffer?): any
 	svr.serverflags = 0
 	svr.spawncount = 0
 	svr.serverinfo = { ["*version"] = "2.40", maxclients = tostring(MAX_CLIENTS), deathmatch = "1" }
+	-- COM_Gamedir stamps the active gamedir into serverinfo; mods verify it
+	-- (Team Fortress objerrors at worldspawn unless it reads "fortress")
+	svr.serverinfo["*gamedir"] = vfslib.gamedir(fsys)
 	-- SV_Localinfo_f's store: operator key/values QC reads via
 	-- infokey(world, ...) when serverinfo has no entry (map rotations etc)
 	svr.localinfo = {}
@@ -1580,10 +1583,13 @@ function qwsv.executeClientMessage(svr: any, client: Client, packet: buffer)
 	if not r then
 		return -- stale packet
 	end
-	-- ping bookkeeping: this packet acks one of our frames
+	-- ping bookkeeping: this packet acks one of our frames. Wall clock
+	-- (os.clock = C's realtime), NOT svr.time: the game clock steps in
+	-- whole frametimes, so a sub-tick round trip would read 0 and drop
+	-- out of calcPing's > 0 filter — the "everyone pings 999" bug.
 	local acked = client.frames[bit32.band(chan.incoming_acknowledged, qwp.UPDATE_MASK)]
 	if acked and acked.ping_time == -1 then
-		acked.ping_time = svr.time - acked.senttime
+		acked.ping_time = os.clock() - acked.senttime
 	end
 	local netDrop = math.max(chan.drop_count, 0)
 	local moveIssued = false
@@ -2141,8 +2147,9 @@ function qwsv.writeEntitiesToClient(svr: any, client: Client, out: msg.SizeBuf)
 	local vm = svr.vm
 	local ent = svr.qdefs.ent
 
-	-- this is the frame we are creating
-	local frame: ClientFrame = { entities = {}, senttime = svr.time, ping_time = -1 }
+	-- this is the frame we are creating (senttime is wall clock — see the
+	-- ping bookkeeping in executeClientMessage)
+	local frame: ClientFrame = { entities = {}, senttime = os.clock(), ping_time = -1 }
 	client.frames[bit32.band(client.netchan.incoming_sequence, qwp.UPDATE_MASK)] = frame
 
 	local clent = client.edict

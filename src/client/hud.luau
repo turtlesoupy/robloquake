@@ -13,19 +13,32 @@ local qwview = require(engine.qw.qwview)
 
 local textures = require(script.Parent.render.textures)
 local confontlib = require(script.Parent.render.confont)
+local avatarfacelib = require(script.Parent.render.avatarface)
 
 local hud = {}
 
 local SCALE = 2 -- 320-wide virtual canvas scaled up
 
+-- Mobile shrink: the full 640x96 sbar+ibar eats a quarter of a phone's
+-- ~390 logical-px height (and pushes the viewmodel up over the
+-- crosshair). One factor scales the strip height, the canvas UIScale,
+-- AND sbarLinesPx — so the 3D vrect/viewmodel reserve exactly the
+-- shrunk band. 1 on desktop-sized viewports; updated by fitHud below.
+local mobileFactor = 1
+local function computeMobileFactor(vpH: number): number
+	return math.clamp(vpH / 640, 0.55, 1)
+end
+
 -- screen.c sb_lines: >=120 no bar, >=110 status row only, else full HUD
+-- (scaled by the mobile factor; the boots re-run their vrect fov on
+-- viewport changes, so this stays in sync with the drawn strip)
 function hud.sbarLinesPx(viewsize: number): number
 	if viewsize >= 120 then
 		return 0
 	elseif viewsize >= 110 then
-		return 24 * SCALE
+		return math.floor(24 * SCALE * mobileFactor)
 	end
-	return 48 * SCALE
+	return math.floor(48 * SCALE * mobileFactor)
 end
 hud.SBAR_LINES_PX = hud.sbarLinesPx(100) -- default viewsize
 
@@ -60,6 +73,10 @@ export type Hud = {
 	armorIcon: ImageLabel,
 	ammoIcon: ImageLabel,
 	face: ImageLabel,
+	-- avatar HUD face (product layer): replaces the health-band face
+	-- bitmaps with the local player's avatar head; nil until first enabled
+	avatarFace: avatarfacelib.Face?,
+	avatarFaceOn: boolean,
 	weaponIcons: { ImageLabel },
 	itemIcons: { ImageLabel },
 	sigilIcons: { ImageLabel },
@@ -266,6 +283,7 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	h.charPics = {}
 	h.page = textures.newImagePage(512)
 	h.pal = pal
+	h.avatarFaceOn = false
 	h.centerTime = 0
 	h.centerStart = 0
 	h.centerRows = {}
@@ -492,6 +510,24 @@ function hud.create(fs: vfslib.Vfs, pal: textures.Palette, parent: Instance): Hu
 	end
 	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitIntermission)
 	fitIntermission()
+
+	-- mobile shrink (see computeMobileFactor): scale the sbar canvas and
+	-- re-derive the strip height so phones keep most of their screen
+	local canvasScale = Instance.new("UIScale")
+	canvasScale.Parent = canvas
+	local function fitHud()
+		local vs = gui.AbsoluteSize
+		if vs.X <= 0 or vs.Y <= 0 then
+			return
+		end
+		mobileFactor = computeMobileFactor(vs.Y)
+		canvasScale.Scale = mobileFactor
+		-- re-derive the strip height at the new factor (viewsize is
+		-- assigned a few lines below this block on the very first call)
+		hud.setViewsize(h, h.viewsize or 100)
+	end
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitHud)
+	fitHud()
 	h.interFrame = interFrame
 	h.interSig = ""
 	h.showScores = false
@@ -843,6 +879,23 @@ function hud.setFps(h: Hud, fps: number?)
 	local font = h.font
 	if fps and font then
 		confontlib.setRow(font, (h :: any).fpsRow, ("%3d FPS"):format(fps))
+	end
+end
+
+-- Avatar HUD face toggle (product layer, live-flippable): the boots wire
+-- this to the avatar_face attribute (absent = follow roblox_avatars).
+-- The widget builds lazily on first enable; hud.update routes the
+-- health-band face through it while on and the rig has loaded, falling
+-- back to the gfx.wad bitmaps otherwise.
+function hud.setAvatarFace(h: Hud, on: boolean)
+	h.avatarFaceOn = on
+	if on and not h.avatarFace then
+		-- same slot as h.face (Sbar_DrawFace: x=112, sbar row y=24)
+		h.avatarFace = avatarfacelib.create(h.canvas, 112 * SCALE, 24 * SCALE, 24 * SCALE)
+	end
+	local af = h.avatarFace
+	if af and not on then
+		avatarfacelib.setVisible(af, false)
 	end
 end
 
@@ -1225,7 +1278,11 @@ function hud.update(h: Hud, c: cllib.Client)
 		end
 	end
 
-	-- face (Sbar_DrawFace)
+	-- face (Sbar_DrawFace); avatar face mode swaps the health-band faces
+	-- for the avatar head widget (powerup faces keep their bitmaps, and
+	-- the solo scoreboard replaces the whole row below)
+	local avatarFace = if h.avatarFaceOn and not soloActive then h.avatarFace else nil
+	local avatarFaceShown = false
 	if bit32.band(items, IT_INVISIBILITY + IT_INVULNERABILITY) == IT_INVISIBILITY + IT_INVULNERABILITY then
 		setPic(h, h.face, "face_inv2", w)
 	elseif bit32.band(items, IT_QUAD) ~= 0 then
@@ -1234,6 +1291,11 @@ function hud.update(h: Hud, c: cllib.Client)
 		setPic(h, h.face, "face_invis", w)
 	elseif bit32.band(items, IT_INVULNERABILITY) ~= 0 then
 		setPic(h, h.face, "face_invul2", w)
+	elseif avatarFace and avatarfacelib.ready(avatarFace) then
+		hidePic(h, h.face)
+		avatarfacelib.update(avatarFace, health, c.faceanimtime, c.time)
+		avatarfacelib.setVisible(avatarFace, true)
+		avatarFaceShown = true
 	else
 		-- sb_faces[f][anim]: face5 is lowest health, face1 highest; the
 		-- pain variant shows while cl.faceanimtime is in the future
@@ -1241,6 +1303,9 @@ function hud.update(h: Hud, c: cllib.Client)
 		local pain = c.faceanimtime > c.time
 		local name = if pain then ("face_p" .. (5 - f)) else ("face" .. (5 - f))
 		setPic(h, h.face, name, w)
+	end
+	if h.avatarFace and not avatarFaceShown then
+		avatarfacelib.setVisible(h.avatarFace, false)
 	end
 
 	-- health

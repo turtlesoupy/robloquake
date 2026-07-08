@@ -2,13 +2,15 @@
 -- Match director UI (PRODUCT layer, NOT engine): the map vote panel
 -- (intermission), the callvote wire protocol + yes/no banner (proposals
 -- are made from the pause menu's CALL A VOTE page, see handle.cv and
--- pausemenu.luau), and the admin match-control menu. Deliberately built with
--- plain Roblox UI (ScreenGui) so the Quake renderer/HUD/console are
--- untouched and this file can be deleted at any time (see the REMOVAL
--- note in src/server/director.luau). Touch-first sizing: every control
--- is a 44px+ target and the panels scale down to phone widths.
+-- pausemenu.luau), and the admin match-control menu. The admin menu and
+-- banner stay plain Roblox UI (deletable at any time — see the REMOVAL
+-- note in src/server/director.luau); the player-facing vote panel draws
+-- with menukit (the pause menu's wood nine-slice + conchars look).
+-- Touch-first sizing: every control is a 44px+ target.
 
 local UserInputService = game:GetService("UserInputService")
+
+local menukit = require(script.Parent.menukit)
 
 local directorui = {}
 
@@ -51,6 +53,10 @@ export type Opts = {
 	-- fired when the admin menu opens/closes, and while the vote panel
 	-- awaits the local player's pick, so the boot can free the mouse
 	onUiToggle: ((open: boolean) -> ())?,
+	-- Quake VFS + palette for menukit (the vote panel's pause-menu look);
+	-- typed loose so this file keeps zero engine imports
+	fs: any,
+	pal: any,
 }
 
 -- live match state for the pause menu's CALL A VOTE page
@@ -104,108 +110,148 @@ function directorui.attach(opts: Opts): Handle
 		local state: any = { isAdmin = false, rules = {}, maplist = "", map = "" }
 
 		------------------------------------------------------------------
-		-- vote panel (bottom center). It frees the cursor like a menu
-		-- until the local player votes; the boot's single ui-open flag is
-		-- shared with the admin menu, hence the forward-declared push.
+		-- vote panel (bottom center), drawn in the pause menu's style:
+		-- one wood box with a < LEVEL > stepper over ALL rotation maps —
+		-- the same selector idiom as the LEVEL (call-a-vote) page. It
+		-- frees the cursor like a menu until the local player votes; the
+		-- boot's single ui-open flag is shared with the admin menu, hence
+		-- the forward-declared push.
+		local kit = menukit.load(opts.fs, opts.pal)
 		local voteCursorHeld = false
 		local pushUiState = function() end -- real one defined with the menu
+		local VP_W, VP_H = 560, 170 -- design px; fits the narrowest viewport
 		local votePanel = Instance.new("Frame")
+		votePanel.Name = "votePanel"
 		votePanel.AnchorPoint = Vector2.new(0.5, 1)
 		votePanel.Position = UDim2.new(0.5, 0, 1, -18)
-		votePanel.Size = UDim2.new(0.6, 0, 0, 128)
-		votePanel.BackgroundColor3 = BG
-		votePanel.BackgroundTransparency = 0.12
+		votePanel.Size = UDim2.fromOffset(VP_W, VP_H)
+		votePanel.BackgroundTransparency = 1
 		votePanel.Visible = false
 		votePanel.Parent = gui
-		corner(votePanel, 10)
-		stroke(votePanel, Color3.new(1, 1, 1), 0.85)
-		local voteSize = Instance.new("UISizeConstraint")
-		voteSize.MinSize = Vector2.new(330, 128)
-		voteSize.MaxSize = Vector2.new(640, 128)
-		voteSize.Parent = votePanel
 
-		local voteTitle = label(votePanel, "VOTE NEXT MAP", 13, DIM, true)
-		voteTitle.Position = UDim2.new(0, 14, 0, 8)
-		voteTitle.Size = UDim2.new(0.6, 0, 0, 16)
-		voteTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-		local voteClock = label(votePanel, "", 13, DIM, false)
-		voteClock.AnchorPoint = Vector2.new(1, 0)
-		voteClock.Position = UDim2.new(1, -14, 0, 8)
-		voteClock.Size = UDim2.new(0.3, 0, 0, 16)
-		voteClock.TextXAlignment = Enum.TextXAlignment.Right
-
-		local cardRow = Instance.new("Frame")
-		cardRow.BackgroundTransparency = 1
-		cardRow.Position = UDim2.new(0, 10, 0, 28)
-		cardRow.Size = UDim2.new(1, -20, 0, 66)
-		cardRow.Parent = votePanel
-		local rowLayout = Instance.new("UIListLayout")
-		rowLayout.FillDirection = Enum.FillDirection.Horizontal
-		rowLayout.Padding = UDim.new(0, 8)
-		rowLayout.Parent = cardRow
-
-		local voteHint = label(votePanel, "press 1-3 to vote  ·  fire to continue", 12, DIM, false)
-		voteHint.AnchorPoint = Vector2.new(0.5, 1)
-		voteHint.Position = UDim2.new(0.5, 0, 1, -6)
-		voteHint.Size = UDim2.new(1, -20, 0, 14)
-
-		local voteCards: { { btn: TextButton, count: TextLabel, strokeObj: UIStroke } } = {}
 		local voteMaps: { string } = {}
+		local voteTally: { number } = {}
+		local voteSel = 1 -- stepper position (1 = rotation-next)
 		local myVote: number? = nil
 		local voteEndsAt = 0
+		local voteClockHolder: Frame? = nil
 
-		local function sendVote(i: number)
-			if votePanel.Visible and voteMaps[i] then
-				myVote = i
-				for k, card in voteCards do
-					card.strokeObj.Color = if k == i then ACCENT else Color3.new(1, 1, 1)
-					card.strokeObj.Transparency = if k == i then 0.1 else 0.8
-				end
-				re:FireServer({ t = "vote", i = i })
+		local sendVote: () -> () -- forward: the VOTE row uses it
+		-- the whole panel rebuilds on any change (selection/counts/pick):
+		-- a handful of instances, and it keeps every state in one place
+		local function renderPanel()
+			votePanel:ClearAllChildren()
+			local n = #voteMaps
+			if n == 0 then
+				return
+			end
+			voteSel = math.clamp(voteSel, 1, n)
+			menukit.nineSlice(kit, votePanel, VP_W, VP_H, true)
+			menukit.text(kit, votePanel, 18, 13, "VOTE NEXT LEVEL", 2, menukit.COOL)
+			local clockH = Instance.new("Frame") -- refilled each clock tick
+			clockH.BackgroundTransparency = 1
+			clockH.Position = UDim2.fromOffset(VP_W - 148, 17)
+			clockH.Size = UDim2.fromOffset(130, 16)
+			clockH.Parent = votePanel
+			voteClockHolder = clockH
+
+			-- panel-local invisible click target over a rect
+			local function hot(x: number, y: number, w: number, h: number, fn: () -> ())
+				local b = Instance.new("TextButton")
+				b.BackgroundTransparency = 1
+				b.Text = ""
+				b.AutoButtonColor = false
+				b.Position = UDim2.fromOffset(x, y)
+				b.Size = UDim2.fromOffset(w, h)
+				b.ZIndex = 6
+				b.Parent = votePanel
+				b.Activated:Connect(fn)
+			end
+
+			-- < LEVEL NAME > stepper (buildCallVote's widget, panel-sized)
+			local bs = 16 -- glyph size at scale 2
+			local ry = 52
+			local arrowLX, arrowRX = 36, VP_W - 36 - bs
+			menukit.text(kit, votePanel, arrowLX, ry, "<", 2, menukit.COOL)
+			menukit.text(kit, votePanel, arrowRX, ry, ">", 2, menukit.COOL)
+			local name = voteMaps[voteSel]
+			local shown = (state.maptitles and state.maptitles[name] or name):upper()
+			local span = arrowRX - arrowLX - bs - 16
+			local maxChars = span // bs
+			if #shown > maxChars then
+				shown = shown:sub(1, maxChars)
+			end
+			local picked = myVote == voteSel
+			menukit.text(kit, votePanel, arrowLX + bs + 8, ry, shown, 2, if picked then menukit.ORANGE else menukit.COOL, span, 0.5)
+			-- sub-line: rotation-default marker + this map's votes so far
+			local sub = {}
+			if voteSel == 1 then
+				table.insert(sub, "NEXT UP")
+			end
+			local ct = voteTally[voteSel] or 0
+			if ct > 0 then
+				table.insert(sub, `{ct} {if ct == 1 then "VOTE" else "VOTES"}`)
+			end
+			if #sub > 0 then
+				menukit.text(kit, votePanel, 0, ry + 22, table.concat(sub, " - "), 1, menukit.GREY, VP_W, 0.5)
+			end
+			-- generous arrow hit boxes (touch targets)
+			hot(arrowLX - 22, ry - 18, bs + 44, 52, function()
+				voteSel = (voteSel - 2) % n + 1
+				renderPanel()
+			end)
+			hot(arrowRX - 22, ry - 18, bs + 44, 52, function()
+				voteSel = voteSel % n + 1
+				renderPanel()
+			end)
+
+			-- the single VOTE action (RESET TO DEFAULTS treatment)
+			local vy = VP_H - 52
+			local vlabel = if picked then "VOTED" else "VOTE"
+			menukit.text(kit, votePanel, 0, vy, vlabel, 2, menukit.ORANGE, VP_W, 0.5)
+			if not picked then
+				hot((VP_W - #vlabel * bs) // 2 - 12, vy - 12, #vlabel * bs + 24, 40, function()
+					sendVote()
+				end)
+			end
+			menukit.text(kit, votePanel, 0, VP_H - 24, "FIRE TO CONTINUE", 1, menukit.GREY, VP_W, 0.5)
+		end
+
+		sendVote = function()
+			if votePanel.Visible and voteMaps[voteSel] then
+				myVote = voteSel
+				renderPanel()
+				re:FireServer({ t = "vote", i = voteSel })
 				voteCursorHeld = false -- voted: hand mouse/movement back
 				pushUiState()
 			end
 		end
 
+		local function stepVote(dir: number)
+			if votePanel.Visible and #voteMaps > 0 then
+				voteSel = (voteSel - 1 + dir) % #voteMaps + 1
+				renderPanel()
+			end
+		end
+
 		local function beginVote(maps: { string }, secondsLeft: number)
 			voteMaps = maps
+			voteTally = {}
+			voteSel = 1
 			myVote = nil
 			voteEndsAt = os.clock() + secondsLeft
-			for _, card in voteCards do
-				card.btn:Destroy()
-			end
-			table.clear(voteCards)
-			for i, name in maps do
-				local btn = Instance.new("TextButton")
-				btn.Size = UDim2.new(1 / #maps, -6, 1, 0)
-				btn.BackgroundColor3 = CARD
-				btn.Text = ""
-				btn.AutoButtonColor = true
-				btn.Parent = cardRow
-				corner(btn, 8)
-				local st = stroke(btn, Color3.new(1, 1, 1), 0.8)
-				local key = label(btn, `[{i}]`, 12, DIM, false)
-				key.Position = UDim2.new(0, 8, 0, 6)
-				key.Size = UDim2.new(0, 30, 0, 14)
-				key.TextXAlignment = Enum.TextXAlignment.Left
-				local nm = label(btn, name:upper(), 20, TEXT, true)
-				nm.Position = UDim2.new(0, 0, 0, 18)
-				nm.Size = UDim2.new(1, 0, 0, 24)
-				local ct = label(btn, "0 votes", 12, DIM, false)
-				ct.Position = UDim2.new(0, 0, 1, -20)
-				ct.Size = UDim2.new(1, 0, 0, 14)
-				btn.Activated:Connect(function()
-					sendVote(i)
-				end)
-				voteCards[i] = { btn = btn, count = ct, strokeObj = st }
-			end
+			renderPanel()
 			votePanel.Visible = true
 			voteCursorHeld = true
 			pushUiState()
 			task.spawn(function()
 				while votePanel.Visible and os.clock() < voteEndsAt do
-					voteClock.Text = `auto {math.max(0, math.ceil(voteEndsAt - os.clock()))}s`
+					local ch = voteClockHolder
+					if ch and ch.Parent then
+						ch:ClearAllChildren()
+						local left = math.max(0, math.ceil(voteEndsAt - os.clock()))
+						menukit.text(kit, ch, 0, 0, `AUTO {left}S`, 1, menukit.GREY, 130, 1)
+					end
 					task.wait(0.25)
 				end
 			end)
@@ -673,9 +719,12 @@ function directorui.attach(opts: Opts): Handle
 			elseif msg.t == "voteBegin" then
 				beginVote(msg.maps or {}, tonumber(msg.secondsLeft) or 30)
 			elseif msg.t == "voteCounts" then
-				for i, card in voteCards do
-					local n = (msg.counts or {})[i] or 0
-					card.count.Text = `{n} vote{if n == 1 then "" else "s"}`
+				voteTally = {}
+				for i = 1, #voteMaps do
+					voteTally[i] = tonumber((msg.counts or {})[i]) or 0
+				end
+				if votePanel.Visible then
+					renderPanel()
 				end
 			elseif msg.t == "voteEnd" then
 				votePanel.Visible = false
@@ -716,12 +765,12 @@ function directorui.attach(opts: Opts): Handle
 				return
 			end
 			if votePanel.Visible then
-				if input.KeyCode == Enum.KeyCode.One then
-					sendVote(1)
-				elseif input.KeyCode == Enum.KeyCode.Two then
-					sendVote(2)
-				elseif input.KeyCode == Enum.KeyCode.Three then
-					sendVote(3)
+				if input.KeyCode == Enum.KeyCode.Left then
+					stepVote(-1)
+				elseif input.KeyCode == Enum.KeyCode.Right then
+					stepVote(1)
+				elseif input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
+					sendVote()
 				end
 			end
 			if input.KeyCode == Enum.KeyCode.P and state.isAdmin then

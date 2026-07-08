@@ -42,7 +42,6 @@ local PAD_PITCH_FRACTION = 0.62 -- pitch speed relative to yaw
 local PAD_DEADZONE = 0.24
 local STICK_RADIUS = 55 -- px of knob travel on the touch stick
 local STICK_DEADZONE = 0.12
-local PRESS_DRAG_CANCEL = 24 -- px of travel that turns a button press into a drag
 
 -- hand-drawn button/joystick art (source PNGs: art/buttons/; re-upload
 -- via Studio MCP upload_image and paste the new ids here if these ever
@@ -235,18 +234,17 @@ function controls.attach(deps: Deps)
 		namedButtons[name] = hooks
 
 		-- touch presses must be DISTINCT: a look-drag sliding over the button
-		-- also delivers InputBegan (state Change, not Begin) and is ignored;
-		-- a press that then travels PRESS_DRAG_CANCEL px releases early
-		-- instead of staying held under a drifting thumb
+		-- also delivers InputBegan (state Change, not Begin) and is ignored.
+		-- Once pressed, the SAME finger drags the camera while the button
+		-- stays held (press fire, then aim while it repeats) — one-way only:
+		-- press->look works, look->press doesn't.
 		local pressing: InputObject? = nil
-		local pressStart = Vector2.zero
 		b.InputBegan:Connect(function(io: InputObject)
 			if io.UserInputType == Enum.UserInputType.Touch then
 				if io.UserInputState ~= Enum.UserInputState.Begin or pressing ~= nil then
 					return
 				end
 				pressing = io
-				pressStart = Vector2.new(io.Position.X, io.Position.Y)
 				hooks.down()
 			elseif io.UserInputType == Enum.UserInputType.MouseButton1 then
 				hooks.down()
@@ -257,17 +255,14 @@ function controls.attach(deps: Deps)
 				hooks.up()
 			end
 		end)
-		-- touch release rides UserInputService: GuiObject.InputEnded misses
-		-- touches that end after sliding OFF the button, sticking it down
 		UserInputService.InputChanged:Connect(function(io: InputObject)
 			if io == pressing then
-				local pos = Vector2.new(io.Position.X, io.Position.Y)
-				if (pos - pressStart).Magnitude > PRESS_DRAG_CANCEL then
-					pressing = nil
-					hooks.up()
-				end
+				local sens = attrNumber("RQ_TouchLookSens", TOUCH_LOOK_SENS)
+				input.applyLook(-io.Delta.X * sens, io.Delta.Y * sens)
 			end
 		end)
+		-- touch release rides UserInputService: GuiObject.InputEnded misses
+		-- touches that end after sliding OFF the button, sticking it down
 		UserInputService.InputEnded:Connect(function(io: InputObject)
 			if io == pressing then
 				pressing = nil
@@ -339,16 +334,15 @@ function controls.attach(deps: Deps)
 	local function releaseStick()
 		stickTouch = nil
 		stickBase.Position = stickRest
-		stickBase.Visible = true
 		knob.Position = UDim2.fromScale(0.5, 0.5)
 		input.setAnalogMove(0, 0)
 	end
 
 	-- any touch starting in the left half of the screen drives movement,
-	-- exactly like the resting stick would; the visual hides on touch
-	-- down (the thumb is over it anyway) and reappears on release. Any
-	-- other touch not consumed by a button (see `processed` above) is
-	-- camera look.
+	-- exactly like the resting stick would; the visual stays put under
+	-- the thumb (re-centered to the touch point) so the stick doesn't
+	-- vanish mid-drag. Any other touch not consumed by a button (see
+	-- `processed` above) is camera look.
 	UserInputService.InputBegan:Connect(function(io: InputObject, processed: boolean)
 		if io.UserInputType ~= Enum.UserInputType.Touch or processed or not gui.Enabled then
 			return
@@ -366,7 +360,7 @@ function controls.attach(deps: Deps)
 		if stickTouch == nil and pos.X < vp.X * 0.5 then
 			stickTouch = io
 			stickCenter = pos
-			stickBase.Visible = false
+			stickBase.Position = UDim2.fromOffset(pos.X, pos.Y)
 			setStickOffset(Vector2.zero)
 		else
 			lookTouches[io] = true
@@ -405,15 +399,18 @@ function controls.attach(deps: Deps)
 	-- responsive layout: fixed 140px buttons are enormous on small phones.
 	-- Scale with viewport height (~80% of the first pass after playtest
 	-- feedback), flush against the screen edges (no inset), clear of the
-	-- 96px HUD strip. FIRE takes the top slot, JUMP the bottom; the
-	-- stick's rest pose mirrors the bottom button.
+	-- HUD strip (whose height now shrinks on phones — read it live, don't
+	-- assume 96px). FIRE takes the top slot, JUMP the bottom; the stick's
+	-- rest pose mirrors the bottom button.
+	local hudStrip: Frame? = nil
 	local function layoutTouch()
 		local vs = gui.AbsoluteSize
 		if vs.X <= 0 or vs.Y <= 0 then
 			return
 		end
+		local stripH = if hudStrip then math.floor(hudStrip.AbsoluteSize.Y) else 96
 		local btn = math.clamp(math.floor(vs.Y * 0.21), 52, 112)
-		local bottom = 96 + 10 -- HUD strip + a thumb gap
+		local bottom = math.max(stripH, 24) + 10 -- HUD strip + a thumb gap
 		fireBtn.Size = UDim2.fromOffset(btn, btn)
 		jumpBtn.Size = UDim2.fromOffset(btn, btn)
 		jumpBtn.Position = UDim2.new(1, 0, 1, -bottom)
@@ -423,6 +420,15 @@ function controls.attach(deps: Deps)
 		stickRest = UDim2.new(0, stickSize // 2, 1, -(bottom + btn // 2))
 		if stickTouch == nil then
 			stickBase.Position = stickRest
+		end
+	end
+	do
+		-- both boots create the HUD before attaching controls
+		local hudGui = deps.playerGui:FindFirstChild("QuakeHud")
+		local s = if hudGui then hudGui:FindFirstChild("sbarStrip") else nil
+		if s and s:IsA("Frame") then
+			hudStrip = s
+			s:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTouch)
 		end
 	end
 	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTouch)

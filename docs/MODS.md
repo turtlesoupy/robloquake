@@ -10,7 +10,7 @@ boot — through the same searchpath, and the VM resolves the mod's ABI
 special-casing per mod, and **mod progs/QC are never edited**. If a mod
 trips an engine gap, fix the engine generically.
 
-Proven twice, with zero per-mod engine changes:
+Proven three times, with zero per-mod engine changes:
 - `tests/test_scenario_ctf.luau` — Threewave CTF 4.21's shipped
   `qwprogs.dat` (a foreign 217-field ABI) plays a full CTF loop: team
   assignment, flag grab/capture/return, grapple, runes. Also verified live
@@ -19,6 +19,13 @@ Proven twice, with zero per-mod engine changes:
   round/queue loop: challenger queue, 10..1 countdown, arena loadout,
   winner-stays cycling, and fraglimit map rotation through QW localinfo
   (the mod's own rotate.cfg mechanism).
+- `tests/test_scenario_tf.luau` — Team Fortress 2.9's shipped `qwprogs.dat`
+  plays the 2fort loop on 2fort5: observer mode, team join (impulse
+  140/141), class selection (impulse 100+class) with per-class speeds and
+  loadouts, enemy flag grab and capture at the dropoff. Note: TF verifies
+  serverinfo `*gamedir` == "fortress" at worldspawn, so its gamedir MUST be
+  named `fortress` (the engine stamps `*gamedir` from the searchpath, like
+  COM_Gamedir). LOCAL/DEV ONLY — see docs/mods-licenses.md.
 
 ## Add a mod in 6 steps
 

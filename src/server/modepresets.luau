@@ -27,6 +27,10 @@ modepresets.KEYS = {
 	"votetime",
 	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
+	-- sbar face = local player's avatar head (avatarrigs mirror, hud.luau).
+	-- absent = follows roblox_avatars; explicit boolean forces either way
+	-- (false = the original gfx.wad face bitmaps even in avatars mode)
+	"avatar_face",
 	-- content softening: white gibs/blood, corpses fade (render-only).
 	-- default ON when absent (clientbundle mirror); set false for the
 	-- original engine presentation
@@ -42,7 +46,7 @@ local DM_RULES = {
 	timelimit = 10,
 	-- everything the synced pak1 ships (dm1..dm6)
 	maplist = "dm1 dm2 dm3 dm4 dm5 dm6",
-	votetime = 30,
+	votetime = 15,
 	startmap = "dm3",
 }
 
@@ -95,7 +99,7 @@ modepresets.PRESETS = {
 		-- Capture II series ctf2m1..ctf2m8 (pak1); ctfstart is the mod's
 		-- hub map, not a match map
 		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
-		votetime = 30,
+		votetime = 15,
 	},
 	-- Rocket Arena (QW): manages its own rotation via localinfo (the mod's
 	-- rotate.cfg, applied at qwserver boot) — no maplist, so the director
@@ -110,6 +114,29 @@ modepresets.PRESETS = {
 		fraglimit = 15,
 		timelimit = 20,
 		startmap = "crandome",
+	},
+	-- Team Fortress 2.9 (QWTF) on QW — LOCAL/DEV ONLY, never publishable
+	-- (docs/mods-licenses.md: Valve IP, non-commercial license). Verified
+	-- offline by tests/test_scenario_tf.luau. Players spawn as observers:
+	-- join a team with impulse 140/141, pick a class with impulse 100+class
+	-- (101 scout .. 109 engineer) or the "changeclass" menu (impulse 99).
+	tf = {
+		engine = "qw",
+		game = "id1",
+		modekey = "tf",
+		gamedir = "fortress",
+		-- TF overloads teamplay as its own bitfield (qwserver.txt): 21 =
+		-- on + no direct-fire damage + no area damage between teammates
+		teamplay = 21,
+		-- deathmatch 3 = TF's "players may change class mid-game" setting
+		-- (also the mod's shipped server.cfg value)
+		deathmatch = 3,
+		fraglimit = 100,
+		timelimit = 30,
+		-- the one TF map staged (2fort5, the classic); add more under
+		-- external_assets/fortress/maps and rebuild to extend
+		maplist = "2fort5",
+		startmap = "2fort5",
 	},
 	instagib = {
 		engine = "nq",
@@ -142,7 +169,7 @@ modepresets.PRESETS = {
 		timelimit = 20,
 		startmap = "ctf1",
 		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
-		votetime = 30,
+		votetime = 15,
 	},
 	-- LibreQuake (copyright-free content, game=lq1): the NQ DM setup on
 	-- the lqdm* maps; weapon model names match id1 (v_shot.mdl etc.)

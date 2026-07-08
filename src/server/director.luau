@@ -222,7 +222,7 @@ local LIVE_RULES = {
 	"samelevel",
 	"noexit",
 }
-local DEFAULT_VOTETIME = 30
+local DEFAULT_VOTETIME = 15 -- rotation-next wins anyway; don't stall the lobby
 -- callvote pacing (product tuning, not Quake constants)
 local CV_PLAYER_COOLDOWN = 60 -- seconds between proposals per player
 local CV_GLOBAL_COOLDOWN = 15 -- seconds after any vote before the next
@@ -440,6 +440,15 @@ function director.attach(a: Adapter)
 			if voteOpen and i and i >= 1 and i <= #voteMaps then
 				votes[player] = i
 				broadcastCounts()
+				-- everyone has spoken: resolve on the next tick instead of
+				-- sitting out the clock
+				local n = 0
+				for _ in votes do
+					n += 1
+				end
+				if n >= #Players:GetPlayers() then
+					voteDeadline = 0
+				end
 			end
 		elseif msg.t == "set" then
 			if not a.isHost(player) then
@@ -562,7 +571,10 @@ function director.attach(a: Adapter)
 			end
 			local list = maplist()
 			if #list > 0 then
-				voteMaps = director.candidates(list, a.getCurrentMap(), 3)
+				-- every rotation map is a candidate (the client shows a
+			-- selector); order still starts at the rotation successor,
+			-- so index 1 stays the no-votes default
+			voteMaps = director.candidates(list, a.getCurrentMap(), #list)
 				if #voteMaps > 0 then
 					table.clear(votes)
 					voteOpen = true

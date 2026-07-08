@@ -455,6 +455,24 @@ local function avatarsOn(): boolean
 	return clientAssets:GetAttribute("roblox_avatars") == true
 end
 
+-- Avatar HUD face (product layer, live-flippable): the sbar face becomes
+-- the local player's avatar head. avatar_face attribute: absent = follow
+-- roblox_avatars; explicit boolean forces either way.
+local function avatarFaceOn(): boolean
+	local af = clientAssets:GetAttribute("avatar_face")
+	if af == nil then
+		return avatarsOn()
+	end
+	return af == true
+end
+hudlib.setAvatarFace(hud, avatarFaceOn())
+clientAssets:GetAttributeChangedSignal("avatar_face"):Connect(function()
+	hudlib.setAvatarFace(hud, avatarFaceOn())
+end)
+clientAssets:GetAttributeChangedSignal("roblox_avatars"):Connect(function()
+	hudlib.setAvatarFace(hud, avatarFaceOn())
+end)
+
 -- R_AliasSetupLighting: lightmap sample under the entity plus dynamic
 -- light adds — shared by the alias branch and avatar rigs
 local function entityLight(origin: vector): number
@@ -781,6 +799,7 @@ end
 c.print = function(s: string)
 	-- wire prints arrive in pieces (QC sprints "You got the " and
 	-- "nails\n" separately): the Con_Print append path joins them
+	s = mildmode.softPrint(s) -- crude obituary fragments -> tamer jokes
 	hudlib.printCon(hud, s, c.time)
 	consolelib.printCon(con, s)
 	print("[q] " .. s:gsub("\n$", ""))
@@ -1643,6 +1662,9 @@ end
 local directorHandle = require(script.directorui).attach({
 	playerGui = playerGui,
 	net = net,
+	-- vote panel draws pause-menu style (menukit box/conchars)
+	fs = fs,
+	pal = pal,
 	isTyping = function()
 		return con.open
 	end,

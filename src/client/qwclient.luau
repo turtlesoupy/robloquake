@@ -532,6 +532,24 @@ return function()
 		return clientAssets:GetAttribute("roblox_avatars") == true
 	end
 
+	-- Avatar HUD face (product layer, live-flippable): the sbar face
+	-- becomes the local player's avatar head. avatar_face attribute:
+	-- absent = follow roblox_avatars; explicit boolean forces either way.
+	local function avatarFaceOn(): boolean
+		local af = clientAssets:GetAttribute("avatar_face")
+		if af == nil then
+			return avatarsOn()
+		end
+		return af == true
+	end
+	hudlib.setAvatarFace(hud, avatarFaceOn())
+	clientAssets:GetAttributeChangedSignal("avatar_face"):Connect(function()
+		hudlib.setAvatarFace(hud, avatarFaceOn())
+	end)
+	clientAssets:GetAttributeChangedSignal("roblox_avatars"):Connect(function()
+		hudlib.setAvatarFace(hud, avatarFaceOn())
+	end)
+
 	-- R_AliasSetupLighting: lightmap sample under the entity plus dynamic
 	-- light adds (rigs + hand weapons; QW alias ents keep their own path)
 	local function entityLight(origin: vector): number
@@ -1429,6 +1447,9 @@ return function()
 	local directorHandle = require(script.Parent.directorui).attach({
 		playerGui = player:WaitForChild("PlayerGui"),
 		net = net,
+		-- vote panel draws pause-menu style (menukit box/conchars)
+		fs = fs,
+		pal = pal,
 		isTyping = function()
 			return con.open or chatOpen
 		end,
@@ -2531,9 +2552,10 @@ return function()
 				end
 				-- wire prints arrive in pieces (QC sprints "You got the "
 				-- and "nails\n" separately): Con_Print append joins them
-				hudlib.printCon(hud, p.text, cl.time)
-				consolelib.printCon(con, p.text)
-				print("[qw] " .. p.text:gsub("\n$", ""))
+				local text = mildmode.softPrint(p.text) -- crude obituaries -> tamer jokes
+				hudlib.printCon(hud, text, cl.time)
+				consolelib.printCon(con, text)
+				print("[qw] " .. text:gsub("\n$", ""))
 			end
 		end
 

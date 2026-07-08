@@ -10,6 +10,8 @@
 --   * gib models (chunks + thrown heads) render untextured white
 --   * blood particles display white instead of the palette red ramp
 --   * player corpses (bodyque) fade out after CORPSE_HOLD seconds
+--   * gib squelch sounds swap for a comedic pop (softSound)
+--   * crude obituary lines swap for tamer jokes (softPrint)
 --
 -- Detection keys off names/indices hardcoded in the progs and engine
 -- (progs/gib*.mdl, progs/h_*.mdl, particle colors 73/67), not the asset
@@ -47,6 +49,52 @@ end
 -- spikes, so the QW client substitutes color 73 at that call site
 -- instead of whitening the band.)
 mildmode.BLOOD_INDICES = { 67, 68, 69, 70, 72, 73, 74, 75, 76, 77, 78, 79 }
+
+--------------------------------------------------------------------------
+-- soft sounds
+
+-- gib splats swap for a comedic pop; everything else (death screams,
+-- weapon fire) keeps the authentic sound. Applied inside sound.start,
+-- so both boots and every play path share the one table.
+local SOUND_SWAPS: { [string]: string } = {
+	["player/gib.wav"] = "items/itembk2.wav", -- splat -> item-respawn boing
+	["player/udeath.wav"] = "items/itembk2.wav", -- the gib-death squelch
+	["zombie/z_gib.wav"] = "items/itembk2.wav",
+}
+
+function mildmode.softSound(name: string): string
+	if not mildmode.enabled then
+		return name
+	end
+	return SOUND_SWAPS[name] or name
+end
+
+--------------------------------------------------------------------------
+-- soft prints
+
+-- Obituary fragments not right for a young audience swap for tamer jokes,
+-- keeping the player names around them — the UI-only counterpart of
+-- director.luau's TITLE_OVERRIDES for map titles (the strings live in the
+-- compiled progs, so the swap must happen at the client print hook).
+-- Entries are PIECES, not whole lines: the progs bprint obituaries in
+-- fragments ("X", " sucked on ", "Y", "'s muffler\n") that arrive as
+-- separate prints, so each fragment must swap on its own. Keep the list
+-- short — it runs over every svc_print.
+local PRINT_SWAPS: { { pat: string, rep: string } } = {
+	-- "X sucked on Y's muffler" -> "X sniffed Y's rocket fumes"
+	{ pat = " sucked on ", rep = " sniffed " },
+	{ pat = "'s muffler", rep = "'s rocket fumes" },
+}
+
+function mildmode.softPrint(text: string): string
+	if not mildmode.enabled then
+		return text
+	end
+	for _, s in PRINT_SWAPS do
+		text = text:gsub(s.pat, s.rep)
+	end
+	return text
+end
 
 --------------------------------------------------------------------------
 -- corpse fade

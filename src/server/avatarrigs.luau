@@ -21,6 +21,14 @@ return function(assets: Instance, clientFS: Instance): (Player) -> ()
 		clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) ~= false)
 	end)
 
+	-- avatar HUD face: mirrored TRI-STATE (absent = clients follow
+	-- roblox_avatars; explicit boolean forces the sbar face either way)
+	local faceAttr = "avatar_face"
+	clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr))
+	assets:GetAttributeChangedSignal(faceAttr):Connect(function()
+		clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr))
+	end)
+
 	local avatarFolder = Instance.new("Folder")
 	avatarFolder.Name = "QuakeAvatars"
 	avatarFolder.Parent = ReplicatedStorage

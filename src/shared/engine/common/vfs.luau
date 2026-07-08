@@ -37,6 +37,20 @@ function vfs.addFolderSource(fs: Vfs, folder: any)
 	table.insert(fs.searchpaths, 1, { folder = folder })
 end
 
+-- com_gamedirfile: the directory name of the newest (last-added) game
+-- directory on the searchpath — pack filenames carry it as their prefix
+-- ("fortress/pak0.pak" -> "fortress"). QW stamps this into serverinfo
+-- "*gamedir" so mods can verify what they're running under (e.g. Team
+-- Fortress refuses to boot unless it reads "fortress").
+function vfs.gamedir(fs: Vfs): string?
+	for _, sp in fs.searchpaths do
+		if sp.pack then
+			return string.match(sp.pack.filename, "^([^/]+)/")
+		end
+	end
+	return nil
+end
+
 -- COM_FindFile. Returns the containing pack and entry, or nil.
 function vfs.findFile(fs: Vfs, filename: string): (pak.Pack?, pak.PackEntry?)
 	for _, sp in fs.searchpaths do

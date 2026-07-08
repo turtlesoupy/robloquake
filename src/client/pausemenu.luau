@@ -1487,7 +1487,7 @@ function pausemenu.attach(opts: Opts): Handle
 				end)
 			end
 			-- owned: one EQUIP/EQUIPPED row. Unowned: the two payment rows
-			-- from the mock — FRAGCOIN price over the [robux glyph] price.
+			-- from the mock — "<value> FRAGCOINS" over the [robux glyph] price.
 			local rows: { StripRow } = if owned
 				then {
 					{
@@ -1496,7 +1496,7 @@ function pausemenu.attach(opts: Opts): Handle
 					},
 				}
 				else {
-					{ label = `FRAGCOIN {commas(rarity.coins)}`, onClick = buyCoins },
+					{ label = `{commas(rarity.coins)} FRAGCOINS`, onClick = buyCoins },
 					{ robux = rarity.robux, onClick = buyRobux },
 				}
 			-- weapon render fills the middle, above the price/equip strip
