@@ -1,114 +1,123 @@
 # RobloQuake
 
-A port of the Quake engine to Roblox — the real thing: original data formats,
-the QuakeC virtual machine, and WinQuake's exact collision and physics,
-running in Luau on Roblox's client/server model.
+Quake, running inside Roblox. Not a remake — the actual engine: original
+data formats, the QuakeC virtual machine, and WinQuake's exact collision
+and physics, ported to Luau on Roblox's client/server model. Levels are
+real `.bsp` files, game logic is the real `progs.dat`, and multiplayer
+rides Quake's own svc/clc protocol over RemoteEvents.
+
+<!-- HERO VIDEO: drop the mp4 URL on its own line here (GitHub renders it
+     as an embedded player). Should show something cool — e.g. a CTF match
+     with Roblox avatars. -->
 
 ## What works
 
-- **Full engine port**: PAK/BSP29/WAD2/MDL/SPR loaders, the complete QuakeC
-  bytecode interpreter (progs.dat), world.c hull collision (verified
-  bit-for-bit against compiled C), all movetypes, monster AI movement,
-  player movement (air control, friction, stairs), and the protocol-15
-  network layer over RemoteEvents.
-- **Verified live in Studio**: signon → world render → running at authentic
-  speed → shotgun at the exact 0.5s fire rate → grunts hunting the player
-  ("was shot by a Grunt") → death → QuakeC-driven level restart.
-- Server frames cost ~0.16ms (1% of a 60Hz tick) with a full e1m1.
+- **Both original engines.** NetQuake (campaign/coop) and QuakeWorld
+  (competitive) boot from the same codebase, selected per place. Both are
+  verified function-by-function against the original C sources — see
+  [Fidelity](#fidelity) below.
+- **Assets from Quake shareware, full Quake, or
+  [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).** The engine
+  doesn't care which; only LibreQuake content is publishable.
+- **Full mod support.** Unmodified third-party QuakeC mods run as gamedirs
+  stacked over the base game, exactly like `-game` in DOS Quake. Working
+  configurations ship for **Rocket Arena**, **Threewave CTF**, and **Team
+  Fortress** (each needs its original mod files), plus an in-house instagib
+  overlay. See [docs/MODS.md](docs/MODS.md).
+- **Performance.** Server frames cost ~0.16ms (1% of a 60Hz tick) with a
+  full e1m1.
 
-## Requirements
+## Getting started
 
-- **Enable "Allow Mesh & Image APIs"** (Game Settings → Security; the place
-  must be published once). Without it the client falls back to untextured
-  wedge-part rendering; with it you get textured EditableMesh world geometry
-  with lightmap vertex lighting and animated alias models.
+You need [Rokit](https://github.com/rojo-rbx/rokit), Python 3, and Roblox
+Studio.
 
-## Intent
+**1. Put game files in place** (everything under `external_assets/` is
+gitignored):
 
-The goal is a **full engine port**, not a Quake-themed remake. Levels are
-real `.bsp` files, game logic is the real `progs.dat` (so mods work),
-movement physics match WinQuake, and multiplayer rides Quake's own
-svc/clc protocol over Roblox remotes.
+| Content | Where it goes |
+|---|---|
+| Quake shareware / full | `external_assets/quake106/extracted/id1/pak0.pak` (+ `pak1.pak` from the full game) |
+| LibreQuake | `external_assets/librequake/full/id1/` |
+| Threewave CTF | `external_assets/threewave/` |
+| Rocket Arena | `external_assets/rocketarena/` |
+| Team Fortress 2.9 | `external_assets/fortress/` |
 
-## Assets
+Mod dirs hold the files exactly as the mod was distributed (paks and/or
+loose `qwprogs.dat`, `maps/`, `sound/`, ...). Before adding a new mod,
+read [docs/MODS.md](docs/MODS.md) — step one is recording its license in
+[docs/mods-licenses.md](docs/mods-licenses.md).
 
-Development happens against the **original Quake shareware assets**
-(`external_assets/quake106/`, gitignored) because they are the ground truth
-for correctness. Before anything is published to Roblox, id Software content
-must be replaced with [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).
-The end-to-end publish flow (build `lq1`, import it, strip id1, stamp the
-mode, publish) is in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
-
-`tools/build_assets.py` splits pak files into base64 chunks under `assets/`
-and `tools/build_soundbank.py` builds the concatenated audio bank. All of
-`assets/` is a **build artifact** (gitignored) — the repo ships the tools,
-not the data. At runtime the server holds the chunks in
-`ServerStorage.QuakeAssets` and streams a per-map bundle to clients.
-
-## Tooling
-
-- [Rojo](https://rojo.space/) — two project files:
-  - `default.project.json` syncs `src/` (the code) — this is your daily
-    `rojo serve`.
-  - `assets.project.json` maps `assets/` to `ServerStorage.QuakeAssets` —
-    assets are a one-shot import, not a live sync: run `tools/sync_assets.sh`
-    when the pak data changes and insert the built folder into the place.
-- [Rokit](https://github.com/rojo-rbx/rokit) manages the toolchain.
-- [Lune](https://lune-org.github.io/docs) runs the offline test suite.
+**2. Build and import the assets:**
 
 ```sh
 rokit install                              # toolchain
-
-# regenerate the (gitignored) asset bundle, build the import file, and
-# follow the printed steps to insert it into the place (one-shot; the
-# instances persist in the saved place afterwards)
 tools/sync_assets.sh id1                   # or: tools/sync_assets.sh lq1
 python3 tools/build_soundbank.py --game id1
+# mods: python3 tools/build_assets.py --game threewave --source external_assets/threewave
 
+lune run tools/mode assets ctf             # asset import project for a preset
+rojo serve assets-current.project.json     # connect in Studio, accept, disconnect
+```
+
+In Studio, enable **Allow Mesh & Image APIs** (Game Settings → Security;
+the place must be published once). Without it you get untextured
+wedge-part rendering instead of textured EditableMesh geometry.
+
+**3. Run it:**
+
+```sh
 rojo serve                                 # day-to-day: code only
 ```
 
-Attributes on `ServerStorage.QuakeAssets` select the engine and rules per
-place (they live in the place file, so re-set them after an asset import):
-`engine="qw"` boots QuakeWorld (competitive); anything else boots NetQuake
-(campaign/coop). `startmap`, `deathmatch`, `coop`, `skill`, `fraglimit`,
-`timelimit`, `teamplay`, `samelevel` feed the matching cvars.
+then hit Play in Studio.
 
-### Tests
-
-Every subsystem has offline tests that run against the real shareware data.
-The full pipeline — `luau-lsp analyze` strict-mode checking, then the test
-sweep — is one script:
+**4. Switch configurations.** A configuration ("mode") is just a set of
+attributes on `ServerStorage.QuakeAssets`, read at boot: engine, base
+game, gamedir, rules, map rotation. Named presets set all of them at
+once. In development, switch from the terminal:
 
 ```sh
-tools/check.sh            # analyze + all tests
-tools/check.sh --analyze  # static analysis only
+lune run tools/mode                        # show active preset + all presets
+lune run tools/mode off                    # stop overriding; place attributes rule
+
+lune run tools/mode campaign               # id1 singleplayer (needs quake106 assets)
+lune run tools/mode coop                   # id1 campaign, coop rules
+lune run tools/mode qw-dm                  # QuakeWorld deathmatch on dm1-dm6
+lune run tools/mode ctf                    # Threewave CTF (needs threewave assets)
+lune run tools/mode arena                  # Rocket Arena (needs rocketarena assets)
+lune run tools/mode tf                     # Team Fortress (needs fortress assets; dev only)
+lune run tools/mode lq-dm                  # LibreQuake deathmatch (needs librequake assets)
 ```
 
-Analysis is baselined per-diagnostic against `tools/analyze_baseline.txt`
-(file, line/col, kind, message — normalized and deduped): a diagnostic not
-already listed there fails the run, so pre-existing debt doesn't re-flag on
-every unrelated commit. Fixing a listed diagnostic shrinks the baseline
-automatically (commit the updated file). To grandfather in new debt
-intentionally, run `tools/check.sh --update-baseline`. The raw report lands
-in `build/analyze.txt`. To run just the tests by hand:
+Restart Play after switching. The full preset list is `campaign`, `coop`,
+`nq-dm`, `qw-dm`, `ctf`, `arena`, `tf`, `instagib`, `lq-dm`, and `lq-ctf`;
+modifiers compose as `preset+modifier`, e.g. `qw-dm+original` for the
+untouched 1996 presentation.
 
-```sh
-for f in tests/test_*.luau; do lune run "$f"; done
-```
+Two things to know:
 
-`tests/test_trace.luau` compares hull traces against ground truth produced
-by compiling the verbatim WinQuake collision code (`tools/trace_truth.c`).
-`tests/test_server.luau` boots e1m1 headless and plays it with a fake
-client. `tests/test_loopback.luau` runs the real client state machine
-against the real server in one process.
+- A preset only boots if the place's `QuakeAssets` folder actually holds
+  the game folders it needs (a mismatch is a boot error naming both
+  sides). `lune run tools/mode assets <preset>` builds the import project
+  with exactly those folders — that's the step 2 import above.
+- While a dev preset is active it **overrides** the place's attributes.
+  For a shipped place, run `lune run tools/mode off` and set the
+  attributes permanently instead: `lune run tools/mode stamp <preset>`
+  prints a snippet to paste into the Studio command bar, then save the
+  place. Never hand-type attributes — a missing `fraglimit`/`timelimit`
+  silently boots a server with no round-end limits.
+
+Details in [docs/MODES.md](docs/MODES.md); the full publish flow (build
+`lq1`, strip id1, stamp, publish) is
+[docs/PUBLISHING.md](docs/PUBLISHING.md).
 
 ## Layout
 
 ```
 default.project.json     Rojo map for the code (daily sync)
 assets.project.json      Rojo map for all asset bundles (occasional sync)
-assets-current.project.json  generated per-mode asset map (`lune run tools/mode assets <preset>`; gitignored)
+assets-current.project.json  generated per-mode asset map (gitignored)
 src/shared/engine/       The engine (platform-independent Luau)
   common/                buffers, math, tokenizer, net messages, cvars
   bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders
@@ -117,13 +126,90 @@ src/shared/engine/       The engine (platform-independent Luau)
   client/                cl_parse/cl_main port (state machine, lerp)
 src/server/              Roblox server bootstrap (remotes, heartbeat)
 src/client/              Roblox client (renderer, input, view, HUD)
+docs/coverage/           function-by-function coverage manifests
+external_assets/         game + mod data (gitignored)
+assets/                  built base64 chunks (gitignored build artifact)
 reference/               WinQuake + QuakeC sources (gitignored, GPL)
 ```
 
+`tools/build_assets.py` splits pak files into base64 chunks under
+`assets/`; at runtime the server holds them in
+`ServerStorage.QuakeAssets` and streams a per-map bundle to clients. The
+repo ships the tools, not the data.
+
+## Tests
+
+Every subsystem has offline tests ([Lune](https://lune-org.github.io/docs))
+that run against the real game data. One script runs `luau-lsp analyze`
+strict-mode checking plus the full sweep:
+
+```sh
+tools/check.sh            # analyze + all tests
+tools/check.sh --analyze  # static analysis only
+```
+
+Analysis is baselined against `tools/analyze_baseline.txt` so pre-existing
+debt doesn't re-flag; `tools/check.sh --update-baseline` grandfathers new
+debt in. To run tests by hand: `for f in tests/test_*.luau; do lune run
+"$f"; done`.
+
+The heavyweights: `tests/test_trace.luau` compares hull traces against
+ground truth from compiling the verbatim WinQuake collision code,
+`tests/test_server.luau` boots e1m1 headless and plays it with a fake
+client, `tests/test_loopback.luau` runs the real client state machine
+against the real server in one process, and the `test_scenario_*.luau`
+files play full CTF / Rocket Arena / Team Fortress rounds against each
+mod's shipped progs.
+
+## Fidelity
+
+The port is accounted for function by function against the original C.
+[docs/coverage/](docs/coverage/README.md) holds four manifests — NQ
+server, NQ client, QW server, QW client — where every C function is
+**VERIFIED** (a test or compiled-C ground-truth harness proves the
+behavior, evidence cited per row), **SUBSTITUTED** (replaced by a platform
+mechanism, justification stated), or **N/A** (dead code, DOS-era
+machinery, or flows Roblox owns). 825 functions verified, zero rows open.
+
+Behavioral ground truth comes from compiling the actual WinQuake code:
+hull collision is bit-exact against `tools/trace_truth.c`, the player
+movement chain is within 0.0002 units over 300 scripted ticks, and QW
+view/weapon feel is frame-traced against verbatim `view.c`. Known
+divergences live in [FIDELITY.md](FIDELITY.md) — every one is verified,
+fixed, open, or a justified substitution.
+
+## Roblox changes
+
+The big deliberate departures from stock Quake, all product-layer —
+engine files aren't involved, and each is removable:
+
+- **Roblox avatars** (`roblox_avatars`, default on): players render as
+  their own Roblox avatar rig instead of player.mdl, and the HUD status
+  bar face becomes your avatar head (tinted and pained like the
+  bitmaps). Set the attribute `false` for classic models.
+- **Roblox-native menus**: the original DrawPic menu is replaced with a
+  touch-friendly pause menu, settings, and an about screen. Mobile gets
+  on-screen controls.
+- **Match director**: optional map rotation with intermission voting
+  (`maplist` attribute enables it; absent = authentic exit chain),
+  mid-round callvotes, and a host admin menu for live rule changes.
+- **Stats and leaderboards**: per-player kill/death/win tracking in
+  DataStores with global, weekly, and friends leaderboards.
+- **Mild mode** (`mildmode`, default on): render-only content softening —
+  white gibs/blood, corpses fade out. The sim, wire protocol, and QC are
+  untouched; `+original` restores the 1996 presentation.
+- **Platform substitutions**: the software rasterizer is replaced by
+  EditableMesh world geometry with lightmap vertex lighting, and
+  UDP/WinSock networking by RemoteEvents carrying the original protocol.
+
 ## Licensing
 
-The engine port is a derivative work of id Software's WinQuake sources,
-released under **GPL-2.0** — so this repository's code is GPL-2.0 (see
-[`LICENSE`](LICENSE)). LibreQuake content is separately licensed and is a
-build-time dependency, not part of this repo. Original id Software assets
-are proprietary and never ship.
+The engine port is a derivative work of id Software's
+[Quake sources](https://github.com/id-Software/Quake), released under
+**GPL-2.0** — so this repository's code is GPL-2.0 (see
+[LICENSE](LICENSE)). Game content is separate: published places use
+[LibreQuake](https://github.com/lavenderdotpet/LibreQuake) assets
+(separately licensed, build-time dependency, not part of this repo).
+Original id Software assets are proprietary and never ship; per-mod
+provenance and ship gates are in
+[docs/mods-licenses.md](docs/mods-licenses.md).
