@@ -2,9 +2,7 @@
 
 A port of the original 1996 Quake engine to Luau on Roblox.
 
-<!-- HERO VIDEO: drop the mp4 URL on its own line here (GitHub renders it
-     as an embedded player). Should show something cool — e.g. a CTF match
-     with Roblox avatars. -->
+https://github.com/user-attachments/assets/2ba6229f-9826-49f8-8965-2ca19b3d7fd4
 
 ## What works
 
