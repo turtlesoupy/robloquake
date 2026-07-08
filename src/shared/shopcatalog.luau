@@ -30,9 +30,9 @@ export type Rarity = {
 -- prices are 1:1 across the two payment paths (a skin's Fragcoin price
 -- equals its Robux price)
 shopcatalog.RARITIES = {
-	COMMON = { name = "COMMON", coins = 99, robux = 99, productId = 0 },
-	RARE = { name = "RARE", coins = 199, robux = 199, productId = 0 },
-	LEGENDARY = { name = "LEGENDARY", coins = 399, robux = 399, productId = 0 },
+	COMMON = { name = "COMMON", coins = 99, robux = 99, productId = 3608674696 },
+	RARE = { name = "RARE", coins = 199, robux = 199, productId = 3608674772 },
+	LEGENDARY = { name = "LEGENDARY", coins = 399, robux = 399, productId = 3608674814 },
 } :: { [string]: Rarity }
 
 -- daily shop card order, cheapest first (matches the 3-up page)
