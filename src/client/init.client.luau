@@ -101,7 +101,18 @@ end)
 -- reassembled whole frames land in the same inbound queue, stale frames
 -- are discarded at the transport (original NQ NET-layer semantics)
 local unwrapDatagram = netsplit.receiver()
+-- wire-gap telemetry: NQ has no prediction, so every gap in the server
+-- stream is a visible motion freeze — put numbers on it in the F9 log
+-- (the HUD net icon only trips at 300ms). Rate-limited to 1 line/s.
+local lastPacketAt = 0
+local lastGapPrint = 0
 local function queueInbound(data: buffer)
+	local now = os.clock()
+	if lastPacketAt > 0 and now - lastPacketAt > 0.15 and now - lastGapPrint > 1 then
+		lastGapPrint = now
+		print(`[net] {math.floor((now - lastPacketAt) * 1000)}ms packet gap`)
+	end
+	lastPacketAt = now
 	table.insert(inbound, data)
 end
 unreliable.OnClientEvent:Connect(function(data: unknown)

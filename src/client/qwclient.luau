@@ -170,7 +170,17 @@ return function()
 	-- reassembled frames join the same queue. A transport-dropped stale
 	-- frame just reads as packet loss to netchan, which is built for it.
 	local unwrapDatagram = netsplit.receiver()
+	-- wire-gap telemetry: put numbers on stream gaps in the F9 log (the
+	-- HUD net icon only trips at 300ms). Rate-limited to 1 line/s.
+	local lastPacketAt = 0
+	local lastGapPrint = 0
 	local function queueInbound(data: buffer)
+		local now = os.clock()
+		if lastPacketAt > 0 and now - lastPacketAt > 0.15 and now - lastGapPrint > 1 then
+			lastGapPrint = now
+			print(`[net] {math.floor((now - lastPacketAt) * 1000)}ms packet gap`)
+		end
+		lastPacketAt = now
 		table.insert(inbound, data)
 	end
 	unreliable.OnClientEvent:Connect(function(data: unknown)
