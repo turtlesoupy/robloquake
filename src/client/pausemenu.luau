@@ -13,10 +13,10 @@
 -- Design: a fixed "content box" (836x408 design px, scaled to the viewport)
 -- subdivided into cells with 12px spacers. Every page shares the same
 -- title-on-top / button-on-bottom framing and picks a layout:
---   main      hero + 6 blocks   (profile, SHOP, MY SKINS, GAMEMODES,
+--   main      hero + 6 blocks   (profile, SHOP, MY SKINS, ABOUT,
 --                                 FRIENDS, RANKINGS, SETTINGS)
 --   settings  1 full block
---   gamemodes 2-up
+--   about     1 full block      (engine origin + GPL/LibreQuake credits)
 --   shop      3-up daily cards  (rarity, weapon render, FRAGS + ROBUX buttons)
 --   skins     8-grid            (weapon render + APPLY, in-grid pager arrows)
 --   friends   8-grid            (headshot + status + INVITE via SocialService)
@@ -1121,11 +1121,11 @@ function pausemenu.attach(opts: Opts): Handle
 		-- one action per block: `go` switches to that page; a cell shows either
 		-- a baked icon or a weapon render (skin=true keeps MY SKINS rendering
 		-- the authentic gun when nothing is equipped)
-		type HubCell = { label: string, go: string, icon: string?, weapon: string?, skin: boolean? }
+		type HubCell = { label: string, go: string, icon: string?, weapon: string?, skin: boolean?, big: string? }
 		local defs: { HubCell } = {
 			{ label = "SHOP", weapon = legendary.spec, go = "shop" }, -- cells[2]
 			{ label = "MY SKINS", weapon = equipped, skin = true, go = "skins" }, -- cells[3]
-			{ label = "GAMEMODES", icon = "gamemodes", go = "gamemodes" }, -- cells[4]
+			{ label = "ABOUT", big = "1996", go = "about" }, -- cells[4]
 			{ label = "FRIENDS", icon = "friends", go = "friends" }, -- cells[5]
 			{ label = "RANKINGS", icon = "leaderboard", go = "rankings" }, -- cells[6]
 			{ label = "SETTINGS", icon = "settings", go = "settings" }, -- cells[7]
@@ -1137,6 +1137,11 @@ function pausemenu.attach(opts: Opts): Handle
 			text(p, 0, 16, d.label, style.head, nil, cell.w, 0.5)
 			if d.icon then
 				iconInPanel(p, cell.w, cell.h, d.icon)
+			elseif d.big then
+				-- text-only tile (ABOUT): big conchar year, centred in the
+				-- icon area below the label
+				local bs = 4
+				text(p, 0, 16 + math.floor((cell.h - 16 - 8 * bs) / 2), d.big, bs, RARITY_GREY, cell.w, 0.5)
 			elseif d.weapon or d.skin then
 				-- MY SKINS always renders (authentic when nothing equipped)
 				weaponView(p, 10, 30, cell.w - 20, cell.h - 40, d.weapon)
@@ -1401,21 +1406,30 @@ function pausemenu.attach(opts: Opts): Handle
 		end
 	end
 
-	-- 2-up mode cards: title on top, baked icon centred, whole card pressable
-	-- (press pulse + click sound only; mode selection isn't wired up yet)
-	local GAMEMODES = {
-		{ label = "FREE FOR ALL", icon = "ffa-gamemode" },
-		{ label = "CAPTURE THE FLAG", icon = "ctf-gamemode" },
-	}
-	local function buildGamemodes()
-		for i, cell in layout2() do
-			local mode = GAMEMODES[i]
-			local p = cellPanel(cell)
-			text(p, 0, 20, mode.label, style.head, nil, cell.w, 0.5)
-			iconInPanel(p, cell.w, cell.h, mode.icon)
-			clickable(content, cell.x, BOX_Y + cell.y, cell.w, cell.h, p, function()
-				-- TODO: gamemode selection
-			end)
+	-- ABOUT: what this is and whose work it stands on. Engine port of the
+	-- 1996 Quake source (GPLv2); shipped game content is LibreQuake (BSD).
+	local function buildAbout()
+		local cell = layout1()[1]
+		local p = cellPanel(cell)
+		local lines: { { s: string, c: Color3? } } = {
+			{ s = "THIS IS THE ORIGINAL 1996 QUAKE ENGINE" },
+			{ s = "BY ID SOFTWARE, RUNNING IN ROBLOX." },
+			{ s = "" },
+			{ s = "ENGINE: PORTED FROM ID'S QUAKE SOURCE,", c = RARITY_GREY },
+			{ s = "RELEASED UNDER THE GNU GPL V2.", c = RARITY_GREY },
+			{ s = "GAME CONTENT: THE LIBREQUAKE PROJECT,", c = RARITY_GREY },
+			{ s = "BSD-LICENSED COMMUNITY-MADE ASSETS.", c = RARITY_GREY },
+			{ s = "" },
+			{ s = "QUAKE IS A TRADEMARK OF ID SOFTWARE.", c = RARITY_GREY },
+			{ s = "THIS PROJECT IS NOT AFFILIATED WITH ID.", c = RARITY_GREY },
+		}
+		local lineH = 8 * style.body + 12
+		local y = math.floor((cell.h - #lines * lineH) / 2)
+		for _, line in lines do
+			if line.s ~= "" then
+				text(p, 0, y, line.s, style.body, line.c, cell.w, 0.5)
+			end
+			y += lineH
 		end
 	end
 
@@ -2032,7 +2046,7 @@ function pausemenu.attach(opts: Opts): Handle
 		main = { title = "FRAG PARTY", build = buildMain },
 		settings = { title = "SETTINGS", build = buildSettings },
 		callvote = { title = "CHANGE MAP", build = buildCallVote },
-		gamemodes = { title = "GAMEMODES", build = buildGamemodes },
+		about = { title = "ABOUT", build = buildAbout },
 		shop = { title = "SHOP", build = buildShop },
 		skins = { title = "SKINS", build = buildSkins },
 		friends = { title = "FRIENDS", build = buildFriends },
