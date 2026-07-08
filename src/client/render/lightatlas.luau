@@ -61,18 +61,29 @@ export type Atlas = {
 	bySurf: { [bsp.Surface]: Region },
 	animated: { Region },
 	framecount: number,
+	denied: boolean, -- editable budget refused a page; stop asking for more
 }
 
 function lightatlas.new(): Atlas
-	return { pages = {}, regions = {}, bySurf = {}, animated = {}, framecount = 0 }
+	return { pages = {}, regions = {}, bySurf = {}, animated = {}, framecount = 0, denied = false }
 end
 
 local function newPage(a: Atlas): Page?
+	-- once the device budget denies a page, every further attempt this map
+	-- would fail the same way (refunds land ~15-25s later, long after the
+	-- build): latch and go quiet, or a big map burns thousands of failed
+	-- CreateEditableImage calls + two warns each (866k lines in one
+	-- playtest log). Affected surfaces render fullbright; the next map
+	-- gets a fresh atlas and tries again.
+	if a.denied then
+		return nil
+	end
 	local ok, img = pcall(function()
 		return AssetService:CreateEditableImage({ Size = Vector2.new(PAGE, PAGE) })
 	end)
 	if not ok or not img then
-		warn("[fragparty] light atlas page allocation failed")
+		a.denied = true
+		warn(`[fragparty] light atlas page allocation failed (have {#a.pages} pages); lightmaps degrade to fullbright for this map`)
 		return nil
 	end
 	local page: Page = {
