@@ -60,8 +60,20 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 
 	-- the shared static buffer for ftos/vtos results (pr_string_temp)
 	local tempStringId = vmlib.allocString(vm, "")
-	-- PF_infokey's own static buffer (C: `static char ov[256]`)
-	local infokeyStringId = vmlib.allocString(vm, "")
+	-- PF_infokey returns through Info_ValueForKey's FOUR rotating static
+	-- buffers (common.c `static char value[4][512]`), not one: QC routinely
+	-- holds an infokey result across further infokey calls — TeamFortress's
+	-- anticheat does st = infokey(self,"skin") then compares it against a
+	-- helper that itself calls infokey; with a single reused slot the first
+	-- result is clobbered and every legit player gets "kicked for changing
+	-- skin" 10s after joining a team
+	local infokeyStringIds = {
+		vmlib.allocString(vm, ""),
+		vmlib.allocString(vm, ""),
+		vmlib.allocString(vm, ""),
+		vmlib.allocString(vm, ""),
+	}
+	local infokeyIndex = 0
 
 	local B: { [number]: (vm: vmlib.VM) -> () } = {}
 	local names: { [number]: string } = {}
@@ -879,10 +891,12 @@ function pr_cmds.install(svr: any, qdefs: qwdefslib.QwDefs)
 				value = (cl and cl.userinfo and cl.userinfo[key]) or ""
 			end
 		end
-		-- C uses a static ov[256], NOT a fresh zoned string: reuse one
-		-- dynstring slot so per-frame infokey polls don't leak memory
-		vmlib.setDynString(vm, infokeyStringId, value)
-		vmlib.setGlobalInt(vm, OFS_RETURN, infokeyStringId)
+		-- rotate like Info_ValueForKey (4 slots), never allocate: per-frame
+		-- infokey polls stay leak-free and recent results stay readable
+		infokeyIndex = (infokeyIndex % 4) + 1
+		local slot = infokeyStringIds[infokeyIndex]
+		vmlib.setDynString(vm, slot, value)
+		vmlib.setGlobalInt(vm, OFS_RETURN, slot)
 	end)
 
 	def(81, "stof", function()

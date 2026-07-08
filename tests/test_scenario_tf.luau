@@ -154,6 +154,29 @@ local function cmd(opts: CmdOpts?)
 		msec = 50,
 	}
 end
+-- echo the mod's stuffed userinfo commands back like a real QW client
+-- (CL_Color_f; team/skin are CVAR_USERINFO cvars): TF's anticheat kicks
+-- anyone whose infokey doesn't match within 10s of joining a team
+local function applyStuffs(L: Link)
+	local raw = L.cl.rawStufftext
+	if not raw or raw == "" then
+		return
+	end
+	L.cl.rawStufftext = ""
+	for line in raw:gmatch("[^\n]+") do
+		local c, a = line:match("^%s*(%S+)%s*(.*)$")
+		if c == "color" then
+			local a1, a2 = (a :: string):match("^(%d+)%s*(%d*)$")
+			local top = math.min(tonumber(a1) or 0, 13)
+			local bottom = math.min(tonumber(a2 or "") or top, 13)
+			qwcl.sendStringCmd(L.cl, `setinfo topcolor {top}`)
+			qwcl.sendStringCmd(L.cl, `setinfo bottomcolor {bottom}`)
+		elseif c == "team" or c == "skin" then
+			local value = (a :: string):gsub('^"(.*)"$', "%1")
+			qwcl.sendStringCmd(L.cl, `setinfo {c} {value}`)
+		end
+	end
+end
 local function tick(acmd: any, bcmd: any)
 	qwcl.sendCmd(A.cl, acmd or cmd())
 	qwcl.sendCmd(B.cl, bcmd or cmd())
@@ -163,6 +186,7 @@ local function tick(acmd: any, bcmd: any)
 		while #L.queue > 0 do
 			qwcl.processPacket(L.cl, table.remove(L.queue, 1) :: buffer)
 		end
+		applyStuffs(L)
 	end
 end
 local function run(n: number)
@@ -241,6 +265,19 @@ t.eq(vmlib.edFloat(playerB, optfield.maxspeed), 450, "Scout maxspeed is 450")
 -- class loadout: Soldier respawns with his rocket launcher ammo (4 rockets)
 t.check(vmlib.edFloat(playerA, ent.ammo_rockets) > 0, "Soldier spawned with rocket ammo")
 t.check(vmlib.edFloat(playerA, ent.health) == 100, "Soldier spawned at 100 health")
+
+-- ANTICHEAT WINDOW: TF's CheckTeamCheats arms 10s after team join and
+-- compares infokey(self, color/skin/team) against expectations built via
+-- MORE infokey calls — this leg guards two engine behaviors at once: the
+-- client-side echo of stuffed color/team/skin into userinfo, and
+-- infokey's 4-slot rotating return buffers (Info_ValueForKey parity; a
+-- single reused slot gets clobbered mid-comparison and every legit player
+-- is "kicked for changing skin")
+local kickPrintsBefore = #A.cl.prints
+run(260) -- 13s of sim: well past both players' immunity windows
+t.check(not sawPrint(A, "kicked", kickPrintsBefore), "no anticheat kick through the 10s check window")
+t.check(vmlib.edFloat(playerA, ent.health) == 100, "A still alive after the anticheat window")
+t.check(vmlib.edFloat(playerB, ent.health) == 75, "B still alive after the anticheat window (Scout max = 75)")
 
 -- FLAG GRAB: team 1 soldier steals the enemy flag from the north basement --
 -- (the goal named "Team 2 flag" has team_no=1: it is the one team 1 can

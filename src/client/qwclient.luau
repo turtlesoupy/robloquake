@@ -1606,6 +1606,11 @@ return function()
 	-- "things like godmode, noclip, etc, are commands directed to the
 	-- server, so when they are typed in at the console, they will need to
 	-- be forwarded")
+	-- Cmd_Alias_f store: mods stuff alias sets at connect (TeamFortress
+	-- binds "scout"/"changeclass"/"+gren1"... to impulse chains); an alias
+	-- body runs through execCommand per ';'-separated part
+	local aliases: { [string]: string } = {}
+	local aliasDepth = 0
 	local function execCommand(line: string)
 		local cmd, args = line:match("^(%S+)%s*(.*)$")
 		if not cmd then
@@ -1849,6 +1854,35 @@ return function()
 		elseif cmd == "toggleconsole" then
 			consolelib.toggle(con)
 			refreshInputMode()
+		elseif cmd == "team" or cmd == "skin" then
+			-- QW userinfo cvars (cl_main.c registers them CVAR_USERINFO):
+			-- mods stuff "team blue"/"skin tf_snipe" and their anticheat
+			-- compares infokey(self, ...) — TF kicks anyone whose userinfo
+			-- doesn't echo these back within 10s of joining a team
+			local value = (args :: string):gsub('^"(.*)"$', "%1")
+			qwcl.sendStringCmd(cl, `setinfo {cmd} {value}`)
+		elseif cmd == "alias" then
+			-- Cmd_Alias_f: "alias name cmds" (no args lists them)
+			local name, body = (args :: string):match('^(%S+)%s*(.*)$')
+			if not name then
+				for n, b in aliases do
+					consolelib.print(con, `{n} : {b}`)
+				end
+			else
+				aliases[name:lower()] = (body :: string):gsub('^"(.*)"$', "%1")
+			end
+		elseif aliases[cmd] then
+			-- expand like Cbuf: each ';' part is a command of its own
+			if aliasDepth < 8 then -- ALIAS_LOOP guard
+				aliasDepth += 1
+				for part in aliases[cmd]:gmatch("[^;]+") do
+					execCommand((part:gsub("^%s+", "")))
+				end
+				aliasDepth -= 1
+			end
+		elseif cmd == "wait" then
+			-- Cmd_Wait_f defers the rest of the buffer a frame; our stuffed
+			-- lines already run one batch per frame, so it's a no-op
 		elseif cl.state == "disconnected" then
 			consolelib.print(con, `Can't "{cmd}", not connected`)
 		else
