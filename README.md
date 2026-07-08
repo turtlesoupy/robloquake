@@ -1,6 +1,6 @@
 # RobloQuake
 
-A port of the original 1996 Quake engine to Roblox.
+A port of the original 1996 Quake engine to Luau on Roblox.
 
 <!-- HERO VIDEO: drop the mp4 URL on its own line here (GitHub renders it
      as an embedded player). Should show something cool — e.g. a CTF match
@@ -8,20 +8,43 @@ A port of the original 1996 Quake engine to Roblox.
 
 ## What works
 
-- **Both original engines.** NetQuake (campaign/coop) and QuakeWorld
-  (competitive) boot from the same codebase, selected per place. Both are
-  verified function-by-function against the original C sources — see
-  [Fidelity](#fidelity) below.
+- **Both original engines.** **NetQuake** (campaign/coop) and
+  **QuakeWorld** (competitive) are ported to Luau and boot from the same
+  codebase, selected per place. Both are verified function-by-function
+  against the original C sources (see [Fidelity](#fidelity) below).
 - **Assets from Quake shareware, full Quake, or
-  [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).** The engine
-  doesn't care which; only LibreQuake content is publishable.
+  [LibreQuake](https://github.com/lavenderdotpet/LibreQuake).** Publishing
+  to Roblox is limited to LibreQuake assets.
 - **Full mod support.** Unmodified third-party QuakeC mods run as gamedirs
   stacked over the base game, exactly like `-game` in DOS Quake. Working
   configurations ship for **Rocket Arena**, **Threewave CTF**, and **Team
   Fortress** (each needs its original mod files), plus an in-house instagib
   overlay. See [docs/MODS.md](docs/MODS.md).
-- **Performance.** Server frames cost ~0.16ms (1% of a 60Hz tick) with a
-  full e1m1.
+
+## Layout
+
+```
+default.project.json     Rojo map for the code (daily sync)
+assets.project.json      Rojo map for all asset bundles (occasional sync)
+assets-current.project.json  generated per-mode asset map (gitignored)
+src/shared/engine/       The engine (platform-independent Luau)
+  common/                buffers, math, tokenizer, net messages, cvars
+  bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders
+  progs/                 progs.dat loader + QuakeC VM + ABI defs
+  server/                world collision, physics, monster move, host loop
+  client/                cl_parse/cl_main port (state machine, lerp)
+src/server/              Roblox server bootstrap (remotes, heartbeat)
+src/client/              Roblox client (renderer, input, view, HUD)
+docs/coverage/           function-by-function coverage manifests
+external_assets/         game + mod data (gitignored)
+assets/                  built base64 chunks (gitignored build artifact)
+reference/               WinQuake + QuakeC sources (gitignored, GPL)
+```
+
+`tools/build_assets.py` splits pak files into base64 chunks under
+`assets/`; at runtime the server holds them in
+`ServerStorage.QuakeAssets` and streams a per-map bundle to clients. The
+repo ships the tools, not the data.
 
 ## Getting started
 
@@ -107,31 +130,6 @@ Two things to know:
 Details in [docs/MODES.md](docs/MODES.md); the full publish flow (build
 `lq1`, strip id1, stamp, publish) is
 [docs/PUBLISHING.md](docs/PUBLISHING.md).
-
-## Layout
-
-```
-default.project.json     Rojo map for the code (daily sync)
-assets.project.json      Rojo map for all asset bundles (occasional sync)
-assets-current.project.json  generated per-mode asset map (gitignored)
-src/shared/engine/       The engine (platform-independent Luau)
-  common/                buffers, math, tokenizer, net messages, cvars
-  bsp/ models/ gfx/      BSP29, MDL/SPR, WAD2 + palette loaders
-  progs/                 progs.dat loader + QuakeC VM + ABI defs
-  server/                world collision, physics, monster move, host loop
-  client/                cl_parse/cl_main port (state machine, lerp)
-src/server/              Roblox server bootstrap (remotes, heartbeat)
-src/client/              Roblox client (renderer, input, view, HUD)
-docs/coverage/           function-by-function coverage manifests
-external_assets/         game + mod data (gitignored)
-assets/                  built base64 chunks (gitignored build artifact)
-reference/               WinQuake + QuakeC sources (gitignored, GPL)
-```
-
-`tools/build_assets.py` splits pak files into base64 chunks under
-`assets/`; at runtime the server holds them in
-`ServerStorage.QuakeAssets` and streams a per-map bundle to clients. The
-repo ships the tools, not the data.
 
 ## Tests
 
