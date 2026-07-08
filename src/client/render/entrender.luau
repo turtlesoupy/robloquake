@@ -518,6 +518,16 @@ end
 -- into cached lit skin variants (quantized; swapped via TextureContent).
 -- The view weapon instead rides its ViewportFrame's ImageColor3 —
 -- smooth, and viewports ignore part-level tints anyway.
+-- Shadow lift (the product BRIGHTNESS slider): lifts a shaded entity toward
+-- full light so mobs/gibs in shadow don't crush to black, matching the world
+-- lightmap fade in worldmesh.setShadowLift. 0 = authentic, 1 = fully lit.
+-- Read live in setLight (called per entity per frame), so dragging the slider
+-- re-shades everything on the next frame.
+entrender._shadowLift = 0
+function entrender.setShadowLift(v: number)
+	entrender._shadowLift = math.clamp(v, 0, 1)
+end
+
 function entrender.setLight(re: RenderEnt, light: number)
 	local part = re.part
 	if not part then
@@ -526,8 +536,9 @@ function entrender.setLight(re: RenderEnt, light: number)
 	if re.fullbrightSkin then
 		light = 255
 	end
-	local l = math.min((light + 8) * 2, 255) / 255 -- +8 ambient floor
+	local l = math.min((light + 24) * 2, 255) / 255 -- +24 ambient floor
 	l = l ^ 0.7 -- match the world lighting gamma
+	l = l + entrender._shadowLift * (1 - l) -- BRIGHTNESS: lift out of shadow
 	local frame = re.lightFrame
 	if frame then
 		local last = re.lastLightL

@@ -1488,6 +1488,11 @@ return function()
 	-- ride the `color` command via execStuffLine (the forward ref — the
 	-- real execCommand is declared later in this boot)
 	local myTopColor, myBottomColor = 0, 0
+	-- BRIGHTNESS (menu.c gamma): twin of the NQ block — fades the world
+	-- lightmap overlay so shadowed surfaces lift toward their texture instead
+	-- of crushing to black, world-only (no fog/HUD wash). Stored 0..1 and
+	-- persisted like any setting; see worldmesh.setShadowLift.
+	local gammaValue = 0
 	local prefsHandle = require(script.Parent.prefs).attach({
 		net = net,
 		-- SETTINGS page rows (menu.c M_Options): look/run live in input,
@@ -1504,6 +1509,14 @@ return function()
 			end,
 			setVolume = function(v: number)
 				soundlib.setMasterVolume(sndsys, v)
+			end,
+			getGamma = function(): number
+				return gammaValue
+			end,
+			setGamma = function(v: number)
+				gammaValue = math.clamp(v, 0, 1)
+				worldmesh.setShadowLift(gammaValue) -- world surfaces
+				entrender.setShadowLift(gammaValue) -- mobs / gibs / pickups
 			end,
 			getColors = function(): (number, number)
 				return myTopColor, myBottomColor

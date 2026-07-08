@@ -19,6 +19,8 @@ export type Settings = {
 	setAlwaysRun: (on: boolean) -> (),
 	getVolume: () -> number,
 	setVolume: (v: number) -> (),
+	getGamma: () -> number,
+	setGamma: (v: number) -> (),
 	-- quake shirt/pants palette rows (0..13) — the AVATAR page tint
 	getColors: () -> (number, number),
 	setColors: (top: number, bottom: number) -> (),
@@ -48,6 +50,7 @@ function prefs.attach(opts: Opts)
 				invertMouse = s.getInvertMouse(),
 				alwaysRun = s.getAlwaysRun(),
 				volume = s.getVolume(),
+				gamma = s.getGamma(),
 				topcolor = top,
 				bottomcolor = bottom,
 			},
@@ -99,6 +102,9 @@ function prefs.attach(opts: Opts)
 					if type(s.volume) == "number" then
 						raw.setVolume(math.clamp(s.volume, 0, 1))
 					end
+					if type(s.gamma) == "number" then
+						raw.setGamma(math.clamp(s.gamma, 0, 1))
+					end
 					if type(s.topcolor) == "number" and type(s.bottomcolor) == "number" then
 						raw.setColors(
 							math.clamp(math.floor(s.topcolor), 0, 13),
@@ -140,6 +146,11 @@ function prefs.attach(opts: Opts)
 		getVolume = raw.getVolume,
 		setVolume = function(v: number)
 			raw.setVolume(v)
+			schedulePush()
+		end,
+		getGamma = raw.getGamma,
+		setGamma = function(v: number)
+			raw.setGamma(v)
 			schedulePush()
 		end,
 		getColors = raw.getColors,

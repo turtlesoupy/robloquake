@@ -1723,6 +1723,11 @@ local directorHandle = require(script.directorui).attach({
 -- (myTopColor/myBottomColor — the mirror the AVATAR page reads — are
 -- declared above the command dispatcher; the `color` handler keeps them
 -- and c.color in sync with every source)
+-- BRIGHTNESS (menu.c gamma): fades the world lightmap overlay so shadowed
+-- surfaces lift toward their texture instead of crushing to black, world-only
+-- (no fog/HUD wash). Stored 0..1 and persisted like any setting; see
+-- worldmesh.setShadowLift.
+local gammaValue = 0
 local prefsHandle = require(script.prefs).attach({
 	net = net,
 	-- SETTINGS page rows (menu.c M_Options): look/run live in input,
@@ -1739,6 +1744,14 @@ local prefsHandle = require(script.prefs).attach({
 		end,
 		setVolume = function(v: number)
 			soundlib.setMasterVolume(snd, v)
+		end,
+		getGamma = function(): number
+			return gammaValue
+		end,
+		setGamma = function(v: number)
+			gammaValue = math.clamp(v, 0, 1)
+			worldmesh.setShadowLift(gammaValue) -- world surfaces
+			entrender.setShadowLift(gammaValue) -- mobs / gibs / pickups
 		end,
 		getColors = function(): (number, number)
 			return myTopColor, myBottomColor

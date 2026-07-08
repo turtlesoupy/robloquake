@@ -171,6 +171,8 @@ export type Settings = {
 	setAlwaysRun: (on: boolean) -> (),
 	getVolume: () -> number, -- SOUND VOLUME, 0..1
 	setVolume: (v: number) -> (),
+	getGamma: () -> number, -- BRIGHTNESS (menu.c gamma), 0..1 = off..full crank
+	setGamma: (v: number) -> (),
 }
 
 -- RANKINGS page data source (leaderboardui): one board = a period × scope
@@ -1170,8 +1172,10 @@ function pausemenu.attach(opts: Opts): Handle
 	-- 130 cap, knob 131 travelling SLIDER_RANGE-1 cells, M_DrawSlider) with
 	-- < > hotspots stepping like the arrow keys (M_AdjustSliders); toggles
 	-- show ON/OFF. Every change rebuilds the page, like the skins pager.
-	-- Renames from the original: MOUSE SPEED reads LOOK SPEED. Rows
-	-- omitted: BRIGHTNESS (gamma is fixed on this platform), CD MUSIC (no
+	-- Renames from the original: MOUSE SPEED reads LOOK SPEED. BRIGHTNESS
+	-- (menu.c gamma) fades the world lightmap overlay to lift shadows (the
+	-- boot wires Settings.setGamma to worldmesh.setShadowLift), and is also
+	-- reachable straight from play on G. Rows omitted: CD MUSIC (no
 	-- music track in the bank), SCREEN SIZE (product call — the console's
 	-- viewsize/sizeup/sizedown still work), LOOKSPRING and LOOKSTRAFE
 	-- (meaningless under always-mouselook), CUSTOMIZE CONTROLS / GO TO
@@ -1192,7 +1196,7 @@ function pausemenu.attach(opts: Opts): Handle
 		local WHITE = Color3.new(1, 1, 1)
 		local bs = 8 * style.body -- glyph size at body scale
 		local rowH = 46
-		local y0 = math.floor((cell.h - 5 * rowH) / 2)
+		local y0 = math.floor((cell.h - 6 * rowH) / 2)
 		local labelR = math.floor(cell.w / 2) - 12 -- labels right-align here
 		local widgetX = math.floor(cell.w / 2) + 12
 
@@ -1247,6 +1251,9 @@ function pausemenu.attach(opts: Opts): Handle
 		toggleRow("INVERT MOUSE", s.getInvertMouse, s.setInvertMouse)
 		toggleRow("ALWAYS RUN", s.getAlwaysRun, s.setAlwaysRun)
 		sliderRow("SOUND VOLUME", s.getVolume, s.setVolume, 0, 1, 0.1)
+		-- BRIGHTNESS (menu.c gamma): full 0..1 travel — empty rail is the
+		-- untouched scene, full crank is as bright as the effect goes
+		sliderRow("BRIGHTNESS", s.getGamma, s.setGamma, 0, 1, 0.1)
 
 		-- menu.c RESET TO DEFAULTS (default.cfg values: volume 0.7 included,
 		-- since the boot execs it too)
@@ -1258,6 +1265,7 @@ function pausemenu.attach(opts: Opts): Handle
 			s.setInvertMouse(false)
 			s.setAlwaysRun(false)
 			s.setVolume(0.7)
+			s.setGamma(0)
 		end)
 	end
 
@@ -2143,6 +2151,19 @@ function pausemenu.attach(opts: Opts): Handle
 			setOpen(true, "rankings")
 		end
 	end
+	-- G: straight onto SETTINGS (where the BRIGHTNESS / gamma slider lives),
+	-- so the world brightness is one key away from play. Toggles the menu
+	-- shut again from its own page, like E does for MAIN.
+	local function openSettings()
+		if open and state == "settings" then
+			setOpen(false)
+		elseif open then
+			state = "settings"
+			showPage()
+		else
+			setOpen(true, "settings")
+		end
+	end
 
 	-- wallet/ownership changes (kills earning coins, a Robux receipt landing)
 	-- re-render any page that shows them, so the coin counter ticks live and
@@ -2201,6 +2222,8 @@ function pausemenu.attach(opts: Opts): Handle
 			end
 		elseif input.KeyCode == Enum.KeyCode.L and opts.leaderboards then
 			openRankings()
+		elseif input.KeyCode == Enum.KeyCode.G and opts.settings then
+			openSettings()
 		end
 	end)
 

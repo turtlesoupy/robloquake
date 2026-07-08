@@ -72,6 +72,9 @@ modepresets.PRESETS = {
 		startmap = "e1m3",
 		coop = 1,
 		modekey = "coop",
+		-- demo runs the original engine presentation (red gibs/blood,
+		-- persistent corpses); avatar_face left on
+		mildmode = false,
 	},
 	["nq-dm"] = {
 		engine = "nq",

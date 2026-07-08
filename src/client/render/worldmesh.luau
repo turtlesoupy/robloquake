@@ -150,6 +150,47 @@ local function baseStyleValue(_style: number): number
 	return worldmesh.BASE_STYLE_VALUE
 end
 
+-- Shadow lift (the product BRIGHTNESS / gamma slider). The lightmap is a
+-- translucent black overlay part whose per-texel alpha darkens each surface
+-- (fully shadowed -> alpha ~1 -> black; fully lit -> alpha ~0). Raising every
+-- overlay part's Transparency fades that whole wash uniformly: lit texels are
+-- already near-transparent so barely move, while shadowed ones lift toward the
+-- base texture — i.e. it brightens shadows without washing the lit scene the
+-- way a post-process ColorCorrection does, and it touches ONLY world surfaces
+-- (fog / HUD / viewmodel are untouched). It's live (a per-part property) and
+-- new maps inherit the current value at build. 0 = authentic look (the 0.02
+-- epsilon that forces the translucent queue); 1 = brightest crank. The
+-- per-vertex fallback path (buildWedges, no Mesh API) bakes light into vertex
+-- colors and is not lifted — that degraded path keeps the authentic look.
+local OVERLAY_BASE_T = 0.02
+local OVERLAY_MAX_T = 0.85
+worldmesh._shadowLift = 0
+-- every container build() has produced (the world, each brush submodel, each
+-- item/door). setShadowLift walks these so it reaches EVERY current lightmap
+-- overlay part regardless of when it was built — a plain part list desynced
+-- (the world's overlay could keep its build-time value while later items got
+-- updated). Torn-down containers are pruned lazily on the next call.
+local builtContainers: { Instance } = {}
+local function overlayTransparency(): number
+	return OVERLAY_BASE_T + worldmesh._shadowLift * (OVERLAY_MAX_T - OVERLAY_BASE_T)
+end
+function worldmesh.setShadowLift(v: number)
+	worldmesh._shadowLift = math.clamp(v, 0, 1)
+	local t = overlayTransparency()
+	for i = #builtContainers, 1, -1 do
+		local c = builtContainers[i]
+		if not c.Parent then
+			table.remove(builtContainers, i) -- torn down; drop the dead ref
+		else
+			for _, d in c:GetDescendants() do
+				if d:IsA("MeshPart") and d.Name:sub(1, 8) == "lightmap" then
+					d.Transparency = t
+				end
+			end
+		end
+	end
+end
+
 -- Per-map light atlas (the software surface cache). resetLighting must be
 -- called before building a map's meshes; brush submodels built later share
 -- the same atlas so doors/plats keep their lightmaps.
@@ -388,8 +429,15 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 					-- epsilon transparency forces the translucent render
 					-- queue, where texture alpha blends per-texel (the
 					-- opaque queue alpha-tests instead)
-					part.Transparency = 0.02
 					part.Color = Color3.new(1, 1, 1)
+					if partName:sub(1, 8) == "lightmap" then
+						-- the shadow-darkening wash: honor the current BRIGHTNESS
+						-- lift at build (fullbright overlays keep the plain
+						-- epsilon — they ADD light, not remove it)
+						part.Transparency = overlayTransparency()
+					else
+						part.Transparency = 0.02
+					end
 				end
 			elseif fallbackColor then
 				part.Color = fallbackColor
@@ -573,6 +621,7 @@ function worldmesh.build(model: bsp.Model, pal: textures.Palette, parent: Instan
 	end
 
 	container.Parent = parent
+	table.insert(builtContainers, container) -- for live setShadowLift walks
 	return container, animOut
 end
 
