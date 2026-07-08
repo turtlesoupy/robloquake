@@ -21,7 +21,7 @@ whichever engine the place runs. Nothing here lives in engine code.
 | `maplist` | string | both | yes | space-separated rotation, e.g. `"dm1 dm2 dm3 dm4 dm5 dm6"`. **Presence enables rotation + intermission voting.** Absent = authentic exit chain (campaign untouched). |
 | `votetime` | number | both | yes | vote window seconds before auto-advance (default 30) |
 | `roblox_avatars` | bool | both | yes | avatar rigs for players — **default on when absent**; set `false` to opt out |
-| `avatar_face` | bool | both | yes | sbar face = the local player's avatar head (tinted/pained/dying like the bitmaps) — **absent = follows `roblox_avatars`**; explicit `false` keeps the original gfx.wad faces even in avatars mode, `true` forces it on classic models |
+| `avatar_face` | bool | both | yes | sbar face = the local player's avatar head (tinted/pained/dying like the bitmaps) — **default on when absent**; set `false` for the original gfx.wad faces (the `+original` modifier does) |
 | `mildmode` | bool | both | no (boot) | content softening for classification: gib models render untextured white, blood particles display white, player (bodyque) corpses fade out 10s after death. Render-only — the engine sim, wire protocol, and QC are untouched. **Default on when absent**; set `false` for the original presentation. See `src/client/render/mildmode.luau`. |
 | `modekey` | string | both | no (boot) | stats/leaderboard scope label (`dm`, `ctf`, …); absent = derived from the other attributes (`statscore.deriveModeKey`) |
 | `test_avatar_userid` | number | dev | yes | guest-rig look override in Studio tests |

@@ -28,8 +28,7 @@ modepresets.KEYS = {
 	-- default ON when absent (avatarrigs mirror); presets set false to opt out
 	"roblox_avatars",
 	-- sbar face = local player's avatar head (avatarrigs mirror, hud.luau).
-	-- absent = follows roblox_avatars; explicit boolean forces either way
-	-- (false = the original gfx.wad face bitmaps even in avatars mode)
+	-- default ON when absent; set false for the original gfx.wad faces
 	"avatar_face",
 	-- content softening: white gibs/blood, corpses fade (render-only).
 	-- default ON when absent (clientbundle mirror); set false for the
@@ -211,7 +210,7 @@ modepresets.PRESETS = {
 modepresets.MODIFIERS = {
 	-- the original engine presentation (red gibs/blood, persistent
 	-- corpses): opts out of the mildmode default for parity captures
-	original = { mildmode = false },
+	original = { mildmode = false, avatar_face = false },
 	-- LibreQuake content (copyright-free, game=lq1) over any preset's
 	-- rules, e.g. qw-dm+librequake / nq-dm+librequake. lq1 shares no map
 	-- names with id1 except start.bsp, so the full lqdm1..13 rotation must

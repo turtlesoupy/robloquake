@@ -21,12 +21,12 @@ return function(assets: Instance, clientFS: Instance): (Player) -> ()
 		clientFS:SetAttribute(avatarsAttr, assets:GetAttribute(avatarsAttr) ~= false)
 	end)
 
-	-- avatar HUD face: mirrored TRI-STATE (absent = clients follow
-	-- roblox_avatars; explicit boolean forces the sbar face either way)
+	-- avatar HUD face: same product-layer default as the rigs — absent =
+	-- ON; a place/preset opts out with an explicit avatar_face = false
 	local faceAttr = "avatar_face"
-	clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr))
+	clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr) ~= false)
 	assets:GetAttributeChangedSignal(faceAttr):Connect(function()
-		clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr))
+		clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr) ~= false)
 	end)
 
 	local avatarFolder = Instance.new("Folder")

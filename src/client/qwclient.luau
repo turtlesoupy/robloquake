@@ -533,20 +533,14 @@ return function()
 	end
 
 	-- Avatar HUD face (product layer, live-flippable): the sbar face
-	-- becomes the local player's avatar head. avatar_face attribute:
-	-- absent = follow roblox_avatars; explicit boolean forces either way.
+	-- becomes the local player's avatar head. Default ON like the rigs
+	-- (the server mirrors a resolved boolean; nil = old server, still on);
+	-- avatar_face = false on QuakeAssets restores the gfx.wad bitmaps.
 	local function avatarFaceOn(): boolean
-		local af = clientAssets:GetAttribute("avatar_face")
-		if af == nil then
-			return avatarsOn()
-		end
-		return af == true
+		return clientAssets:GetAttribute("avatar_face") ~= false
 	end
 	hudlib.setAvatarFace(hud, avatarFaceOn())
 	clientAssets:GetAttributeChangedSignal("avatar_face"):Connect(function()
-		hudlib.setAvatarFace(hud, avatarFaceOn())
-	end)
-	clientAssets:GetAttributeChangedSignal("roblox_avatars"):Connect(function()
 		hudlib.setAvatarFace(hud, avatarFaceOn())
 	end)
 
