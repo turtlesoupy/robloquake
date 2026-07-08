@@ -58,6 +58,22 @@ modepresets.PRESETS = {
 		startmap = "start",
 		modekey = "campaign",
 	},
+	-- two-player coop on the id1 campaign — monsters present AND friendly
+	-- fire on (the demo-reel setup). coop=1 makes host.luau force
+	-- deathmatch=0, so QuakeC keeps monsters and vm.loadFromFile doesn't
+	-- strip NOT_DEATHMATCH-flagged entities; teamplay absent (=0) leaves
+	-- player-vs-player damage on, so a buddy can walk up and shoot you. No
+	-- maplist -> authentic exit chain (director stays out). startmap=e1m3
+	-- (The Necropolis) is the demo1.dem Ogre level. Requires a real id1 pak
+	-- at runtime: LibreQuake ships no monster/campaign maps, so `+librequake`
+	-- is NOT a supported overlay here.
+	coop = {
+		engine = "nq",
+		game = "id1",
+		startmap = "e1m3",
+		coop = 1,
+		modekey = "coop",
+	},
 	["nq-dm"] = {
 		engine = "nq",
 		game = "id1",

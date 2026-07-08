@@ -34,7 +34,7 @@ teamplay=1, deathmatch=1, maplist="ctf1 ctf2 ctf3"}` · Campaign = no
 ## Dev mode presets (state as code)
 
 Dev state is NOT hand-edited in Roblox: `src/server/modepresets.luau`
-defines complete named states (campaign, nq-dm, qw-dm, ctf, arena,
+defines complete named states (campaign, coop, nq-dm, qw-dm, ctf, arena,
 instagib) plus composable **modifiers** that overlay any preset as
 `<preset>+<modifier>` — e.g. `qw-dm+original` or `campaign+original`
 (the `original` modifier sets `mildmode=false` for the untouched engine
