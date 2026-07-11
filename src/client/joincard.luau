@@ -184,12 +184,14 @@ function joincard.start()
 		if not remote or not remote:IsA("RemoteEvent") then
 			return
 		end
-		-- platform ping: step 1 of the onboarding funnel carries this
-		remote:FireServer("platform", platformName())
+		-- listener BEFORE the ping: the server resends showIntro on the
+		-- ping if its earlier push raced ahead of this connection
+		local acted = false
 		remote.OnClientEvent:Connect(function(msg: unknown)
-			if msg ~= "showIntro" then
+			if msg ~= "showIntro" or acted then
 				return
 			end
+			acted = true
 			task.spawn(function()
 				-- wait for the first rendered frame so the card sits over
 				-- the world, not the boot cover
@@ -204,6 +206,9 @@ function joincard.start()
 				end)
 			end)
 		end)
+		-- platform ping: step 1 of the onboarding funnel carries this,
+		-- and it doubles as the ready/resend signal above
+		remote:FireServer("platform", platformName())
 	end)
 end
 

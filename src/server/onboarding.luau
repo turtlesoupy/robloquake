@@ -18,9 +18,10 @@
 -- desktop/gamepad) — Creator Hub funnel breakdowns read it from step 1,
 -- answering "where do mobile players bail" separately from desktop.
 --
--- Join card: the server tells the client to show the how-to-play card
--- until the player has dismissed it once (persisted); dismissal is the
--- only other thing stored. Client half: src/client/joincard.luau.
+-- Join card: currently shown EVERY session (product call while paid-ads
+-- confusion is the top problem); dismissals are still persisted, so
+-- restoring once-only behavior = re-add the `not st.introSeen` guard at
+-- the two showIntro sends. Client half: src/client/joincard.luau.
 --
 -- REMOVAL: delete this file, src/client/joincard.luau, the joincard
 -- require in src/client/init.client.luau, and the marked "onboarding"
@@ -75,6 +76,7 @@ type State = {
 	lastFrags: number?,
 	cardSent: boolean,
 	cardAt: number?, -- when the card went up (shield window start)
+	cardDone: boolean, -- dismissed THIS session (shield + resend gate)
 	shielded: boolean,
 }
 
@@ -159,6 +161,7 @@ return function(net: Instance)
 			lastFrags = nil,
 			cardSent = false,
 			cardAt = nil,
+			cardDone = false,
 			shielded = false,
 		}
 		states[player] = st
@@ -187,7 +190,7 @@ return function(net: Instance)
 		end
 		-- spawn beat the fetch (first player vs a cold server): the card
 		-- decision was deferred to here
-		if st.spawnedAt and not st.introSeen and not st.cardSent then
+		if st.spawnedAt and not st.cardSent then
 			st.cardSent = true
 			st.cardAt = os.clock()
 			remote:FireClient(player, "showIntro")
@@ -222,8 +225,16 @@ return function(net: Instance)
 			local p = if arg == "touch" or arg == "gamepad" or arg == "desktop" then arg :: string else "unknown"
 			st.platform = p
 			log(player, st, 1)
+			-- the ping always follows the client's showIntro listener, so
+			-- it doubles as "ready — resend": a showIntro pushed before the
+			-- listener connected is otherwise lost (RemoteEvents don't
+			-- replay; bit us in Studio when the spawn won the race)
+			if st.cardSent and not st.cardDone then
+				remote:FireClient(player, "showIntro")
+			end
 		elseif msg == "introDone" then
 			st.introSeen = true
+			st.cardDone = true
 			markStored(player, "intro")
 		end
 	end)
@@ -238,9 +249,9 @@ return function(net: Instance)
 		end
 		st.spawnedAt = os.clock()
 		log(player, st, 2)
-		-- only send once the store fetch has settled introSeen; a spawn
-		-- that beats the fetch is handled at the end of onJoin
-		if st.loaded and not st.introSeen and not st.cardSent then
+		-- only send once the store fetch has settled; a spawn that beats
+		-- the fetch is handled at the end of onJoin
+		if st.loaded and not st.cardSent then
 			st.cardSent = true
 			st.cardAt = os.clock()
 			remote:FireClient(player, "showIntro")
@@ -259,7 +270,7 @@ return function(net: Instance)
 			-- every heartbeat while wanted (QC respawns rewrite the field),
 			-- dropped on dismissal or after SHIELD_SECS (anti-idle cap)
 			local wantShield = st.cardSent
-				and not st.introSeen
+				and not st.cardDone
 				and st.cardAt ~= nil
 				and os.clock() - (st.cardAt :: number) < SHIELD_SECS
 			if wantShield then
