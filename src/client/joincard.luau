@@ -53,6 +53,9 @@ local CONTROLS: { [string]: { string } } = {
 	},
 }
 
+-- UIListLayout sorts by LayoutOrder; equal orders tie-break
+-- unpredictably, so every row takes the next slot
+local nextOrder = 0
 local function makeLabel(parent: Instance, text: string, size: number, color: Color3, bold: boolean): TextLabel
 	local l = Instance.new("TextLabel")
 	l.BackgroundTransparency = 1
@@ -61,6 +64,8 @@ local function makeLabel(parent: Instance, text: string, size: number, color: Co
 	l.TextSize = size
 	l.TextColor3 = color
 	l.Text = text
+	nextOrder += 1
+	l.LayoutOrder = nextOrder
 	l.Parent = parent
 	return l
 end
@@ -102,6 +107,7 @@ local function showCard(onDone: () -> ())
 	pad.PaddingRight = UDim.new(0, 24)
 	pad.Parent = panel
 	local list = Instance.new("UIListLayout")
+	list.SortOrder = Enum.SortOrder.LayoutOrder -- default is Name
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	list.Padding = UDim.new(0, 6)
 	list.Parent = panel
@@ -130,6 +136,8 @@ local function showCard(onDone: () -> ())
 	btn.TextSize = 22
 	btn.TextColor3 = PANEL
 	btn.Text = if platform == "desktop" then "LET'S GO  [ENTER]" else "LET'S GO"
+	nextOrder += 1
+	btn.LayoutOrder = nextOrder
 	btn.Parent = panel
 	local bc = Instance.new("UICorner")
 	bc.CornerRadius = UDim.new(0, 8)

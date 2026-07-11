@@ -59,6 +59,7 @@ export type Adapter = {
 }
 
 type State = {
+	loaded: boolean, -- store fetch finished: first/introSeen are truth
 	first: boolean, -- first-ever session: funnel is live
 	introSeen: boolean, -- card already dismissed in some session
 	platform: string?,
@@ -138,8 +139,9 @@ return function(net: Instance)
 		end)
 	end
 
-	Players.PlayerAdded:Connect(function(player)
+	local function onJoin(player: Player)
 		local st: State = {
+			loaded = false,
 			first = false,
 			introSeen = false,
 			platform = nil,
@@ -170,8 +172,15 @@ return function(net: Instance)
 		end
 		st.first = type(doc) ~= "table"
 		st.introSeen = type(doc) == "table" and doc.intro == true
+		st.loaded = true
 		if st.first then
 			markStored(player, "seen")
+		end
+		-- spawn beat the fetch (first player vs a cold server): the card
+		-- decision was deferred to here
+		if st.spawnedAt and not st.introSeen and not st.cardSent then
+			st.cardSent = true
+			remote:FireClient(player, "showIntro")
 		end
 		-- step 1 waits for the platform ping (funnel breakdowns read
 		-- custom fields from the FIRST step); fall back so a client that
@@ -181,7 +190,14 @@ return function(net: Instance)
 				log(player, st, 1)
 			end
 		end)
-	end)
+	end
+
+	Players.PlayerAdded:Connect(onJoin)
+	-- the first player beats the boot to the server (pak loading takes
+	-- seconds); sweep everyone already here or their join is never seen
+	for _, player in Players:GetPlayers() do
+		task.spawn(onJoin, player)
+	end
 
 	Players.PlayerRemoving:Connect(function(player)
 		states[player] = nil
@@ -212,7 +228,9 @@ return function(net: Instance)
 		end
 		st.spawnedAt = os.clock()
 		log(player, st, 2)
-		if not st.introSeen and not st.cardSent then
+		-- only send once the store fetch has settled introSeen; a spawn
+		-- that beats the fetch is handled at the end of onJoin
+		if st.loaded and not st.introSeen and not st.cardSent then
 			st.cardSent = true
 			remote:FireClient(player, "showIntro")
 		end
