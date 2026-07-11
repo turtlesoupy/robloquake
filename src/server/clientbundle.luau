@@ -4,6 +4,7 @@
 -- ReplicatedStorage.QuakeClientFS instead of replicating whole paks.
 -- Shared by the NetQuake and QuakeWorld server boots.
 
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local base64 = require(Shared.engine.common.base64)
@@ -96,11 +97,32 @@ function clientbundle.new(
 			end
 		end
 		-- soundmap (bank asset id + regions) is a StringValue, mirrored as-is;
-		-- a mod gamedir's bank (base + mod sounds) overrides the base game's
+		-- a mod gamedir's bank (base + mod sounds) overrides the base game's.
+		-- A soundmap whose bank was never uploaded (assetId "") must not
+		-- shadow an uploaded base bank: skip to the next candidate — the
+		-- mod's extra regions go missing (they just don't play) instead of
+		-- the whole game running silent.
+		local function hasBank(inst: Instance?): boolean
+			if not inst or not inst:IsA("StringValue") then
+				return false
+			end
+			local ok, decoded = pcall(HttpService.JSONDecode, HttpService, (inst :: StringValue).Value)
+			return ok and typeof(decoded) == "table" and typeof(decoded.assetId) == "string" and decoded.assetId ~= ""
+		end
 		local assets = gameFolder.Parent
-		local soundmap = (modFolder and modFolder:FindFirstChild("soundmap"))
-			or gameFolder:FindFirstChild("soundmap")
-			or (assets and assets:FindFirstChild("soundmap"))
+		local candidates: { Instance? } = {
+			modFolder and modFolder:FindFirstChild("soundmap"),
+			gameFolder:FindFirstChild("soundmap"),
+			assets and assets:FindFirstChild("soundmap"),
+		}
+		local soundmap: Instance? = nil
+		for _, c in candidates do
+			if hasBank(c) then
+				soundmap = c
+				break
+			end
+			soundmap = soundmap or c
+		end
 		if soundmap and not clientFS:FindFirstChild("soundmap") then
 			soundmap:Clone().Parent = clientFS
 		end
