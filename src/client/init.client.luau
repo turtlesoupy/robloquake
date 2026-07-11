@@ -64,6 +64,11 @@ Players.LocalPlayer:SetAttribute("RQ_BootStatus", "loading assets")
 -- read once here for BOTH engine clients (the QW module requires below)
 mildmode.init(clientAssets)
 
+-- join card + onboarding platform ping (PRODUCT layer): boot-agnostic —
+-- talks to the Onboard remote and the RQ_FirstFrame attribute both
+-- engine clients set, so it starts HERE, before the engine split
+require(script.joincard).start()
+
 -- engine selection mirrors the server: campaign/coop places boot the
 -- NetQuake client below; competitive places (engine="qw") boot QuakeWorld
 if clientAssets:GetAttribute("engine") == "qw" then

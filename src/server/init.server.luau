@@ -179,6 +179,14 @@ end;
 -- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
 local publishAvatarRig = require(script.avatarrigs).makePublisher(assets, bundle.clientFS)
 
+-- ===== onboarding (PRODUCT layer) — twin of the QW block; first-session
+-- funnel + join card. Created HERE (before connectPlayer captures it —
+-- a later local would leave the closure reading a nil global); the slot
+-- adapter it steps over lives next to the stats pipeline below, where
+-- vmlib/defs are in scope. See src/server/onboarding.luau for the
+-- REMOVAL note =====
+local onboardApi = require(script.onboarding)(net)
+
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do
 	local folder = ServerStorage:FindFirstChild("QuakeSaves")
@@ -288,6 +296,7 @@ local function connectPlayer(player: Player)
 	player:SetAttribute("RQSlot", slot)
 	publishAvatarRig(player)
 	greetHost(player) -- host greeting (PRODUCT layer)
+	onboardApi.noteSpawn(player) -- onboarding funnel + join card
 	print(`[fragparty] {player.Name} connected as client {slot}`)
 end
 
@@ -442,6 +451,33 @@ local statsApi = statslib.attach({
 	competitive = (tonumber(assets:GetAttribute("deathmatch")) or 0) ~= 0,
 })
 -- ===== end stats pipeline =====
+
+-- onboarding slot adapter (api created above, before connectPlayer):
+-- read-only edict observation, same pattern as the stats readSlot
+local onboardRead = { speed = 0, firing = false, dead = false, frags = 0 }
+local onboardAdapter = {
+	maxclients = svr.maxclients,
+	playerBySlot = function(slot: number): Player?
+		for p, s in slotByPlayer do
+			if s == slot then
+				return p
+			end
+		end
+		return nil
+	end,
+	readSlot = function(slot: number): typeof(onboardRead)?
+		local cl = svr.clients[slot]
+		if not (cl and cl.active and cl.edict) then
+			return nil
+		end
+		local v = vmlib.edVector(cl.edict, defs.ent.velocity)
+		onboardRead.speed = math.sqrt(v.x * v.x + v.y * v.y)
+		onboardRead.firing = vmlib.edFloat(cl.edict, defs.ent.button0) ~= 0
+		onboardRead.dead = vmlib.edFloat(cl.edict, defs.ent.deadflag) ~= 0
+		onboardRead.frags = vmlib.edFloat(cl.edict, defs.ent.frags)
+		return onboardRead
+	end,
+}
 
 -- ===== prefs persistence (PRODUCT layer): saved client settings +
 -- weapon skin picks. REMOVAL: delete this block, its twin in
@@ -700,6 +736,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	dir.step() -- match director: vote lifecycle + idle expiry
 	statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
+	onboardApi.step(onboardAdapter) -- onboarding funnel edges
 
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo

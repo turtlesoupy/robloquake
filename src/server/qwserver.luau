@@ -260,6 +260,37 @@ return function(ctx: Ctx)
 	})
 	-- ===== end stats pipeline =====
 
+	-- ===== onboarding (PRODUCT layer) — twin of the NQ block; first-
+	-- session funnel + join card; see src/server/onboarding.luau for the
+	-- REMOVAL note =====
+	local onboardApi = require(script.Parent.onboarding)(ctx.reliable.Parent :: Instance)
+	local onboardRead = { speed = 0, firing = false, dead = false, frags = 0 }
+	local onboardAdapter = {
+		maxclients = svr.maxclients,
+		playerBySlot = function(slot: number): Player?
+			for p, s in slotByPlayer do
+				if s == slot then
+					return p
+				end
+			end
+			return nil
+		end,
+		readSlot = function(slot: number): typeof(onboardRead)?
+			local cl = svr.clients[slot]
+			if not (cl and cl.active and cl.edict) or cl.spectator then
+				return nil
+			end
+			local ent = svr.qdefs.ent
+			local v = vmlib.edVector(cl.edict, ent.velocity)
+			onboardRead.speed = math.sqrt(v.x * v.x + v.y * v.y)
+			onboardRead.firing = vmlib.edFloat(cl.edict, ent.button0) ~= 0
+			onboardRead.dead = vmlib.edFloat(cl.edict, ent.deadflag) ~= 0
+			onboardRead.frags = vmlib.edFloat(cl.edict, ent.frags)
+			return onboardRead
+		end,
+	}
+	-- ===== end onboarding =====
+
 	-- ===== prefs persistence (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/prefstore.luau for the REMOVAL note =====
 	require(script.Parent.prefstore)(ctx.reliable.Parent :: Instance, statsStore.isOwned)
@@ -331,6 +362,7 @@ return function(ctx: Ctx)
 		player:SetAttribute("RQSlot", slot)
 		publishAvatarRig(player)
 		greetHost(player) -- host greeting (PRODUCT layer)
+		onboardApi.noteSpawn(player) -- onboarding funnel + join card
 		print(`[fragparty] {player.Name} connected as qw client {slot}`)
 		return slot
 	end
@@ -404,6 +436,7 @@ return function(ctx: Ctx)
 		-- 1:1 sequence exchange the delta-frame lookup is keyed by
 		dir.step() -- match director: vote lifecycle + idle expiry
 		statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
+		onboardApi.step(onboardAdapter) -- onboarding funnel edges
 
 		local nextLevel = svr.changelevelTo
 		if nextLevel then
