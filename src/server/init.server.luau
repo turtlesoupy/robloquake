@@ -486,6 +486,40 @@ local onboardAdapter = {
 	end,
 }
 
+-- ===== spawn loadout (PRODUCT layer) — twin of the QW block; RL on
+-- spawn under the spawn_rl attribute; see src/server/loadout.luau =====
+local loadoutApi = require(script.loadout)(assets)
+local loadoutRead = { health = 0 }
+local loadoutAdapter = {
+	maxclients = svr.maxclients,
+	readSlot = function(slot: number): typeof(loadoutRead)?
+		local cl = svr.clients[slot]
+		if not (cl and cl.active and cl.edict) then
+			return nil
+		end
+		loadoutRead.health = vmlib.edFloat(cl.edict, defs.ent.health)
+		return loadoutRead
+	end,
+	grant = function(slot: number)
+		local cl = svr.clients[slot]
+		if not (cl and cl.active and cl.edict) then
+			return
+		end
+		local ed = cl.edict
+		local items = vmlib.edFloat(ed, defs.ent.items)
+		if math.floor(items / 32) % 2 == 0 then
+			vmlib.edSetFloat(ed, defs.ent.items, items + 32) -- IT_ROCKET_LAUNCHER
+		end
+		if vmlib.edFloat(ed, defs.ent.ammo_rockets) < 10 then
+			vmlib.edSetFloat(ed, defs.ent.ammo_rockets, 10)
+		end
+		if vmlib.edFloat(ed, defs.ent.impulse) == 0 then
+			vmlib.edSetFloat(ed, defs.ent.impulse, 7) -- QC switches to the RL
+		end
+	end,
+}
+-- ===== end spawn loadout =====
+
 -- ===== prefs persistence (PRODUCT layer): saved client settings +
 -- weapon skin picks. REMOVAL: delete this block, its twin in
 -- qwserver.luau, src/server/prefstore.luau and src/client/prefs.luau. =====
@@ -744,6 +778,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 	dir.step() -- match director: vote lifecycle + idle expiry
 	statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 	onboardApi.step(onboardAdapter) -- onboarding funnel edges
+	loadoutApi.step(loadoutAdapter) -- spawn loadout (RL on spawn)
 
 	-- level change requested by QC (trigger_changelevel)
 	local nextLevel = svr.changelevelTo

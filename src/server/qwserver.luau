@@ -298,6 +298,41 @@ return function(ctx: Ctx)
 	}
 	-- ===== end onboarding =====
 
+	-- ===== spawn loadout (PRODUCT layer) — twin of the NQ block; RL on
+	-- spawn under the spawn_rl attribute; see src/server/loadout.luau =====
+	local loadoutApi = require(script.Parent.loadout)(ctx.assets)
+	local loadoutRead = { health = 0 }
+	local loadoutAdapter = {
+		maxclients = svr.maxclients,
+		readSlot = function(slot: number): typeof(loadoutRead)?
+			local cl = svr.clients[slot]
+			if not (cl and cl.active and cl.edict) or cl.spectator then
+				return nil
+			end
+			loadoutRead.health = vmlib.edFloat(cl.edict, svr.qdefs.ent.health)
+			return loadoutRead
+		end,
+		grant = function(slot: number)
+			local cl = svr.clients[slot]
+			if not (cl and cl.active and cl.edict) then
+				return
+			end
+			local ed = cl.edict
+			local ent = svr.qdefs.ent
+			local items = vmlib.edFloat(ed, ent.items)
+			if math.floor(items / 32) % 2 == 0 then
+				vmlib.edSetFloat(ed, ent.items, items + 32) -- IT_ROCKET_LAUNCHER
+			end
+			if vmlib.edFloat(ed, ent.ammo_rockets) < 10 then
+				vmlib.edSetFloat(ed, ent.ammo_rockets, 10)
+			end
+			if vmlib.edFloat(ed, ent.impulse) == 0 then
+				vmlib.edSetFloat(ed, ent.impulse, 7) -- QC switches to the RL
+			end
+		end,
+	}
+	-- ===== end spawn loadout =====
+
 	-- ===== prefs persistence (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/prefstore.luau for the REMOVAL note =====
 	require(script.Parent.prefstore)(ctx.reliable.Parent :: Instance, statsStore.isOwned)
@@ -444,6 +479,7 @@ return function(ctx: Ctx)
 		dir.step() -- match director: vote lifecycle + idle expiry
 		statsApi.step(dt) -- stats pipeline: frag/death capture + autosave
 		onboardApi.step(onboardAdapter) -- onboarding funnel edges
+		loadoutApi.step(loadoutAdapter) -- spawn loadout (RL on spawn)
 
 		local nextLevel = svr.changelevelTo
 		if nextLevel then

@@ -34,6 +34,11 @@ modepresets.KEYS = {
 	-- default ON when absent (clientbundle mirror); set false for the
 	-- original engine presentation
 	"mildmode",
+	-- spawn loadout: rocket launcher + 10 rockets on every DM spawn
+	-- (loadout.luau; playtests: it's the gun the game is fun with).
+	-- default ON when absent; only applies under deathmatch rules, and
+	-- presets whose gamedir runs its own loadout economy set false
+	"spawn_rl",
 	-- stats/leaderboard scope label; absent = derived (statscore.deriveModeKey)
 	"modekey",
 }
@@ -128,6 +133,7 @@ modepresets.PRESETS = {
 		game = "id1",
 		modekey = "arena",
 		gamedir = "arena",
+		spawn_rl = false, -- the mod owns its loadout economy
 		deathmatch = 1,
 		fraglimit = 15,
 		timelimit = 20,
@@ -143,6 +149,7 @@ modepresets.PRESETS = {
 		game = "id1",
 		modekey = "tf",
 		gamedir = "fortress",
+		spawn_rl = false, -- the mod owns its loadout economy
 		-- TF overloads teamplay as its own bitfield (qwserver.txt): 21 =
 		-- on + no direct-fire damage + no area damage between teammates
 		teamplay = 21,
@@ -161,6 +168,7 @@ modepresets.PRESETS = {
 		game = "id1",
 		modekey = "instagib",
 		gamedir = "instagib",
+		spawn_rl = false, -- the mod owns its loadout economy
 		deathmatch = DM_RULES.deathmatch,
 		fraglimit = DM_RULES.fraglimit,
 		timelimit = DM_RULES.timelimit,
@@ -201,6 +209,7 @@ modepresets.PRESETS = {
 		game = "lq1",
 		modekey = "arena",
 		gamedir = "arena",
+		spawn_rl = false, -- the mod owns its loadout economy
 		deathmatch = 1,
 		fraglimit = 15,
 		timelimit = 20,
@@ -230,7 +239,7 @@ modepresets.PRESETS = {
 modepresets.MODIFIERS = {
 	-- the original engine presentation (red gibs/blood, persistent
 	-- corpses): opts out of the mildmode default for parity captures
-	original = { mildmode = false, avatar_face = false },
+	original = { mildmode = false, avatar_face = false, spawn_rl = false },
 	-- LibreQuake content (copyright-free, game=lq1) over any preset's
 	-- rules, e.g. qw-dm+librequake / nq-dm+librequake. lq1 shares no map
 	-- names with id1 except start.bsp, so the full lqdm1..13 rotation must
