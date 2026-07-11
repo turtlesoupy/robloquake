@@ -189,6 +189,23 @@ modepresets.PRESETS = {
 		maplist = "ctf1 ctf2 ctf3 ctf4 ctf5 ctf6 ctf7 ctf8 ctf2m1 ctf2m2 ctf2m3 ctf2m4 ctf2m5 ctf2m6 ctf2m7 ctf2m8",
 		votetime = 15,
 	},
+	-- Rocket Arena over LibreQuake base: the arena preset's rules with lq1
+	-- replacing id1 (asset fallthrough: arena pak first, then lq1 — RA's
+	-- precaches are stock id names, which lq1 ships). LOCAL/DEV ONLY like
+	-- plain `arena`: the RA gamedir itself is the unshippable part
+	-- (docs/mods-licenses.md), so the base-game swap doesn't change the
+	-- ship gate. NOT `arena+librequake` — that modifier swaps in the lqdm
+	-- maplist/startmap, clobbering RA's rotate.cfg cycle.
+	["lq-arena"] = {
+		engine = "qw",
+		game = "lq1",
+		modekey = "arena",
+		gamedir = "arena",
+		deathmatch = 1,
+		fraglimit = 15,
+		timelimit = 20,
+		startmap = "crandome",
+	},
 	-- LibreQuake (copyright-free content, game=lq1): the NQ DM setup on
 	-- the lqdm* maps; weapon model names match id1 (v_shot.mdl etc.)
 	["lq-dm"] = {
