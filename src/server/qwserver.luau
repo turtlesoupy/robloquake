@@ -103,7 +103,7 @@ return function(ctx: Ctx)
 	-- Roblox avatars mode (product layer, SHARED module with the NQ boot):
 	-- publishes rigs + mirrors the roblox_avatars toggle; this boot also
 	-- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
-	local publishAvatarRig = require(script.Parent.avatarrigs)(ctx.assets, bundle.clientFS)
+	local publishAvatarRig = require(script.Parent.avatarrigs).makePublisher(ctx.assets, bundle.clientFS)
 
 	-- ===== match director (PRODUCT layer) — twin of the NQ block; see
 	-- src/server/director.luau for the REMOVAL note =====

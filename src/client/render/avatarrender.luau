@@ -18,9 +18,10 @@ local qcoords = require(engine.client.qcoords)
 
 local avatarrender = {}
 
--- standard R15 animation pack fallbacks (rig attributes override with
--- the player's own equipped animation pack; SwimIdle has no
--- HumanoidDescription property, so it is always the stock track)
+-- standard R15 animation pack fallbacks; rig attributes override with
+-- the player's own equipped animation pack (the server stamps ids the
+-- engine already resolved from the pack's catalog containers — see
+-- avatarrigs.buildRigFromDescription)
 local DEFAULT_IDLE = 507766666
 local DEFAULT_RUN = 507767714
 local DEFAULT_JUMP = 507765000
@@ -197,6 +198,37 @@ function avatarrender.create(userId: number, parent: Instance): AvatarEnt
 			swimidle = loadTrack("SwimIdleAnim", DEFAULT_SWIM_IDLE),
 		}
 		ae.toolTrack = loadTrack("ToolHoldAnim", TOOL_HOLD)
+		-- belt-and-braces: a track that never gains content (deleted or
+		-- moderated animation override) plays forever without posing
+		-- anything — swap in the stock default rather than freezing that
+		-- state. Reloading a still-downloading default is harmless.
+		task.delay(8, function()
+			if rig.Parent == nil then
+				return -- entity already removed
+			end
+			local defaults: { [MoveState]: number } = {
+				idle = DEFAULT_IDLE,
+				run = DEFAULT_RUN,
+				jump = DEFAULT_JUMP,
+				fall = DEFAULT_FALL,
+				swim = DEFAULT_SWIM,
+				swimidle = DEFAULT_SWIM_IDLE,
+			}
+			for state, fallback in defaults do
+				local track = ae.tracks[state :: MoveState]
+				if track and track.Length == 0 then
+					local anim = Instance.new("Animation")
+					anim.AnimationId = `rbxassetid://{fallback}`
+					local ok, fresh = pcall(function()
+						return animator:LoadAnimation(anim)
+					end)
+					if ok then
+						track:Stop(0)
+						ae.tracks[state :: MoveState] = fresh
+					end
+				end
+			end
+		end)
 		local hand = rig:FindFirstChild("RightHand")
 		ae.rightHand = if hand and hand:IsA("BasePart") then hand else nil
 		-- original part colors: setLight darkens by scaling these

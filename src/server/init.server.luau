@@ -177,7 +177,7 @@ end;
 -- Roblox avatars mode (product layer, SHARED module with the QW boot):
 -- publishes rigs + mirrors the roblox_avatars toggle; this boot also
 -- sets RQSlot on connect and mirrors RQWeaponModel in the heartbeat
-local publishAvatarRig = require(script.avatarrigs)(assets, bundle.clientFS)
+local publishAvatarRig = require(script.avatarrigs).makePublisher(assets, bundle.clientFS)
 
 -- saved games persist in the place file (ServerStorage.QuakeSaves)
 do

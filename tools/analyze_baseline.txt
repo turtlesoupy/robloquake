@@ -42,21 +42,21 @@ src/client/render/avatarlayer.luau(443,5): TypeError: Value of type 'PointLight?
 src/client/render/avatarlayer.luau(444,5): TypeError: Value of type 'PointLight?' could be nil
 src/client/render/avatarlayer.luau(469,7): TypeError: Value of type 'PointLight?' could be nil
 src/client/render/avatarlayer.luau(470,5): TypeError: Value of type 'PointLight?' could be nil
-src/client/render/avatarrender.luau(229,27): TypeError: Expected this to be '"pants" | "shirt"', but got 'string'; none of the union options are compatible
-src/client/render/avatarrender.luau(250,29): TypeError: Expected this to be exactly 'TintTarget', but got '{| color0: any, inst: any, prop: string, region: string |}'
-src/client/render/avatarrender.luau(311,6): TypeError: Value of type 'AnimationTrack?' could be nil
-src/client/render/avatarrender.luau(312,4): TypeError: Value of type 'AnimationTrack?' could be nil
-src/client/render/avatarrender.luau(440,28): TypeError: Value of type 'AnimationTrack?' could be nil
-src/client/render/avatarrender.luau(441,5): TypeError: Value of type 'AnimationTrack?' could be nil
-src/client/render/avatarrender.luau(479,4): TypeError: Expected type table, got 'nil' instead
-src/client/render/avatarrender.luau(480,4): TypeError: Expected type table, got 'nil' instead
-src/client/render/avatarrender.luau(481,4): TypeError: Expected type table, got 'nil' instead
-src/client/render/avatarrender.luau(482,4): TypeError: Expected type table, got 'nil' instead
-src/client/render/avatarrender.luau(486,4): TypeError: Value of type 'Highlight?' could be nil
-src/client/render/avatarrender.luau(487,4): TypeError: Value of type 'Highlight?' could be nil
-src/client/render/avatarrender.luau(489,4): TypeError: Value of type 'Highlight?' could be nil
-src/client/render/avatarrender.luau(490,4): TypeError: Value of type 'Highlight?' could be nil
-src/client/render/avatarrender.luau(492,3): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(261,27): TypeError: Expected this to be '"pants" | "shirt"', but got 'string'; none of the union options are compatible
+src/client/render/avatarrender.luau(282,29): TypeError: Expected this to be exactly 'TintTarget', but got '{| color0: any, inst: any, prop: string, region: string |}'
+src/client/render/avatarrender.luau(343,6): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(344,4): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(472,28): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(473,5): TypeError: Value of type 'AnimationTrack?' could be nil
+src/client/render/avatarrender.luau(511,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(512,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(513,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(514,4): TypeError: Expected type table, got 'nil' instead
+src/client/render/avatarrender.luau(518,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(519,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(521,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(522,4): TypeError: Value of type 'Highlight?' could be nil
+src/client/render/avatarrender.luau(524,3): TypeError: Value of type 'Highlight?' could be nil
 src/client/render/entrender.luau(260,10): TypeError: Expected this to be
 src/client/render/entrender.luau(316,9): TypeError: Expected this to be
 src/client/render/entrender.luau(467,8): LocalUnused: Variable 'model' is never used; prefix with '_' to silence
