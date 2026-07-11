@@ -1491,8 +1491,13 @@ return function()
 	-- BRIGHTNESS (menu.c gamma): twin of the NQ block — fades the world
 	-- lightmap overlay so shadowed surfaces lift toward their texture instead
 	-- of crushing to black, world-only (no fog/HUD wash). Stored 0..1 and
-	-- persisted like any setting; see worldmesh.setShadowLift.
-	local gammaValue = 0
+	-- persisted like any setting; see worldmesh.setShadowLift. Defaults to
+	-- the slider's midpoint — authentic pitch-black reads as "broken" to ad
+	-- arrivals on uncalibrated screens; purists can still crank it back
+	-- down (and the pick now persists).
+	local gammaValue = 0.5
+	worldmesh.setShadowLift(gammaValue)
+	entrender.setShadowLift(gammaValue)
 	local prefsHandle = require(script.Parent.prefs).attach({
 		net = net,
 		-- SETTINGS page rows (menu.c M_Options): look/run live in input,

@@ -48,6 +48,9 @@ local function sanitizeSettings(raw: any): { [string]: any }
 	if type(raw.volume) == "number" then
 		out.volume = math.clamp(raw.volume, 0, 1)
 	end
+	if type(raw.gamma) == "number" then
+		out.gamma = math.clamp(raw.gamma, 0, 1)
+	end
 	if type(raw.topcolor) == "number" then
 		out.topcolor = math.clamp(math.floor(raw.topcolor), 0, 13)
 	end

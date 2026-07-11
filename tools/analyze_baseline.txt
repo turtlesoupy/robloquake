@@ -26,7 +26,7 @@ src/client/qwclient.luau(109,32): TypeError: Expected type table, got 'nil' inst
 src/client/qwclient.luau(109,5): TypeError: Expected type table, got 'nil' instead
 src/client/qwclient.luau(1153,11): LocalShadow: Variable 'key' shadows previous declaration at line 1085
 src/client/qwclient.luau(1428,8): LocalUnused: Variable 'gunVrectPitch' is never used; prefix with '_' to silence
-src/client/qwclient.luau(1530,27): TypeError: Expected this to be 'string', but got 'string?'
+src/client/qwclient.luau(1535,27): TypeError: Expected this to be 'string', but got 'string?'
 src/client/qwclient.luau(18,7): ImportUnused: Import 'msg' is never used; prefix with '_' to silence
 src/client/qwclient.luau(508,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
 src/client/qwclient.luau(511,28): TypeError: Expected this to be 'ModelDef', but got 'nil'
