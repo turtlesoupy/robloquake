@@ -1731,10 +1731,10 @@ local directorHandle = require(script.directorui).attach({
 -- BRIGHTNESS (menu.c gamma): fades the world lightmap overlay so shadowed
 -- surfaces lift toward their texture instead of crushing to black, world-only
 -- (no fog/HUD wash). Stored 0..1 and persisted like any setting; see
--- worldmesh.setShadowLift. Defaults to the slider's midpoint — authentic
+-- worldmesh.setShadowLift. Defaults bright (0.75) — authentic
 -- pitch-black reads as "broken" to ad arrivals on uncalibrated screens;
 -- purists can still crank it back down (and the pick now persists).
-local gammaValue = 0.5
+local gammaValue = 0.75
 worldmesh.setShadowLift(gammaValue)
 entrender.setShadowLift(gammaValue)
 local prefsHandle = require(script.prefs).attach({
