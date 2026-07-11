@@ -179,9 +179,12 @@ end
 
 function joincard.start()
 	task.spawn(function()
-		local net = ReplicatedStorage:WaitForChild("QuakeNet", 30)
-		local remote = if net then net:WaitForChild("Onboard", 30) else nil
-		if not remote or not remote:IsA("RemoteEvent") then
+		-- no timeouts: both are created unconditionally by the server
+		-- boot, and a timed-out wait here silently kills the card for
+		-- the whole session (bit us once when a slow boot won the race)
+		local net = ReplicatedStorage:WaitForChild("QuakeNet")
+		local remote = net:WaitForChild("Onboard")
+		if not remote:IsA("RemoteEvent") then
 			return
 		end
 		-- listener BEFORE the ping: the server resends showIntro on the
