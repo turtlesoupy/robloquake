@@ -35,6 +35,7 @@ local ONBOARD_STORE = "rq-onboard-1"
 local PLATFORM_TIMEOUT = 15 -- secs before step 1 logs as "unknown"
 local PLAYED_SECS = 180 -- step 6 threshold, from spawn
 local MOVE_SPEED = 50 -- qu/s horizontal: deliberate movement, above jitter
+local SHIELD_SECS = 45 -- max invulnerability while the card is up (anti-idle)
 
 local STEP_NAMES = {
 	[1] = "Client Started",
@@ -56,6 +57,10 @@ export type Adapter = {
 	maxclients: number,
 	playerBySlot: (slot: number) -> Player?,
 	readSlot: (slot: number) -> SlotRead?, -- nil for inactive slots
+	-- reading the card must not get you fragged: while on, the player
+	-- edict's takedamage is zeroed (re-applied every heartbeat — QC
+	-- respawns rewrite it); off restores DAMAGE_AIM
+	setShield: (slot: number, on: boolean) -> (),
 }
 
 type State = {
@@ -69,6 +74,8 @@ type State = {
 	wasDead: boolean,
 	lastFrags: number?,
 	cardSent: boolean,
+	cardAt: number?, -- when the card went up (shield window start)
+	shielded: boolean,
 }
 
 return function(net: Instance)
@@ -151,6 +158,8 @@ return function(net: Instance)
 			wasDead = false,
 			lastFrags = nil,
 			cardSent = false,
+			cardAt = nil,
+			shielded = false,
 		}
 		states[player] = st
 		-- one read decides both halves: funnel only on a first-ever
@@ -180,6 +189,7 @@ return function(net: Instance)
 		-- decision was deferred to here
 		if st.spawnedAt and not st.introSeen and not st.cardSent then
 			st.cardSent = true
+			st.cardAt = os.clock()
 			remote:FireClient(player, "showIntro")
 		end
 		-- step 1 waits for the platform ping (funnel breakdowns read
@@ -232,6 +242,7 @@ return function(net: Instance)
 		-- that beats the fetch is handled at the end of onJoin
 		if st.loaded and not st.introSeen and not st.cardSent then
 			st.cardSent = true
+			st.cardAt = os.clock()
 			remote:FireClient(player, "showIntro")
 		end
 	end
@@ -243,6 +254,24 @@ return function(net: Instance)
 			local st = player and states[player :: Player]
 			if not player or not st then
 				continue
+			end
+			-- card shield: reading must not get you fragged. Re-asserted
+			-- every heartbeat while wanted (QC respawns rewrite the field),
+			-- dropped on dismissal or after SHIELD_SECS (anti-idle cap)
+			local wantShield = st.cardSent
+				and not st.introSeen
+				and st.cardAt ~= nil
+				and os.clock() - (st.cardAt :: number) < SHIELD_SECS
+			if wantShield then
+				a.setShield(slot, true)
+				if not st.shielded then
+					st.shielded = true
+					player:SetAttribute("RQShield", true) -- diagnostics
+				end
+			elseif st.shielded then
+				a.setShield(slot, false)
+				st.shielded = false
+				player:SetAttribute("RQShield", nil)
 			end
 			if not st.first or st.step >= 6 then
 				continue -- funnel not live for this player / already done

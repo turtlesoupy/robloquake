@@ -477,6 +477,13 @@ local onboardAdapter = {
 		onboardRead.frags = vmlib.edFloat(cl.edict, defs.ent.frags)
 		return onboardRead
 	end,
+	setShield = function(slot: number, on: boolean)
+		local cl = svr.clients[slot]
+		if cl and cl.active and cl.edict then
+			-- 0 = DAMAGE_NO (card shield), 2 = DAMAGE_AIM (normal player)
+			vmlib.edSetFloat(cl.edict, defs.ent.takedamage, if on then 0 else 2)
+		end
+	end,
 }
 
 -- ===== prefs persistence (PRODUCT layer): saved client settings +

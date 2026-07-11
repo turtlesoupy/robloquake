@@ -70,10 +70,10 @@ src/client/sound.luau(300,5): TypeError: Value of type 'Sound?' could be nil
 src/client/sound.luau(301,5): TypeError: Value of type 'Sound?' could be nil
 src/client/sound.luau(303,4): TypeError: Expected type table, got 'nil' instead
 src/client/sound.luau(307,14): TypeError: Value of type '{{ sound: Sound?, vol: number }}?' could be nil
-src/server/qwserver.luau(469,22): TypeError: Expected this to be 'string', but got 'string?'
-src/server/qwserver.luau(489,28): TypeError: Value of type 'string?' could be nil
-src/server/qwserver.luau(498,33): TypeError: Expected this to be 'string', but got 'string?'
-src/server/qwserver.luau(529,10): LocalShadow: Variable 'ServerStorage' shadows previous declaration at line 461
+src/server/qwserver.luau(476,22): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(496,28): TypeError: Value of type 'string?' could be nil
+src/server/qwserver.luau(505,33): TypeError: Expected this to be 'string', but got 'string?'
+src/server/qwserver.luau(536,10): LocalShadow: Variable 'ServerStorage' shadows previous declaration at line 468
 src/server/statstore.luau(179,4): TypeError: Expected type table, got 'nil' instead
 src/shared/engine/client/cl.luau(177,2): TypeError: Expected this to be exactly 'Client', but got '{| cdtrack: number, centerPrint: <T...>(T...) -> (), color: number, completed_time: number, cshift_bonus_percent: number, cshift_damage_color: vector, cshift_damage_percent: number, dmg_pitch: number, dmg_roll: number, dmg_time: number, entities: {ClEntity}, faceanimtime: number, gametype: number, idealpitch: number, intermission: number, inwater: boolean, item_gettime: {number}, items: number, levelname: string, lightstyles: {string}, maxclients: number, message: SizeBuf, model_precache: {string... *TRUNCATED*'
 src/shared/engine/common/cvar.luau(54,2): TypeError: Expected this to be exactly 'Cvars', but got '{| print: <T...>(T...) -> (), vars: { [string]: { string: string, value: number } } |}'
