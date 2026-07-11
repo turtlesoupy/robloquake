@@ -210,11 +210,19 @@ function avatarface.create(parent: Instance, x: number, y: number, size: number)
 
 	task.spawn(function()
 		-- Studio multi-client test players are guests with NEGATIVE
-		-- UserIds; thumbnails reject those — borrow the place creator's
-		-- avatar, matching the avatarrigs guest substitution
+		-- UserIds; thumbnails reject those — borrow the test override /
+		-- place creator's avatar, matching the avatarrigs guest
+		-- substitution (test_avatar_userid is mirrored onto the client
+		-- FS by the rig publisher)
 		local uid = Players.LocalPlayer.UserId
 		if uid <= 0 then
-			uid = if game.CreatorType == Enum.CreatorType.User then game.CreatorId else 0
+			local fs = game:GetService("ReplicatedStorage"):FindFirstChild("QuakeClientFS")
+			local override = if fs then fs:GetAttribute("test_avatar_userid") else nil
+			if typeof(override) == "number" and override > 0 then
+				uid = override
+			else
+				uid = if game.CreatorType == Enum.CreatorType.User then game.CreatorId else 0
+			end
 		end
 		if uid <= 0 then
 			return -- no fetchable avatar: hud keeps the bitmap faces

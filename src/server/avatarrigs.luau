@@ -94,6 +94,14 @@ function avatarrigs.makePublisher(assets: Instance, clientFS: Instance): (Player
 		clientFS:SetAttribute(faceAttr, assets:GetAttribute(faceAttr) ~= false)
 	end)
 
+	-- Studio-test avatar override: mirrored so the client HUD face
+	-- (avatarface) follows the same guest substitution the rigs use
+	local testAttr = "test_avatar_userid"
+	clientFS:SetAttribute(testAttr, assets:GetAttribute(testAttr))
+	assets:GetAttributeChangedSignal(testAttr):Connect(function()
+		clientFS:SetAttribute(testAttr, assets:GetAttribute(testAttr))
+	end)
+
 	local avatarFolder = Instance.new("Folder")
 	avatarFolder.Name = "QuakeAvatars"
 	avatarFolder.Parent = ReplicatedStorage
