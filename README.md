@@ -6,6 +6,8 @@ https://github.com/user-attachments/assets/2ba6229f-9826-49f8-8965-2ca19b3d7fd4
 
 [Live game with librequake assets](https://www.roblox.com/games/103880394742871/Frag-Party)
 
+[![Discord](https://img.shields.io/discord/1544483755685585028?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/qYBbGmwBhr)
+
 ## What works
 
 - **Both original engines.** **NetQuake** (campaign/coop) and
